@@ -17,6 +17,33 @@ class ExecutorRuntimeException(Exception):
     pass
 
 
+def evaluate_code(code, arguments, tests, do_execute):
+    stats = {'total': len(tests), 'correct': 0, 'exceptions': 0,
+             'result-none': 0, 'syntax-error': 0, 'runtime-exception': 0}
+    if not code:
+        return stats
+    for test in tests:
+        try:
+            execution_result = do_execute(code, arguments, test['input'])
+        except ExecutorSyntaxException:
+            stats['syntax-error'] += 1
+            continue
+        except ExecutorRuntimeException:
+            stats['runtime-exception'] += 1
+            continue
+        except Exception as e:
+            print("Exception: %s" % e)
+            traceback.print_exc()
+            #print(code, arguments, test['input'])
+            stats['exceptions'] += 1
+            continue
+        if execution_result.result is None:
+            stats['result-none'] += 1
+        if execution_result.result == test['output']:
+            stats['correct'] += 1
+    return stats
+
+
 class KarelExecutor(object):
 
     def __init__(self):
