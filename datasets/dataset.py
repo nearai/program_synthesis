@@ -17,6 +17,10 @@ import stats
 Schema = collections.namedtuple("Schema", ["args", "return_type"])
 
 
+def relpath(path):
+  return os.path.join(os.path.dirname(__file__), path)
+
+
 class CodeFunc(object):
 
     def __init__(
@@ -395,38 +399,38 @@ class KarelDataset(object):
 
 
 def get_algolisp_dataset(args):
-    args.word_vocab = '../data/algolisp/word.vocab'
+    args.word_vocab = relpath('../data/algolisp/word.vocab')
     train_data = NearDataset(
-        '../data/algolisp/dataset.train.jsonl',
+        relpath('../data/algolisp/dataset.train.jsonl'),
         args.batch_size, shuffle=True, max_size=args.dataset_max_size,
         max_code_length=args.dataset_max_code_length)
     if not os.path.exists(args.word_vocab):
         data.save_vocab(args.word_vocab, train_data.build_vocab(min_freq=args.vocab_min_freq))
     dev_data = NearDataset(
-        '../data/algolisp/dataset.dev.jsonl',
+        relpath('../data/algolisp/dataset.dev.jsonl'),
         args.batch_size, shuffle=False)
     return train_data, dev_data
 
 
 def get_karel_dataset(args):
-    args.word_vocab = '../data/karel/word.vocab'
-    train_data = KarelDataset('../data/karel/train.pkl', args.batch_size)
+    args.word_vocab = relpath('../data/karel/word.vocab')
+    train_data = KarelDataset(relpath('../data/karel/train.pkl'), args.batch_size)
     if not os.path.exists(args.word_vocab):
         data.save_vocab(args.word_vocab, train_data.build_vocab())
-    dev_data = KarelDataset('../data/karel/val.pkl', args.batch_size)
+    dev_data = KarelDataset(relpath('../data/karel/val.pkl'), args.batch_size)
     return train_data, dev_data
 
 
 def get_algolisp_eval_dataset(args):
-    args.word_vocab = '../data/algolisp/word.vocab'
+    args.word_vocab = relpath('../data/algolisp/word.vocab')
     return NearDataset(
-        '../data/algolisp/dataset.dev.jsonl',
+        relpath('../data/algolisp/dataset.dev.jsonl'),
         args.batch_size, shuffle=True, max_size=args.dataset_max_size)
 
 
 def get_karel_eval_dataset(args):
-    args.word_vocab = '../data/karel/word.vocab'
-    dev_data = KarelDataset('../data/karel/val.pkl', args.batch_size)
+    args.word_vocab = relpath('../data/karel/word.vocab')
+    dev_data = KarelDataset(relpath('../data/karel/val.pkl'), args.batch_size)
     return dev_data
 
 
