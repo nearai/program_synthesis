@@ -1,0 +1,8 @@
+git+git://github.com/nearai/pytorch-tools
+ipython
+numpy
+ply
+prompt_toolkit
+pyparsing
+tensorflow
+torch
