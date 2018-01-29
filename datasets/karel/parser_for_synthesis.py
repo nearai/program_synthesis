@@ -173,7 +173,7 @@ class KarelForSynthesisParser(Parser):
         @self.callout
         def fn():
             return stmt()
-        fn.tree = {'run': stmt.tree}
+        fn.tree = {'type': 'run', 'body':  stmt.tree}
 
         p[0] = fn
 
@@ -186,6 +186,8 @@ class KarelForSynthesisParser(Parser):
                 | ifelse
         '''
         p[0] = p[1]
+        if not isinstance(p[0].tree, list):
+            p[0].tree = [p[0].tree]
 
     def p_stmt_stmt(self, p):
         '''stmt_stmt : stmt stmt
@@ -194,12 +196,9 @@ class KarelForSynthesisParser(Parser):
 
         @self.callout
         def fn():
-            stmt1() ;stmt2()
+            stmt1(); stmt2()
 
-        if isinstance(stmt2.tree, list):
-            fn.tree =  [stmt1.tree] + stmt2.tree
-        else:
-            fn.tree = [stmt1.tree, stmt2.tree]
+        fn.tree = stmt1.tree + stmt2.tree
         p[0] = fn
 
     def p_if(self, p):
@@ -365,7 +364,7 @@ class KarelForSynthesisParser(Parser):
         value = p[1]
         def fn():
             return int(value)
-        fn.tree = {'count': value, 'span': (p.lexpos(1), p.lexpos(1) + 1)}
+        fn.tree = {'type': 'count', 'value': value, 'span': (p.lexpos(1), p.lexpos(1) + 1)}
         p[0] = fn
 
     def p_error(self, p):
@@ -373,6 +372,31 @@ class KarelForSynthesisParser(Parser):
             raise KarelSyntaxError("Syntax error at '%s'" % p.value)
         else:
             raise KarelSyntaxError("Syntax error at EOF")
+
+
+type_to_list_fn = {
+        'run': lambda v: ['DEF', 'run', 'm('] +  tree_to_tokens(v['body']) + ['m)'],
+        'if': lambda v: ['IF', 'c('] + tree_to_tokens(v['cond']) + ['c)', 'i(']
+        + tree_to_tokens(v['body']) + ['i)'],
+        'ifElse': lambda v: ['IFELSE', 'c('] + tree_to_tokens(v['cond']) +
+        ['c)', 'i('] + tree_to_tokens(v['ifBody']) + ['i)', 'ELSE', 'e('] +
+        tree_to_tokens(v['elseBody']) + ['e)'],
+        'while': lambda v: ['WHILE', 'c('] + tree_to_tokens(v['cond']) + ['c)', 'w(']
+        + tree_to_tokens(v['body']) + ['w)'],
+        'repeat': lambda v: ['REPEAT'] + tree_to_tokens(v['times']) + ['r(']
+        + tree_to_tokens(v['body']) + ['r)'],
+        'count': lambda v: ['R={:d}'.format(v['value'])],
+        'not': lambda v: ['not', 'c('] + tree_to_tokens(v['cond']) + ['c)'],
+}
+for k in (KarelForSynthesisParser.conditional_functions +
+        KarelForSynthesisParser.action_functions):
+    type_to_list_fn[k] = lambda v, k=k: [k]
+
+
+def tree_to_tokens(node):
+    if isinstance(node, list):
+        return [token for item in node for token in tree_to_tokens(item)]
+    return type_to_list_fn[node['type']](node)
 
 
 if __name__ == '__main__':
