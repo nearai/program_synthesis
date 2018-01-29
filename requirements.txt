@@ -1,6 +1,7 @@
 git+git://github.com/nearai/pytorch-tools
 ipython
-numpy
+# Workaround for https://github.com/numpy/numpy/issues/10474
+numpy==1.13
 ply
 prompt_toolkit
 pyparsing
