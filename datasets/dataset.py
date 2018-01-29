@@ -11,6 +11,7 @@ import json
 import time
 
 import data
+import executor
 import stats
 
 
@@ -18,7 +19,7 @@ Schema = collections.namedtuple("Schema", ["args", "return_type"])
 
 
 def relpath(path):
-  return os.path.join(os.path.dirname(__file__), path)
+    return os.path.join(os.path.dirname(__file__), path)
 
 
 class CodeFunc(object):
@@ -95,26 +96,47 @@ class CodeExample(object):
 
 
 class KarelExample(object):
-    __slots__ = ('guid', 'code_sequence', 'code_tree', 'input_tests', 'tests',
-                 'text')
+    __slots__ = (
+        'guid',
+        'code_sequence',
+        'input_tests',
+        'tests',
+        'text',
+        'ref_example', )
     schema = Schema(None, None)
+    code_tree = []
+    _empty_trace = executor.KarelTrace([], [])
 
-    def __init__(self, guid, code_sequence, input_tests, tests):
+    def __init__(self, guid, code_sequence, input_tests, tests,
+            ref_example=None):
         self.guid = guid
         self.code_sequence = code_sequence
-        self.code_tree = []
         self.input_tests = input_tests
         self.tests = tests
         self.text = code_sequence
+        self.ref_example = ref_example
 
     @classmethod
     def from_dict(cls, d):
-        all_examples = [{
-            'input': sorted(list(int(x) for x in example['in'])),
-            'output': sorted(list(int(x) for x in example['out']))
-        } for example in d['examples']]
+        all_examples = []
+        for example in d['examples']:
+            ex = {
+                'input': sorted(list(int(x) for x in example['in'])),
+                'output': sorted(list(int(x) for x in example['out']))
+            }
+            if 'trace_grids' in example:
+                ex['trace'] = executor.KarelTrace(
+                        grids=example['trace_grids'],
+                        events=[])
+            all_examples.append(ex)
         assert len(all_examples) == 6
-        return cls(d['guid'], d['code'], all_examples[:5], all_examples)
+        ref_dict = d.get('ref')
+        if ref_dict:
+            ref_example = KarelExample.from_dict(ref_dict)
+        else:
+            ref_example = None
+        return cls(d['guid'], d['code'], all_examples[:5], all_examples,
+                ref_example)
 
     def to_dict(self):
         return {
@@ -122,8 +144,10 @@ class KarelExample(object):
             'examples': [{
                 'in': example['input'],
                 'out': example['output'],
+                'trace_grids': example.get('trace', self._empty_trace).grids,
             } for example in self.tests],
             'code': self.code_sequence,
+            'ref': self.ref_example.to_dict() if self.ref_example else None
         }
 
 
@@ -413,11 +437,14 @@ def get_algolisp_dataset(args):
 
 
 def get_karel_dataset(args):
+    suffix = args.dataset[5:]
     args.word_vocab = relpath('../data/karel/word.vocab')
-    train_data = KarelDataset(relpath('../data/karel/train.pkl'), args.batch_size)
+    train_data = KarelDataset(
+        relpath('../data/karel/train{}.pkl'.format(suffix)), args.batch_size)
     if not os.path.exists(args.word_vocab):
         data.save_vocab(args.word_vocab, train_data.build_vocab())
-    dev_data = KarelDataset(relpath('../data/karel/val.pkl'), args.batch_size)
+    dev_data = KarelDataset(
+        relpath('../data/karel/val{}.pkl'.format(suffix)), args.batch_size)
     return train_data, dev_data
 
 
@@ -429,29 +456,28 @@ def get_algolisp_eval_dataset(args):
 
 
 def get_karel_eval_dataset(args):
+    suffix = args.dataset[5:]
     args.word_vocab = relpath('../data/karel/word.vocab')
-    dev_data = KarelDataset(relpath('../data/karel/val.pkl'), args.batch_size)
+    dev_data = KarelDataset(relpath('../data/karel/val{}.pkl'.format(suffix)), args.batch_size)
     return dev_data
 
 
 def get_dataset(args):
-    DATASETS = {
-        'algolisp': get_algolisp_dataset,
-        'karel': get_karel_dataset
-    }
-    if args.dataset not in DATASETS:
+    if args.dataset == 'algolisp':
+        return get_algolisp_dataset(args)
+    elif args.dataset.startswith('karel'):
+        return get_karel_dataset(args)
+    else:
         raise ValueError("Unknown dataset %s" % args.dataset)
-    return DATASETS[args.dataset](args)
 
 
 def get_eval_dataset(args):
-    DATASETS = {
-        'algolisp': get_algolisp_eval_dataset,
-        'karel': get_karel_eval_dataset
-    }
-    if args.dataset not in DATASETS:
+    if args.dataset == 'algolisp':
+        return get_algolisp_eval_dataset(args)
+    elif args.dataset.startswith('karel'):
+        return get_karel_eval_dataset(args)
+    else:
         raise ValueError("Unknown dataset %s" % args.dataset)
-    return DATASETS[args.dataset](args)
 
 
 def dataset_split(args, dataset, filenames, proportions):
@@ -502,4 +528,3 @@ if __name__ == "__main__":
             "../data/algolisp/dataset.dev.jsonl",
             "../data/algolisp/dataset.test.jsonl"],
             [0.8, 0.1, 0.1])
-

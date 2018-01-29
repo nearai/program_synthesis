@@ -75,6 +75,9 @@ def get_arg_parser(title, mode):
         train_group.add_argument(
             '--refine-sample-frac', type=float, default=0.1,
             help='Fraction of batches for which we should sample code to add to the refinement data for training.')
+
+        train_group.add_argument('--karel-trace-enc', default='lstm')
+        train_group.add_argument('--karel-code-enc', default='default')
     elif mode == 'eval':
         eval_group = parser.add_argument_group('eval')
         eval_group.add_argument('--tag', type=str, default='')

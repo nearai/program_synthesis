@@ -44,6 +44,10 @@ def evaluate_code(code, arguments, tests, do_execute):
     return stats
 
 
+KarelTrace = collections.namedtuple('KarelTrace', ['grids', 'events'])
+KarelEvent = collections.namedtuple('KarelEvent', ['timestep', 'type', 'success'])
+
+
 class KarelExecutor(object):
 
     def __init__(self):
@@ -57,11 +61,13 @@ class KarelExecutor(object):
         successes = []
         if record_trace:
             def action_callback(action_name, success):
-                trace.append((action_name, success, field.copy()))
+                trace.events.append(KarelEvent(timestep=len(trace.grids),
+                    type=action_name, success=success))
+                trace.grids.append(np.where(field.ravel())[0].tolist())
                 successes.append(success)
         else:
             def action_callback(action_name, success):
-                successes.append(success)
+                pass
 
         # TODO provide code as list instead of as string
         self.parser.new_game(
@@ -73,14 +79,11 @@ class KarelExecutor(object):
             raise ExecutorSyntaxException
         except TimeoutError:
             raise ExecutorRuntimeException
-        # TODO Check whether we should raise exception for this.
-        if not np.all(successes):
-            raise ExecutorRuntimeException
 
         return ExecutionResult(np.where(field.ravel())[0].tolist(), trace)
 
 
 def get_executor(args):
-    if args.dataset in ['karel']:
+    if args.dataset.startswith('karel'):
         return KarelExecutor
     return None

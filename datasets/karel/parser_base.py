@@ -104,18 +104,9 @@ class Parser(object):
 
     def run(self, code, with_timeout=False, **kwargs):
         self.call_counter = [0]
-
-        if code in self.funct_table:
-            def fn():
-                return self.funct_table[code]()
-        else:
-            yacc = self.yacc
-            def fn():
-                return yacc.parse(code, **kwargs)()
-            self.funct_table[code] = fn
-
-        out = fn()
-        return out
+        # TODO: Turn Karel object into argument of the function created by the
+        # parser so that the parser output can be cached.
+        return self.yacc.parse(code, **kwargs)()
 
     def new_game(self, **kwargs):
         self.karel = Karel(debug=self.debug, rng=self.rng, **kwargs)
@@ -189,7 +180,6 @@ class Parser(object):
 
     def flush_hit_info(self):
         self.hit_info = None
-        self.funct_table = {} # save parsed function
 
 
 def dummy():

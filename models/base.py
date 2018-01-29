@@ -17,6 +17,25 @@ from datasets import data
 from tools import saver
 
 
+class MaskedMemory(collections.namedtuple('MaskedMemory', ['memory',
+    'attn_mask'])):
+
+    def expand_by_beam(self, beam_size):
+        return MaskedMemory(*(v.unsqueeze(1).repeat(1, beam_size, *([1] * (
+            v.dim() - 1))).view(-1, *v.shape[1:]) for v in self))
+
+
+def get_attn_mask(seq_lengths, cuda):
+    max_length, batch_size = max(seq_lengths), len(seq_lengths)
+    ranges = torch.arange(
+        0, max_length,
+        out=torch.LongTensor()).unsqueeze(0).expand(batch_size, -1)
+    attn_mask = (ranges >= torch.LongTensor(seq_lengths).unsqueeze(1))
+    if cuda:
+        attn_mask = attn_mask.cuda()
+    return attn_mask
+
+
 class InferenceResult(object):
 
     def __init__(self, code_tree=None, code_sequence=None, info=None):

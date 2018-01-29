@@ -286,10 +286,9 @@ class KarelForSynthesisParser(Parser):
 
     def p_error(self, p):
         if p:
-            print("Syntax error at '%s'" % p.value)
+            raise KarelSyntaxError("Syntax error at '%s'" % p.value)
         else:
-            print("Syntax error at EOF")
-        raise KarelSyntaxError
+            raise KarelSyntaxError("Syntax error at EOF")
 
 
 if __name__ == '__main__':

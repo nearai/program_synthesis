@@ -1,3 +1,5 @@
+import collections
+import itertools
 import operator
 
 import numpy as np
@@ -26,8 +28,67 @@ def numpy_to_tensor(arr, cuda, volatile):
     return Variable(t, volatile=volatile)
 
 
+class PackedSequencePlus(collections.namedtuple('PackedSequencePlus',
+        ['ps', 'lengths', 'sort_to_orig'])):
+
+    def apply(self, fn):
+        return PackedSequencePlus(
+            torch.nn.utils.rnn.PackedSequence(
+                fn(self.ps.data), self.ps.batch_sizes), self.lengths,
+            self.sort_to_orig)
+
+    def with_new_ps(self, ps):
+        return PackedSequencePlus(ps, self.lengths, self.sort_to_orig)
+
+    def pad(self, batch_first, others_to_unsort=()):
+        padded, seq_lengths = torch.nn.utils.rnn.pad_packed_sequence(
+            self.ps, batch_first=batch_first)
+        results = padded[
+            self.sort_to_orig], [seq_lengths[i] for i in self.sort_to_orig]
+        return results + tuple(t[self.sort_to_orig] for t in others_to_unsort)
+
+
+def sort_lists_by_length(lists):
+    # lists_sorted: lists sorted by length of each element, descending
+    # orig_to_sort: tuple of integers, satisfies the following:
+    #   tuple(lists[i] for i in orig_to_sort) == lists_sorted
+    orig_to_sort, lists_sorted = zip(*sorted(
+        enumerate(lists), key=lambda x: len(x[1]), reverse=True))
+    # sort_to_orig: list of integers, satisfies the following:
+    #   [lists_sorted[i] for i in sort_to_orig] == lists
+    sort_to_orig = [
+        x[0] for x in sorted(
+            enumerate(orig_to_sort), key=operator.itemgetter(1))
+    ]
+
+    return lists_sorted, sort_to_orig
+
+
+def batch_bounds_for_packing(lengths):
+    '''Returns how many items in batch have length >= i at step i.
+
+    Examples:
+      [5] -> [1, 1, 1, 1, 1]
+      [5, 5] -> [2, 2, 2, 2, 2]
+      [5, 3] -> [2, 2, 2, 1, 1]
+      [5, 4, 1, 1] -> [4, 2, 2, 2, 1]
+    '''
+
+    last_length = 0
+    count = len(lengths)
+    result = []
+    for length, group in itertools.groupby(reversed(lengths)):
+        if length <= last_length:
+            raise ValueError('lengths must be decreasing and positive')
+        result.extend([count] * (length - last_length))
+        count -= sum(1 for _ in group)
+        last_length = length
+    return result
+
+
 def lists_to_packed_sequence(lists, stoi, cuda, volatile):
-    # TODO: Use torch.nn.utils.rnn.pack_sequence in 0.4.0
+    # Note, we are not using pack_sequence here, because it takes a list of Variables which we want to avoid since it
+    # may cause memory fragmentation.
 
     # lists_sorted: lists sorted by length of each element, descending
     # orig_to_sort: tuple of integers, satisfies the following:
@@ -40,8 +101,12 @@ def lists_to_packed_sequence(lists, stoi, cuda, volatile):
             enumerate(orig_to_sort), key=operator.itemgetter(1))]
 
     v = numpy_to_tensor(lists_to_numpy(lists_sorted, stoi, 0), cuda, volatile)
-    return torch.nn.utils.rnn.pack_padded_sequence(
-        v, lengths(lists_sorted), batch_first=True), sort_to_orig
+    lens = lengths(lists_sorted)
+    return PackedSequencePlus(
+        torch.nn.utils.rnn.pack_padded_sequence(
+            v, lens, batch_first=True),
+        lens,
+        sort_to_orig)
 
 
 def apply_to_packed_sequence(fn, ps):
