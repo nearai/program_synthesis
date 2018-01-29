@@ -1,4 +1,5 @@
 import collections
+import traceback
 
 import numpy as np
 
@@ -74,7 +75,7 @@ class KarelExecutor(object):
             state=field,
             action_callback=action_callback)
         try:
-            self.parser.run(' '.join(code), debug=False)
+            self.parser.run(code, debug=False)
         except KarelSyntaxError:
             raise ExecutorSyntaxException
         except TimeoutError:

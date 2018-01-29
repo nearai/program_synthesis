@@ -106,7 +106,11 @@ class Parser(object):
         self.call_counter = [0]
         # TODO: Turn Karel object into argument of the function created by the
         # parser so that the parser output can be cached.
-        return self.yacc.parse(code, **kwargs)()
+        if isinstance(code, (list, tuple)):
+            return self.yacc.parse(None,
+                    tokenfunc=self.token_list_to_tokenfunc(code), **kwargs)()
+        else:
+            return self.yacc.parse(code, **kwargs)()
 
     def new_game(self, **kwargs):
         self.karel = Karel(debug=self.debug, rng=self.rng, **kwargs)

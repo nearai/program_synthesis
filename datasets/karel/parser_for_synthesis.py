@@ -1,16 +1,32 @@
 from __future__ import print_function
 
+import ply.lex
+
 from .parser_base import dummy, get_hash, parser_prompt, Parser
 from .utils import KarelSyntaxError
+
+
+def make_token(type, value=None):
+    def f(lexpos):
+        t = ply.lex.LexToken()
+        t.type = type
+        if value is None:
+            t.value = type
+        else:
+            t.value = value
+        t.lineno = 0
+        t.lexpos = lexpos
+        return t
+    return f
 
 
 class KarelForSynthesisParser(Parser):
 
     tokens = [
-            'DEF', 'RUN', 
+            'DEF', 'RUN',
             'M_LBRACE', 'M_RBRACE', 'C_LBRACE', 'C_RBRACE', 'R_LBRACE', 'R_RBRACE',
             'W_LBRACE', 'W_RBRACE', 'I_LBRACE', 'I_RBRACE', 'E_LBRACE', 'E_RBRACE',
-            'INT', #'NEWLINE', 'SEMI', 
+            'INT', #'NEWLINE', 'SEMI',
             'WHILE', 'REPEAT',
             'IF', 'IFELSE', 'ELSE',
             'FRONT_IS_CLEAR', 'LEFT_IS_CLEAR', 'RIGHT_IS_CLEAR',
@@ -71,6 +87,48 @@ class KarelForSynthesisParser(Parser):
             t_PICK_MARKER, t_PUT_MARKER,
     ]
 
+    string_to_token_map = {
+            'DEF': make_token('DEF'),
+            'run': make_token('RUN', 'run'),
+            'm(': make_token('M_LBRACE', 'm('),
+            'm)': make_token('M_RBRACE', 'm)'),
+            'c(': make_token('C_LBRACE', 'c('),
+            'c)': make_token('C_RBRACE', 'c)'),
+            'r(': make_token('R_LBRACE', 'r('),
+            'r)': make_token('R_RBRACE', 'r)'),
+            'w(': make_token('W_LBRACE', 'w('),
+            'w)': make_token('W_RBRACE', 'w)'),
+            'i(': make_token('I_LBRACE', 'i('),
+            'i)': make_token('I_RBRACE', 'i)'),
+            'e(': make_token('E_LBRACE', 'e('),
+            'e)': make_token('E_RBRACE', 'e)'),
+            'R=2': make_token('INT', 2),
+            'R=3': make_token('INT', 3),
+            'R=4': make_token('INT', 4),
+            'R=5': make_token('INT', 5),
+            'R=6': make_token('INT', 6),
+            'R=7': make_token('INT', 7),
+            'R=8': make_token('INT', 8),
+            'R=9': make_token('INT', 9),
+            'R=10': make_token('INT', 10),
+            'WHILE': make_token('WHILE'),
+            'REPEAT': make_token('REPEAT'),
+            'IF': make_token('IF'),
+            'IFELSE': make_token('IFELSE'),
+            'ELSE': make_token('ELSE'),
+            'frontIsClear': make_token('FRONT_IS_CLEAR', 'frontIsClear'),
+            'leftIsClear': make_token('LEFT_IS_CLEAR', 'leftIsClear'),
+            'rightIsClear': make_token('RIGHT_IS_CLEAR','rightIsClear'),
+            'markersPresent': make_token('MARKERS_PRESENT', 'markersPresent'),
+            'noMarkersPresent': make_token('NO_MARKERS_PRESENT', 'noMarkersPresent'),
+            'not': make_token('NOT', 'not'),
+            'move': make_token('MOVE', 'move'),
+            'turnRight': make_token('TURN_RIGHT', 'turnRight'),
+            'turnLeft': make_token('TURN_LEFT', 'turnLeft'),
+            'pickMarker': make_token('PICK_MARKER', 'pickMarker'),
+            'putMarker': make_token('PUT_MARKER', 'putMarker'),
+    }
+
     #########
     # lexer
     #########
@@ -96,6 +154,14 @@ class KarelForSynthesisParser(Parser):
         print("Illegal character %s" % repr(t.value[0]))
         t.lexer.skip(1)
 
+    def token_list_to_tokenfunc(self, tokens):
+        tokens = [
+            self.string_to_token_map[token](i)
+            for i, token in enumerate(tokens)
+        ]
+        tokens.append(None)
+        return iter(tokens).next
+
     #########
     # parser
     #########
@@ -107,6 +173,8 @@ class KarelForSynthesisParser(Parser):
         @self.callout
         def fn():
             return stmt()
+        fn.tree = {'run': stmt.tree}
+
         p[0] = fn
 
     def p_stmt(self, p):
@@ -117,12 +185,7 @@ class KarelForSynthesisParser(Parser):
                 | if
                 | ifelse
         '''
-        function = p[1]
-
-        @self.callout
-        def fn():
-            return function()
-        p[0] = fn
+        p[0] = p[1]
 
     def p_stmt_stmt(self, p):
         '''stmt_stmt : stmt stmt
@@ -131,7 +194,12 @@ class KarelForSynthesisParser(Parser):
 
         @self.callout
         def fn():
-            stmt1(); stmt2();
+            stmt1() ;stmt2()
+
+        if isinstance(stmt2.tree, list):
+            fn.tree =  [stmt1.tree] + stmt2.tree
+        else:
+            fn.tree = [stmt1.tree, stmt2.tree]
         p[0] = fn
 
     def p_if(self, p):
@@ -161,6 +229,7 @@ class KarelForSynthesisParser(Parser):
                     out = dummy()
                 return out
 
+        fn.tree = {'type': 'if', 'cond': cond.tree, 'body': stmt.tree}
         p[0] = fn
 
     def p_ifelse(self, p):
@@ -192,6 +261,8 @@ class KarelForSynthesisParser(Parser):
                     out = stmt2()
                 return out
 
+        fn.tree = {'type': 'ifElse', 'cond': cond.tree, 'ifBody': stmt1.tree,
+                'elseBody': stmt2.tree}
         p[0] = fn
 
     def p_while(self, p):
@@ -214,6 +285,8 @@ class KarelForSynthesisParser(Parser):
             def fn():
                 while(cond()):
                     stmt()
+        fn.tree = {'type': 'while', 'cond': cond.tree, 'body': stmt.tree,
+                'span': (p.lexpos(1), p.lexpos(7) + 1)}
         p[0] = fn
 
     def p_repeat(self, p):
@@ -236,6 +309,9 @@ class KarelForSynthesisParser(Parser):
             def fn():
                 for _ in range(cste()):
                     stmt()
+
+        fn.tree = {'type': 'repeat', 'times': cste.tree, 'body': stmt.tree,
+                'span': (p.lexpos(1), p.lexpos(5))}
         p[0] = fn
 
     def p_cond(self, p):
@@ -243,12 +319,12 @@ class KarelForSynthesisParser(Parser):
                 | NOT C_LBRACE cond_without_not C_RBRACE
         '''
         if callable(p[1]):
-            cond_without_not = p[1]
-            fn = lambda: cond_without_not()
-            p[0] = fn
+            p[0] = p[1]
         else: # NOT
             cond_without_not = p[3]
             fn = lambda: not cond_without_not()
+            fn.tree = {'type': 'not', 'cond': cond_without_not.tree, 'span':
+                    (p.lexpos(1), p.lexpos(4) + 1)}
             p[0] = fn
 
     def p_cond_without_not(self, p):
@@ -262,6 +338,10 @@ class KarelForSynthesisParser(Parser):
         karel = self.karel
         def fn():
             return getattr(karel, cond_without_not)()
+        fn.tree = {
+            'type': cond_without_not,
+            'span': (p.lexpos(1), p.lexpos(1) + 1)
+        }
 
         p[0] = fn
 
@@ -276,13 +356,17 @@ class KarelForSynthesisParser(Parser):
         karel = self.karel
         def fn():
             return getattr(karel, action)()
+        fn.tree = {'type': action, 'span': (p.lexpos(1), p.lexpos(1) + 1)}
         p[0] = fn
 
     def p_cste(self, p):
         '''cste : INT
         '''
         value = p[1]
-        p[0] = lambda: int(value)
+        def fn():
+            return int(value)
+        fn.tree = {'count': value, 'span': (p.lexpos(1), p.lexpos(1) + 1)}
+        p[0] = fn
 
     def p_error(self, p):
         if p:
