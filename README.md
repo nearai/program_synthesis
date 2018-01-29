@@ -20,7 +20,7 @@ Train a model with SGD:
 python train.py --dataset karel --model_type karel-lgrl \
   --debug_every_n=10000 --eval_every_n=10000 --keep_every_n=50000
   --log_interval=1000 --batch_size 128 --num_epochs 100 \
-  --optimizer sgd --clip 1 --lr 1 --lr_decay_steps 100000 --lr_decay_rate 0.7 \
+  --optimizer sgd --gradient-clip 1 --lr 1 --lr_decay_steps 100000 --lr_decay_rate 0.7 \
   --model_dir logdirs/karel-sgd-cl1-lr1-lds100k-ldr0.7
 ```
 
