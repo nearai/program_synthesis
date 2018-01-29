@@ -13,7 +13,7 @@ import torch.nn.functional as F
 
 from pytorch_tools import torchfold
 
-from datasets import data
+from datasets import data, executor
 from tools import saver
 
 
@@ -169,3 +169,25 @@ class BaseCodeModel(BaseModel):
         self.last_vocab = data.PlaceholderVocab(
             self.vocab, self.args.num_placeholders)
         return self.last_vocab
+
+    def _try_sequences(self, vocab, sequences, batch, beam_size):
+        result = [[] for _ in range(len(batch))]
+        counters = [0 for _ in range(len(batch))]
+        candidates = [[] for _ in range(len(batch))]
+        max_eval_trials = self.args.max_eval_trials or beam_size
+        for batch_id, outputs in enumerate(sequences):
+            example = batch[batch_id]
+            #print("===", example.code_tree)
+            for ids in outputs[:max_eval_trials]:
+                code = [vocab.itos(idx) for idx in ids]
+                counters[batch_id] += 1
+                candidates[batch_id].append(code)
+                stats = executor.evaluate_code(
+                    code, example.schema.args, example.input_tests, self.executor.execute)
+                ok = (stats['correct'] == stats['total'])
+                #print(code, stats)
+                if ok:
+                    result[batch_id] = code
+                    break
+        return [InferenceResult(code_sequence=seq, info={'trees_checked': c, 'candidates': cand})
+                for seq, c, cand in zip(result, counters, candidates)]
