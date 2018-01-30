@@ -178,10 +178,10 @@ class BaseCodeModel(BaseModel):
         for batch_id, outputs in enumerate(sequences):
             example = batch[batch_id]
             #print("===", example.code_tree)
-            for ids in outputs[:max_eval_trials]:
-                code = [vocab.itos(idx) for idx in ids]
+            candidates[batch_id] = [[vocab.itos(idx) for idx in ids]
+                                    for ids in outputs]
+            for code in candidates[batch_id][:max_eval_trials]:
                 counters[batch_id] += 1
-                candidates[batch_id].append(code)
                 stats = executor.evaluate_code(
                     code, example.schema.args, example.input_tests, self.executor.execute)
                 ok = (stats['correct'] == stats['total'])
