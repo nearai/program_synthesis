@@ -26,11 +26,12 @@ def to_latex_plot(values):
 
 class EvalReport(object):
 
-    def __init__(self, tag, show_info=True):
+    def __init__(self, tag, show_info=True, report_path=None):
         self.tag = tag
         self.report = []
         self.stats = {'total': 0, 'correct': 0, 'syntax-error': 0, 'runtime-exception': 0}
         self.show_info = show_info
+        self.report_path = report_path
 
     def add_example(self, example, code, st):
         self.report.append((example, code, st))
@@ -60,8 +61,12 @@ class EvalReport(object):
             f.write("</body></html>")
 
     def save(self):
-        timestamp = int(time.time())
-        with open('reports/report-%s-%s.json' % (self.tag, timestamp), 'w') as f:
+        if self.report_path:
+            report_path = self.report_path
+        else:
+            timestamp = int(time.time())
+            report_path = 'reports/report-%s-%s.json' % (self.tag, timestamp)
+        with open(report_path, 'w') as f:
             f.write(json.dumps(self.stats) + "\n")
             for example, res, st in self.report:
                 f.write(json.dumps({
@@ -133,7 +138,8 @@ class EvalReport(object):
             self.show_example(example, res, st)
 
 
-def run_eval(tag, dataset, inference, do_execute, show_info=True):
+def run_eval(tag, dataset, inference, do_execute, show_info=True,
+        report_path=None):
     """Runs inference of given model on eval set, and executes resulting code.
 
     Args:
@@ -143,7 +149,7 @@ def run_eval(tag, dataset, inference, do_execute, show_info=True):
         do_execute: func, runs given code with given arguments.
         show_info: Show specific example additional information.
     """
-    report = EvalReport(tag=tag, show_info=show_info)
+    report = EvalReport(tag=tag, show_info=show_info, report_path=report_path)
     try:
         for batch in dataset:
             start = time.time()

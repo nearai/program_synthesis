@@ -86,6 +86,7 @@ def get_arg_parser(title, mode):
         eval_group.add_argument('--refine-iters', type=int, default=1)
         eval_group.add_argument('--eval-train', action='store_true', default=False)
         eval_group.add_argument('--hide-example-info', action='store_true', default=False)
+        eval_group.add_argument('--report-path')
 
     infer_group = parser.add_argument_group('infer')
     infer_group.add_argument('--max_decoder_length', type=int, default=100)

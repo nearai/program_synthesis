@@ -34,13 +34,14 @@ def evaluate(args):
 
     evaluation.run_eval(
         args.tag, eval_dataset, m.inference,
-        current_executor.execute, not args.hide_example_info)
+        current_executor.execute, not args.hide_example_info,
+        args.report_path)
 
 
 if __name__ == "__main__":
     parser = arguments.get_arg_parser('Evaluating Text2Code', 'eval')
 
-    args, _ = parser.parse_known_args(sys.argv)
+    args = parser.parse_args()
     args.cuda = not args.no_cuda and torch.cuda.is_available()
     if not args.model_type or (not args.model_dir and args.model_type != 'search'):
         raise ValueError("Specify model_dir and model_type")
