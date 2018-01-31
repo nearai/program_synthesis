@@ -15,6 +15,27 @@ def draw2d(array):
 def border_mask(array, value):
     array[0,:], array[-1,:], array[:,0], array[:,-1] = value, value, value, value
 
+def event_callback(block_name, block_span,  cond_span, cond_value,
+        selected_span):
+    '''
+    block_name: if, ifElse, while, repeat
+    block_span: (m, n) where
+    - m: index of IF/IFELSE/WHILE/REPEAT
+    - n: index of i) e) w) r)
+    cond_span: (m, n) where
+    - m: index of first token in condition/repetitions (excluding "c(")
+    - n: index of last token in condition/repetitions (excluding "c)")
+    cond_value: True, False, or number
+    selected_span: (m, n) where
+      if cond_value is True or number < repetitions
+      - m: index of i( w( r(
+      - n: index of i) w) r)
+      else
+      - m: block_span[1] or index of e(
+      - n: block_span[1] or index of e)
+  '''
+    raise NotImplementedError
+
 
 class KarelRuntime(object):
     HERO_CHARS = u'↑→↓←'
@@ -35,6 +56,11 @@ class KarelRuntime(object):
             self.action_callback = lambda *args: None
         else:
             self.action_callback = action_callback
+
+        if event_callback is None:
+            self.event_callback = lambda *args: None
+        else:
+            self.event_callback = event_callback
 
         # Indiator array of size 15 x height x width (4 <= height, width <= 18)
         # 1st axis:
@@ -57,6 +83,7 @@ class KarelRuntime(object):
         self.world = None
         self.hero_pos = None
         self.hero_dir = None
+        self.nonwalls = None
 
     def init_randomly(self, world_size, max_marker_in_cell,  wall_ratio,
         marker_ratio, rng=None):
@@ -96,6 +123,7 @@ class KarelRuntime(object):
         #self.world = np.pad(self.world, ((0, 0), (0, 18 - self.world.shape[0]),
         #                                 (0, 18 - self.world.shape[1])),
         #                    'constant', 0)
+        self.compute_nonwalls()
 
 
     def draw(self, prefix="", skip_number=False, with_color=False, no_print=False):
@@ -137,6 +165,10 @@ class KarelRuntime(object):
         if len(direction) > 1:
             raise ValueError('Invalid state: too many hero directions')
         self.hero_dir = direction[0]
+        self.compute_nonwalls()
+
+    def compute_nonwalls(self):
+        self.nonwalls = np.logical_not(self.world[4:6].any(axis=0))
 
     def draw_exception(self, exception):
         pass
@@ -144,7 +176,7 @@ class KarelRuntime(object):
     def hero_char(self):
         return self.HERO_CHARS[self.hero_dir]
 
-    def move(self):
+    def move(self, metadata=None):
         '''Move'''
         if not self.frontIsClear():
             retval = False
@@ -154,26 +186,26 @@ class KarelRuntime(object):
             self.world[self.hero_dir][tuple(self.hero_pos)] = True
             retval = True
 
-        self.action_callback('move', retval)
+        self.action_callback('move', retval, metadata)
         return retval
 
-    def turn_left(self):
+    def turn_left(self, metadata=None):
         '''Turn left'''
         self.world[self.hero_dir][tuple(self.hero_pos)] = False
         self.hero_dir -= 1
         self.hero_dir %= 4
         self.world[self.hero_dir][tuple(self.hero_pos)] = True
-        self.action_callback('turnLeft', True)
+        self.action_callback('turnLeft', True, metadata)
 
-    def turn_right(self):
+    def turn_right(self, metadata=None):
         '''Turn right'''
         self.world[self.hero_dir][tuple(self.hero_pos)] = False
         self.hero_dir += 1
         self.hero_dir %= 4
         self.world[self.hero_dir][tuple(self.hero_pos)] = True
-        self.action_callback('turnRight', True)
+        self.action_callback('turnRight', True, metadata)
 
-    def pick_marker(self):
+    def pick_marker(self, metadata=None):
         '''Pick marker'''
         marker_info = self.world[6:15, self.hero_pos[0], self.hero_pos[1]]
         if marker_info[0]:
@@ -185,10 +217,10 @@ class KarelRuntime(object):
             marker_info[:] = np.roll(marker_info, shift=-1)
             retval = True
 
-        self.action_callback('pickMarker', retval)
+        self.action_callback('pickMarker', retval, metadata)
         return retval
 
-    def put_marker(self):
+    def put_marker(self, metadata=None):
         '''Put marker'''
         marker_info = self.world[6:15, self.hero_pos[0], self.hero_pos[1]]
         if not np.any(marker_info):
@@ -200,23 +232,23 @@ class KarelRuntime(object):
             marker_info[:] = np.roll(marker_info, shift=1)
             retval = True
 
-        self.action_callback('putMarker', retval)
+        self.action_callback('putMarker', retval, metadata)
         return retval
 
     def front_is_clear(self):
         '''Check front is clear'''
         next_pos = self.hero_pos + self.DIRECTIONS[self.hero_dir]
-        return not self.world[4:6, next_pos[0], next_pos[1]].any()
+        return self.nonwalls[next_pos[0], next_pos[1]]
 
     def left_is_clear(self):
         '''Check left is clear'''
         next_pos = self.hero_pos + self.DIRECTIONS[(self.hero_dir - 1) % 4]
-        return not self.world[4:6, next_pos[0], next_pos[1]].any()
+        return self.nonwalls[next_pos[0], next_pos[1]]
 
     def right_is_clear(self):
         '''Check right is clear'''
         next_pos = self.hero_pos + self.DIRECTIONS[(self.hero_dir + 1) % 4]
-        return not self.world[4:6, next_pos[0], next_pos[1]].any()
+        return self.nonwalls[next_pos[0], next_pos[1]]
 
     def markers_present(self):
         '''Check markers present'''

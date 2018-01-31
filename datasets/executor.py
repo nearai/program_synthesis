@@ -2,6 +2,7 @@ import collections
 import traceback
 
 import numpy as np
+import pylru
 
 from karel import KarelForSynthesisParser, KarelSyntaxError, TimeoutError
 
@@ -54,33 +55,49 @@ class KarelExecutor(object):
     def __init__(self, action_limit=1000):
         self.parser = KarelForSynthesisParser()
         self.action_limit = action_limit
+        self.code_cache = pylru.lrucache(100000)
 
-    def execute(self, code, arguments, inp, record_trace=False):
+    def execute(self, code, arguments, inp, record_trace=False, strict=True):
+        if not isinstance(code, tuple):
+            code = tuple(code)
+
         field = np.zeros((15, 18, 18), dtype=np.bool)
         field.ravel()[inp] = True
 
         trace = []
         successes = []
-        actions_taken = [0]
+        steps_taken = [0]
         if record_trace:
-            def action_callback(action_name, success):
+            def action_callback(action_name, success, metadata):
                 trace.events.append(KarelEvent(timestep=len(trace.grids),
                     type=action_name, success=success))
                 trace.grids.append(np.where(field.ravel())[0].tolist())
                 successes.append(success)
-                actions_taken[0] += 1
-                if actions_taken[0] > self.action_limit:
+                steps_taken[0] += 1
+                if steps_taken[0] > self.action_limit:
                     raise ExecutorRuntimeException
         else:
-            def action_callback(action_name, success):
-                actions_taken[0] += 1
-                if actions_taken[0] > self.action_limit:
+            def action_callback(action_name, success, metadata):
+                successes.append(success)
+                steps_taken[0] += 1
+                if steps_taken[0] > self.action_limit:
                     raise ExecutorRuntimeException
+
+        def event_callback(block_name, *args):
+            steps_taken[0] += 1
+            if steps_taken[0] > self.action_limit:
+                raise ExecutorRuntimeException
 
         self.parser.karel.init_from_array(field)
         self.parser.karel.action_callback = action_callback
+        self.parser.karel.event_callback = event_callback
         try:
-            self.parser.run(code, debug=False)
+            if code not in self.code_cache:
+                compiled = self.parser.parse(code, debug=False)
+                self.code_cache[code] = compiled
+            else:
+                compiled = self.code_cache[code]
+            compiled()
         except KarelSyntaxError:
             raise ExecutorSyntaxException
         except TimeoutError:

@@ -4,6 +4,7 @@ ipython
 numpy==1.13
 ply
 prompt_toolkit
+pylru
 pyparsing
 tensorflow
 torch

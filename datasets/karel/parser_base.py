@@ -17,9 +17,14 @@ class Parser(object):
     tokens = ()
     precedence = ()
 
-    def __init__(self, rng=None, min_int=0, max_int=19,
-                 max_func_call=100, debug=False, **kwargs):
-
+    def __init__(self,
+                 rng=None,
+                 min_int=0,
+                 max_int=19,
+                 debug=False,
+                 build_tree=False,
+                 record_cond_blocks=False,
+                 **kwargs):
         self.names = {}
         self.debug = debug
 
@@ -43,7 +48,8 @@ class Parser(object):
         self.debug = debug
         self.min_int = min_int
         self.max_int = max_int
-        self.max_func_call = max_func_call
+        self.build_tree = build_tree
+        self.record_cond_blocks = record_cond_blocks
         self.int_range = list(range(min_int, max_int+1))
 
         int_tokens = ['INT{}'.format(num) for num in self.int_range]
@@ -58,8 +64,6 @@ class Parser(object):
                 token:idx for idx, token in self.idx_to_token_details.items() }
 
         self.rng = get_rng(rng)
-        self.flush_hit_info()
-        self.call_counter = [0]
         self.karel = KarelRuntime()
 
     def lex_to_idx(self, code, details=False):
@@ -89,8 +93,7 @@ class Parser(object):
         return self.karel.state
 
     def parse(self, code,  **kwargs):
-        # TODO: Turn Karel object into argument of the function created by the
-        # parser so that the parser output can be cached.
+        self.cond_block_spans = []
         if isinstance(code, (list, tuple)):
             return self.yacc.parse(None,
                     tokenfunc=self.token_list_to_tokenfunc(code), **kwargs)
@@ -98,7 +101,6 @@ class Parser(object):
             return self.yacc.parse(code, **kwargs)
 
     def run(self, code, **kwargs):
-        self.call_counter = [0]
         return self.parse(code, **kwargs)()
 
     def draw(self, *args, **kwargs):
@@ -107,7 +109,7 @@ class Parser(object):
     def draw_for_tensorboard(self):
         return "\t" + "\n\t".join(self.draw(no_print=True))
 
-    def random_code(self, create_hit_info=False, *args, **kwargs):
+    def random_code(self, *args, **kwargs):
         code = " ".join(self.random_tokens(*args, **kwargs))
 
         # check minimum # of move()
@@ -127,11 +129,6 @@ class Parser(object):
             for idx in idxes:
                 tokens[idx] = self.t_MOVE
             code = " ".join(tokens)
-
-        if create_hit_info:
-            self.hit_info = defaultdict(int)
-        else:
-            self.hit_info = None
 
         return code
 
@@ -170,12 +167,6 @@ class Parser(object):
 
     def flush_hit_info(self):
         self.hit_info = None
-
-def dummy():
-    pass
-
-def get_hash():
-    return random.getrandbits(128)
 
 def parser_prompt(parser):
     import argparse
