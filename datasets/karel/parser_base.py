@@ -6,7 +6,7 @@ from functools import wraps
 from collections import defaultdict
 
 from . import yacc
-from .karel import Karel
+from .karel_runtime import KarelRuntime
 from .utils import pprint, timeout, get_rng, str2bool, TimeoutError
 
 
@@ -75,6 +75,7 @@ class Parser(object):
             return wrapped
 
         self.callout = callout
+        self.karel = None
 
     def lex_to_idx(self, code, details=False):
         tokens = []
@@ -118,7 +119,7 @@ class Parser(object):
 
 
     def new_game(self, **kwargs):
-        self.karel = Karel(debug=self.debug, rng=self.rng, **kwargs)
+        self.karel = KarelRuntime(debug=self.debug, rng=self.rng, **kwargs)
 
     def draw(self, *args, **kwargs):
         return self.karel.draw(*args, **kwargs)

@@ -37,7 +37,7 @@ def marker_action(func):
 world_condition = marker_action
 
 
-class Karel(object):
+class KarelRuntime(object):
     HERO_CHARS = u'↑→↓←'
     HERO_COMB_CHARS = u'\u0305\u0355\u0322\u0354'
     WALL_CHAR = u'█'
