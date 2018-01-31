@@ -21,7 +21,7 @@ class Parser(object):
                  max_func_call=100, debug=False, **kwargs):
 
         self.names = {}
-        self.debug = kwargs.get('debug', 0)
+        self.debug = debug
 
         # Build the lexer and parser
         modname = self.__class__.__name__
@@ -49,9 +49,6 @@ class Parser(object):
         int_tokens = ['INT{}'.format(num) for num in self.int_range]
         self.tokens_details = list(set(self.tokens) - set(['INT'])) + int_tokens
 
-        #self.idx_to_token = { idx: token for idx, token in enumerate(tokens) }
-        #self.token_to_idx = { token:idx for idx, token in idx_to_token.items() }
-
         self.tokens_details.sort()
         self.tokens_details = ['END'] + self.tokens_details
 
@@ -63,19 +60,7 @@ class Parser(object):
         self.rng = get_rng(rng)
         self.flush_hit_info()
         self.call_counter = [0]
-
-        def callout(f):
-            @wraps(f)
-            def wrapped(*args, **kwargs):
-                if self.call_counter[0] > self.max_func_call:
-                    raise TimeoutError
-                r = f(*args, **kwargs)
-                self.call_counter[0] += 1
-                return r
-            return wrapped
-
-        self.callout = callout
-        self.karel = None
+        self.karel = KarelRuntime()
 
     def lex_to_idx(self, code, details=False):
         tokens = []
@@ -112,14 +97,9 @@ class Parser(object):
         else:
             return self.yacc.parse(code, **kwargs)
 
-
     def run(self, code, **kwargs):
         self.call_counter = [0]
         return self.parse(code, **kwargs)()
-
-
-    def new_game(self, **kwargs):
-        self.karel = KarelRuntime(debug=self.debug, rng=self.rng, **kwargs)
 
     def draw(self, *args, **kwargs):
         return self.karel.draw(*args, **kwargs)
@@ -190,7 +170,6 @@ class Parser(object):
 
     def flush_hit_info(self):
         self.hit_info = None
-
 
 def dummy():
     pass

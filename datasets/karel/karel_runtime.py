@@ -15,27 +15,6 @@ def draw2d(array):
 def border_mask(array, value):
     array[0,:], array[-1,:], array[:,0], array[:,-1] = value, value, value, value
 
-def hero_action(func):
-    def fn(*args, **kwargs):
-        self = args[0]
-        out = func(self)
-        if self.debug:
-            print(func.__doc__, out)
-            self.draw()
-        return out
-    return fn
-
-def marker_action(func):
-    def fn(*args, **kwargs):
-        self = args[0]
-        out = func(self)
-        if self.debug:
-            print(func.__doc__, out)
-        return out
-    return fn
-
-world_condition = marker_action
-
 
 class KarelRuntime(object):
     HERO_CHARS = u'↑→↓←'
@@ -51,13 +30,7 @@ class KarelRuntime(object):
         (0,  -1),  # west
     )
 
-    def __init__(
-            self, state=None, world_size=None, world_path=None, rng=None,
-            wall_ratio=0.1, marker_ratio=0.1, max_marker_in_cell=1, debug=False,
-            action_callback=None):
-
-        self.debug = debug
-        self.rng = get_rng(rng)
+    def __init__(self,  action_callback=None):
         if action_callback is None:
             self.action_callback = lambda *args: None
         else:
@@ -85,31 +58,9 @@ class KarelRuntime(object):
         self.hero_pos = None
         self.hero_dir = None
 
-        if state is not None:
-            self.parse_state(state)
-        elif world_path is not None:
-            self.parse_world(world_path)
-        elif world_size is not None:
-            self.random_world(world_size, max_marker_in_cell, wall_ratio, marker_ratio)
-        else:
-            raise Exception(" [!] one of `world_size`, `world_path` and `world` should be passed")
-
-        if self.debug: self.draw()
-
-    def __enter__(self):
-        self.start_screen()
-        return self
-
-    def __exit__(self, *args):
-        self.end_screen()
-
-    def start_screen(self):
-        pass
-
-    def end_screen(self):
-        pass
-
-    def random_world(self, world_size, max_marker_in_cell, wall_ratio, marker_ratio):
+    def init_randomly(self, world_size, max_marker_in_cell,  wall_ratio,
+        marker_ratio, rng=None):
+        rng = get_rng(rng)
         height, width = world_size
 
         if height < 2 or width < 2:
@@ -121,20 +72,20 @@ class KarelRuntime(object):
         self.world = np.zeros((15, height + 2, width + 2), dtype=np.bool)
 
         # internal walls
-        wall_array = self.rng.rand(height + 2, width + 2)
+        wall_array = rng.rand(height + 2, width + 2)
         self.world[4][wall_array < wall_ratio] = 1
         # external wall
         border_mask(self.world[5], 1)
 
         # hero
-        x = self.rng.randint(1, width)
-        y =  self.rng.randint(1, height)
+        x = rng.randint(1, width)
+        y = rng.randint(1, height)
         self.hero_pos = np.array([y, x])
-        self.hero_dir = self.rng.randint(4)
+        self.hero_dir = rng.randint(4)
         self.world[self.hero_dir, y, x] = 1
 
         # markers
-        marker_array = self.rng.rand(height + 2, width + 2)
+        marker_array = rng.rand(height + 2, width + 2)
         marker_array = (wall_array >= wall_ratio) & (marker_array < marker_ratio)
         border_mask(marker_array, False)
 
@@ -172,7 +123,7 @@ class KarelRuntime(object):
     def state(self):
         return self.world
 
-    def parse_state(self, state):
+    def init_from_array(self, state):
         ys, xs = np.where(state[5])
         height, width = ys.max() + 1, xs.max() + 1
         self.world = state[:, :height, :width]
@@ -193,10 +144,9 @@ class KarelRuntime(object):
     def hero_char(self):
         return self.HERO_CHARS[self.hero_dir]
 
-    @hero_action
     def move(self):
         '''Move'''
-        if not self._front_is_clear():
+        if not self.frontIsClear():
             retval = False
         else:
             self.world[self.hero_dir][tuple(self.hero_pos)] = False
@@ -207,7 +157,6 @@ class KarelRuntime(object):
         self.action_callback('move', retval)
         return retval
 
-    @hero_action
     def turn_left(self):
         '''Turn left'''
         self.world[self.hero_dir][tuple(self.hero_pos)] = False
@@ -216,7 +165,6 @@ class KarelRuntime(object):
         self.world[self.hero_dir][tuple(self.hero_pos)] = True
         self.action_callback('turnLeft', True)
 
-    @marker_action
     def turn_right(self):
         '''Turn right'''
         self.world[self.hero_dir][tuple(self.hero_pos)] = False
@@ -225,7 +173,6 @@ class KarelRuntime(object):
         self.world[self.hero_dir][tuple(self.hero_pos)] = True
         self.action_callback('turnRight', True)
 
-    @marker_action
     def pick_marker(self):
         '''Pick marker'''
         marker_info = self.world[6:15, self.hero_pos[0], self.hero_pos[1]]
@@ -241,7 +188,6 @@ class KarelRuntime(object):
         self.action_callback('pickMarker', retval)
         return retval
 
-    @marker_action
     def put_marker(self):
         '''Put marker'''
         marker_info = self.world[6:15, self.hero_pos[0], self.hero_pos[1]]
@@ -257,39 +203,25 @@ class KarelRuntime(object):
         self.action_callback('putMarker', retval)
         return retval
 
-    @world_condition
     def front_is_clear(self):
         '''Check front is clear'''
-        return self._front_is_clear()
-
-    def _front_is_clear(self):
         next_pos = self.hero_pos + self.DIRECTIONS[self.hero_dir]
         return not self.world[4:6, next_pos[0], next_pos[1]].any()
 
-    @world_condition
     def left_is_clear(self):
         '''Check left is clear'''
-        return self._left_is_clear()
-
-    def _left_is_clear(self):
         next_pos = self.hero_pos + self.DIRECTIONS[(self.hero_dir - 1) % 4]
         return not self.world[4:6, next_pos[0], next_pos[1]].any()
 
-    @world_condition
     def right_is_clear(self):
         '''Check right is clear'''
-        return self._right_is_clear()
-
-    def _right_is_clear(self):
         next_pos = self.hero_pos + self.DIRECTIONS[(self.hero_dir + 1) % 4]
         return not self.world[4:6, next_pos[0], next_pos[1]].any()
 
-    @world_condition
     def markers_present(self):
         '''Check markers present'''
         return self.world[6:15, self.hero_pos[0], self.hero_pos[1]].any()
 
-    @world_condition
     def no_markers_present(self):
         '''Check no markers present'''
         return not self.markers_present()

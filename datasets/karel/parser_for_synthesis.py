@@ -170,7 +170,6 @@ class KarelForSynthesisParser(Parser):
         '''prog : DEF RUN M_LBRACE stmt M_RBRACE'''
         stmt = p[4]
 
-        @self.callout
         def fn():
             return stmt()
         fn.tree = {'type': 'run', 'body':  stmt.tree}
@@ -194,7 +193,6 @@ class KarelForSynthesisParser(Parser):
         '''
         stmt1, stmt2 = p[1], p[2]
 
-        @self.callout
         def fn():
             stmt1(); stmt2()
 
@@ -211,7 +209,6 @@ class KarelForSynthesisParser(Parser):
             num = get_hash()
             hit_info[num] += 1
 
-            @self.callout
             def fn():
                 if cond():
                     hit_info[num] -= 1
@@ -220,7 +217,6 @@ class KarelForSynthesisParser(Parser):
                     out = dummy()
                 return out
         else:
-            @self.callout
             def fn():
                 if cond():
                     out = stmt()
@@ -242,7 +238,6 @@ class KarelForSynthesisParser(Parser):
             hit_info[num1] += 1
             hit_info[num2] += 1
 
-            @self.callout
             def fn():
                 if cond():
                     hit_info[num1] -= 1
@@ -252,7 +247,6 @@ class KarelForSynthesisParser(Parser):
                     out = stmt2()
                 return out
         else:
-            @self.callout
             def fn():
                 if cond():
                     out = stmt1()
@@ -274,13 +268,11 @@ class KarelForSynthesisParser(Parser):
             num = get_hash()
             hit_info[num] += 1
 
-            @self.callout
             def fn():
                 while(cond()):
                     hit_info[num] -= 1
                     stmt()
         else:
-            @self.callout
             def fn():
                 while(cond()):
                     stmt()
@@ -298,13 +290,11 @@ class KarelForSynthesisParser(Parser):
             num = get_hash()
             hit_info[num] += 1
 
-            @self.callout
             def fn():
                 for _ in range(cste()):
                     hit_info[num] -= 1
                     stmt()
         else:
-            @self.callout
             def fn():
                 for _ in range(cste()):
                     stmt()

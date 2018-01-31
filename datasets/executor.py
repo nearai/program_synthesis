@@ -51,8 +51,9 @@ KarelEvent = collections.namedtuple('KarelEvent', ['timestep', 'type', 'success'
 
 class KarelExecutor(object):
 
-    def __init__(self):
-        self.parser = KarelForSynthesisParser(max_func_call=1000)
+    def __init__(self, action_limit=1000):
+        self.parser = KarelForSynthesisParser()
+        self.action_limit = action_limit
 
     def execute(self, code, arguments, inp, record_trace=False):
         field = np.zeros((15, 18, 18), dtype=np.bool)
@@ -60,20 +61,24 @@ class KarelExecutor(object):
 
         trace = []
         successes = []
+        actions_taken = [0]
         if record_trace:
             def action_callback(action_name, success):
                 trace.events.append(KarelEvent(timestep=len(trace.grids),
                     type=action_name, success=success))
                 trace.grids.append(np.where(field.ravel())[0].tolist())
                 successes.append(success)
+                actions_taken[0] += 1
+                if actions_taken[0] > self.action_limit:
+                    raise ExecutorRuntimeException
         else:
             def action_callback(action_name, success):
-                pass
+                actions_taken[0] += 1
+                if actions_taken[0] > self.action_limit:
+                    raise ExecutorRuntimeException
 
-        # TODO provide code as list instead of as string
-        self.parser.new_game(
-            state=field,
-            action_callback=action_callback)
+        self.parser.karel.init_from_array(field)
+        self.parser.karel.action_callback = action_callback
         try:
             self.parser.run(code, debug=False)
         except KarelSyntaxError:
