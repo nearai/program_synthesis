@@ -18,6 +18,17 @@ def str_to_arr(s):
     return field
 
 
+class Timeout(object):
+    def __init__(self, max_steps):
+        self.max_steps = max_steps
+        self.steps = 0
+
+    def inc(self):
+        self.steps += 1
+        if self.steps >= self.max_steps:
+            raise TimeoutError
+
+
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--input', required=True)
@@ -29,35 +40,38 @@ if __name__ == '__main__':
         f = itertools.islice(f, args.limit)
 
     failures = collections.defaultdict(int)
-    parser = KarelForSynthesisParser(max_func_call=1000)
+    parser = KarelForSynthesisParser(build_tree=True)
     for line in tqdm.tqdm(f):
         obj = json.loads(line)
         code = obj['program_tokens']
-        #code = ' '.join(obj['program_tokens'])
+        parsed = parser.parse(code, debug=False)
+        reconstructed_tokens = [unicode(s) for s in
+                tree_to_tokens(parsed.tree)]
+        if reconstructed_tokens != code:
+            import IPython
+            IPython.embed()
 
         for ex in obj['examples']:
             actions = []
+            timeout = Timeout(1000)
             full_state = str_to_arr(ex['inpgrid_tensor'])
-            parser.new_game(
-                state=full_state,
-                action_callback=lambda *args: actions.append(args))
-            parsed = parser.parse(code, debug=False)
 
-            parser.call_counter = [0]
-            parsed()
-            reconstructed_tokens = [unicode(s) for s in
-                    tree_to_tokens(parsed.tree)]
-            if reconstructed_tokens != code:
-                import IPython
-                IPython.embed()
-
-            for name, success in actions:
+            def action_callback(name, success, metadata):
+                actions.append(unicode(name))
                 if not success:
                     failures[name] += 1
+                timeout.inc()
+            def event_callback(*args):
+                timeout.inc()
 
-            actions_for_comp = [unicode(name) for name, _ in actions]
+
+            parser.karel.init_from_array(full_state)
+            parser.karel.action_callback = action_callback
+            parser.karel.event_callback = event_callback
+            parsed()
+
             if (not np.all(full_state == str_to_arr(ex['outgrid_tensor'])) or
-                    actions_for_comp != ex['actions']):
+                    actions != ex['actions']):
                 print zip(*np.where(
                     full_state != str_to_arr(ex['outgrid_tensor'])))
                 import IPython

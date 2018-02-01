@@ -350,14 +350,14 @@ class KarelForSynthesisParser(Parser):
                   | PICK_MARKER
                   | PUT_MARKER
         '''
-        action = p[1]
+        action_name = p[1]
         karel = self.karel
         if self.build_tree:
             def action():
-                return getattr(karel, action)()
-            action.tree = {'type': action}
+                return getattr(karel, action_name)()
+            action.tree = {'type': action_name}
         else:
-            action = getattr(karel, action)
+            action = getattr(karel, action_name)
         p[0] = action
 
     def p_cste(self, p):
