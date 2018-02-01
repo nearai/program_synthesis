@@ -102,6 +102,8 @@ class KarelExecutor(object):
             raise ExecutorSyntaxException
         except TimeoutError:
             raise ExecutorRuntimeException
+        if strict and not all(successes):
+            raise ExecutorRuntimeException
 
         return ExecutionResult(np.where(field.ravel())[0].tolist(), trace)
 

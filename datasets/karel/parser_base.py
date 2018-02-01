@@ -23,7 +23,6 @@ class Parser(object):
                  max_int=19,
                  debug=False,
                  build_tree=False,
-                 record_cond_blocks=False,
                  **kwargs):
         self.names = {}
         self.debug = debug
@@ -49,7 +48,6 @@ class Parser(object):
         self.min_int = min_int
         self.max_int = max_int
         self.build_tree = build_tree
-        self.record_cond_blocks = record_cond_blocks
         self.int_range = list(range(min_int, max_int+1))
 
         int_tokens = ['INT{}'.format(num) for num in self.int_range]
