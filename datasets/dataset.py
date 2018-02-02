@@ -13,6 +13,7 @@ import time
 import data
 import executor
 import stats
+from karel.mutation import KarelExampleMutator
 
 
 Schema = collections.namedtuple("Schema", ["args", "return_type"])
@@ -389,10 +390,11 @@ class NearDataset(Dataset):
 
 class KarelDataset(object):
 
-    def __init__(self, filename, batch_size):
+    def __init__(self, filename, batch_size, mutator=lambda x: x):
         self.filename = filename
         self.batch_size = batch_size
         self.file = open(self.filename)
+        self.mutator = mutator
 
     def __iter__(self):
         self.file.seek(0)
@@ -402,7 +404,9 @@ class KarelDataset(object):
         res = []
         try:
             while len(res) < self.batch_size:
-                res.append(KarelExample.from_dict(pickle.load(self.file)))
+                res.append(
+                    self.mutator(
+                        KarelExample.from_dict(pickle.load(self.file))))
         except EOFError:
             pass
         if not res:
@@ -439,12 +443,24 @@ def get_algolisp_dataset(args):
 def get_karel_dataset(args):
     suffix = args.dataset[5:]
     args.word_vocab = relpath('../data/karel/word.vocab')
+
+    if args.karel_mutate_ref:
+        mutation_dist = [float(x) for x in args.karel_mutate_n_dist.split(',')]
+        train_mutator = KarelExampleMutator(mutation_dist, rng_fixed=False,
+                add_trace=False)
+        dev_mutator = KarelExampleMutator(mutation_dist, rng_fixed=True,
+                add_trace=False)
+    else:
+        train_mutator = dev_mutator = lambda x: x
+
     train_data = KarelDataset(
-        relpath('../data/karel/train{}.pkl'.format(suffix)), args.batch_size)
+        relpath('../data/karel/train{}.pkl'.format(suffix)), args.batch_size,
+        train_mutator)
     if not os.path.exists(args.word_vocab):
         data.save_vocab(args.word_vocab, train_data.build_vocab())
     dev_data = KarelDataset(
-        relpath('../data/karel/val{}.pkl'.format(suffix)), args.batch_size)
+        relpath('../data/karel/val{}.pkl'.format(suffix)), args.batch_size,
+        dev_mutator)
     return train_data, dev_data
 
 
@@ -458,7 +474,17 @@ def get_algolisp_eval_dataset(args):
 def get_karel_eval_dataset(args):
     suffix = args.dataset[5:]
     args.word_vocab = relpath('../data/karel/word.vocab')
-    dev_data = KarelDataset(relpath('../data/karel/val{}.pkl'.format(suffix)), args.batch_size)
+
+    if args.karel_mutate_ref:
+        mutation_dist = [float(x) for x in args.karel_mutate_n_dist.split(',')]
+        dev_mutator = KarelExampleMutator(mutation_dist, rng_fixed=True,
+                add_trace=False)
+    else:
+        dev_mutator = lambda x: x
+
+    dev_data = KarelDataset(
+            relpath('../data/karel/val{}.pkl'.format(suffix)),
+            args.batch_size, dev_mutator)
     return dev_data
 
 

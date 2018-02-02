@@ -1,6 +1,7 @@
 import collections
 import copy
 import itertools
+import struct
 
 import numpy as np
 
@@ -58,29 +59,31 @@ def random_singular_block():
         return {'type': type_, 'cond': np.random.choice(conds)}
 
 
+# operations:
+# - Add action
 ADD_ACTION = 0
+# - Remove action
 REMOVE_ACTION = 1
+# - Replace action
 REPLACE_ACTION = 2
+# - Unwrap if/ifElse/while/repeat
 UNWRAP_BLOCK = 3
+# - Wrap with if/while/repeat
 WRAP_BLOCK = 4
+# - Wrap with ifElse
 WRAP_IFELSE = 5
+# - Change condition in if/ifElse/while
 REPLACE_COND = 6
+# - Switch between if/while
 SWITCH_IF_WHILE = 7
-DEFAULT_PROBS = np.array([.5, 1, 1, 1, .25, .75, 1, 1], dtype=float)
+DEFAULT_PROBS = np.array([1, 1, 1, 1, .25, .75, 1, 1], dtype=float)
 
-def mutate(tree, probs=None):
-    # operations:
-    # - Add action
-    # - Remove action
-    # - Replace action
-    # - Unwrap if/ifElse/while/repeat
-    # - Wrap with if/while/repeat
-    # - Wrap with ifElse
-    # - Change condition in if/ifElse/while
-    # - Switch between if/while
-
+def mutate(tree, probs=None, rng=None):
     if probs is None:
         probs = DEFAULT_PROBS.copy()
+    if rng is None:
+        rng = np.random.RandomState()
+
     assert len(probs) == 8
     assert tree['type'] == 'run'
 
@@ -204,13 +207,20 @@ def mutate(tree, probs=None):
     return tree
 
 
-def mutate_n(tree, count, probs=None):
+def mutate_n(tree, count, probs=None, rng=None, allow_in_place=False):
+    if rng is None:
+        rng = np.random.RandomState()
+    if count  == 1:
+        if allow_in_place:
+            return mutate(tree, probs, rng)
+        return mutate(copy.deepcopy(tree), probs, rng)
+
     previous_seqs = set([parser_for_synthesis.tree_to_tokens(tree)])
     for i in range(count):
         found = False
         for _ in range(1000):
             tree = copy.deepcopy(tree)
-            mutate(tree, probs)
+            mutate(tree, probs, rng)
             new_seq = parser_for_synthesis.tree_to_tokens(tree)
             if new_seq not in previous_seqs:
                 previous_seqs.add(new_seq)
@@ -219,6 +229,38 @@ def mutate_n(tree, count, probs=None):
         if not found:
             raise Exception('Rejection sampling failed')
     return tree
+
+
+class KarelExampleMutator(object):
+
+    def __init__(self, n_dist, rng_fixed, add_trace, probs=None):
+        self.n_dist = n_dist / np.sum(n_dist)
+        self.rng_fixed = rng_fixed
+        self.add_trace = add_trace
+        self.probs = probs
+
+        self.rng = np.random.RandomState()
+        self.parser = parser_for_synthesis.KarelForSynthesisParser(
+                build_tree=True)
+
+        assert not add_trace
+
+    def __call__(self, karel_example):
+        from ..dataset import KarelExample
+        assert karel_example.ref_example is None
+        tree = self.parser.parse(karel_example.code_sequence)
+        if self.rng_fixed:
+            self.rng.seed(int(karel_example.guid[:8], base=16))
+        n = self.rng.choice(len(self.n_dist), p=self.n_dist) + 1
+
+        new_tree = mutate_n(tree, n, self.probs, self.rng, allow_in_place=True)
+        new_code = parser_for_synthesis.tree_to_tokens(new_tree)
+        karel_example.ref_example = KarelExample(
+                guid=None,
+                code_sequence=new_code,
+                input_tests=None,
+                tests=None)
+        return karel_example
 
 
 # Obsolete notes

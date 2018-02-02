@@ -78,6 +78,7 @@ def get_arg_parser(title, mode):
 
         train_group.add_argument('--karel-trace-enc', default='lstm')
         train_group.add_argument('--karel-code-enc', default='default')
+
     elif mode == 'eval':
         eval_group = parser.add_argument_group('eval')
         eval_group.add_argument('--tag', type=str, default='')
@@ -95,6 +96,8 @@ def get_arg_parser(title, mode):
     infer_group.add_argument('--max_eval_trials', type=int)
     infer_group.add_argument('--min_prob_threshold', type=float, default=1e-5)
     infer_group.add_argument('--search-bfs', action='store_true', default=True)
+    infer_group.add_argument('--karel-mutate-ref', action='store_true')
+    infer_group.add_argument('--karel-mutate-n-dist')
 
     runtime_group = parser.add_argument_group('runtime')
     runtime_group.add_argument(

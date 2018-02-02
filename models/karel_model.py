@@ -59,9 +59,9 @@ class KarelLGRLModel(BaseCodeModel):
 
     def debug(self, batch):
         item = batch[0]
-        print("Code:  %s" % ' '.join(item.code_sequence))
+        print("Code: %s" % ' '.join(item.code_sequence))
         res, = self.inference([item])
-        print("Res:   %s" % ' '.join(res.code_sequence))
+        print("Out:  %s" % ' '.join(res.code_sequence))
 
     def inference(self, batch):
         vocab = self.reset_vocab()
@@ -190,9 +190,11 @@ class KarelLGRLRefineModel(BaseCodeModel):
 
     def debug(self, batch):
         item = batch[0]
-        print("Code:  %s" % ' '.join(item.code_sequence))
+        print("Code: %s" % ' '.join(item.code_sequence))
+        if item.ref_example:
+            print("Ref:  %s" % ' '.join(item.ref_example.code_sequence))
         res, = self.inference([item])
-        print("Res:   %s" % ' '.join(res.code_sequence))
+        print("Out:  %s" % ' '.join(res.code_sequence))
 
     def inference(self, batch):
         vocab = self.reset_vocab()
