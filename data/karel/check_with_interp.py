@@ -40,16 +40,17 @@ if __name__ == '__main__':
         f = itertools.islice(f, args.limit)
 
     failures = collections.defaultdict(int)
-    parser = KarelForSynthesisParser(build_tree=True)
+    parser_tree = KarelForSynthesisParser(build_tree=True)
+    parser = KarelForSynthesisParser(build_tree=False)
     for line in tqdm.tqdm(f):
         obj = json.loads(line)
         code = obj['program_tokens']
-        parsed = parser.parse(code, debug=False)
-        reconstructed_tokens = [unicode(s) for s in
-                tree_to_tokens(parsed.tree)]
+        tree = parser_tree.parse(code, debug=False)
+        reconstructed_tokens = [unicode(s) for s in tree_to_tokens(tree)]
         if reconstructed_tokens != code:
             import IPython
             IPython.embed()
+        parsed = parser.parse(code, debug=False)
 
         for ex in obj['examples']:
             actions = []

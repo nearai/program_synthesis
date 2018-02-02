@@ -171,9 +171,7 @@ class KarelForSynthesisParser(Parser):
         stmt = p[4]
 
         if self.build_tree:
-            def prog():
-                stmt()
-            prog.tree = {'type': 'run', 'body':  stmt.tree}
+            prog = {'type': 'run', 'body':  stmt}
         else:
             prog = stmt
 
@@ -188,20 +186,20 @@ class KarelForSynthesisParser(Parser):
                 | ifelse
         '''
         p[0] = p[1]
-        if self.build_tree and not isinstance(p[0].tree, list):
-            p[0].tree = [p[0].tree]
+        if self.build_tree and not isinstance(p[0], list):
+            p[0] = [p[0]]
 
     def p_stmt_stmt(self, p):
         '''stmt_stmt : stmt stmt
         '''
         stmt1, stmt2 = p[1], p[2]
 
-        def stmt_stmt():
-            stmt1()
-            stmt2()
-
         if self.build_tree:
-            stmt_stmt.tree = stmt1.tree + stmt2.tree
+            stmt_stmt = stmt1 + stmt2
+        else:
+            def stmt_stmt():
+                stmt1()
+                stmt2()
         p[0] = stmt_stmt
 
     def p_if(self, p):
@@ -214,15 +212,16 @@ class KarelForSynthesisParser(Parser):
 
         self.cond_block_spans.append(span)
 
-        def if_():
-            cond_value = cond()
-            self.karel.event_callback('if', span, cond.span, cond_value,
-                    true_span if cond_value else false_span)
-            if cond_value:
-                stmt()
-
         if self.build_tree:
-            if_.tree = {'type': 'if', 'cond': cond.tree, 'body': stmt.tree}
+            if_ = {'type': 'if', 'cond': cond, 'body': stmt}
+        else:
+            cond_fn, cond_span = cond
+            def if_():
+                cond_value = cond_fn()
+                self.karel.event_callback('if', span, cond_span, cond_value,
+                        true_span if cond_value else false_span)
+                if cond_value:
+                    stmt()
         p[0] = if_
 
     def p_ifelse(self, p):
@@ -235,22 +234,24 @@ class KarelForSynthesisParser(Parser):
 
         self.cond_block_spans.append(span)
 
-        def ifelse():
-            cond_value = cond()
-            self.karel.event_callback('ifElse', span, cond.span, cond_value,
-                    true_span if cond_value else false_span)
-            if cond_value:
-                stmt1()
-            else:
-                stmt2()
-
         if self.build_tree:
-            ifelse.tree = {
+            ifelse = {
                 'type': 'ifElse',
-                'cond': cond.tree,
-                'ifBody': stmt1.tree,
-                'elseBody': stmt2.tree,
+                'cond': cond,
+                'ifBody': stmt1,
+                'elseBody': stmt2,
             }
+        else:
+            cond_fn, cond_span = cond
+            def ifelse():
+                cond_value = cond_fn()
+                self.karel.event_callback('ifElse', span, cond_span, cond_value,
+                        true_span if cond_value else false_span)
+                if cond_value:
+                    stmt1()
+                else:
+                    stmt2()
+
         p[0] = ifelse
 
     def p_while(self, p):
@@ -263,65 +264,69 @@ class KarelForSynthesisParser(Parser):
 
         self.cond_block_spans.append(span)
 
-        def while_():
-            while True:
-                cond_value = cond()
-                self.karel.event_callback('while', span, cond.span, cond_value,
-                        true_span if cond_value else false_span)
-                if not cond_value:
-                    break
-                stmt()
-
         if self.build_tree:
-            while_.tree = {
+            while_ = {
                 'type': 'while',
-                'cond': cond.tree,
-                'body': stmt.tree,
+                'cond': cond,
+                'body': stmt,
             }
+        else:
+            cond_fn, cond_span = cond
+            def while_():
+                while True:
+                    cond_value = cond_fn()
+                    self.karel.event_callback('while', span, cond_span, cond_value,
+                            true_span if cond_value else false_span)
+                    if not cond_value:
+                        break
+                    stmt()
         p[0] = while_
 
     def p_repeat(self, p):
         '''repeat : REPEAT cste R_LBRACE stmt R_RBRACE
         '''
         cste, stmt = p[2], p[4]
-        span = (p.lexpos(1), p.lexpos(5))
-        true_span = (p.lexpos(3), p.lexpos(5))
-        false_span = (p.lexpos(5), p.lexpos(5))
-
-        limit = cste()
-        def repeat():
-            for i in range(limit):
-                self.karel.event_callback('repeat', span, cste.span, i,
-                                          true_span)
-                stmt()
-            self.karel.event_callback('repeat', span, cste.span, limit,
-                    false_span)
 
         if self.build_tree:
-            repeat.tree = {
+            repeat = {
                 'type': 'repeat',
-                'times': cste.tree,
-                'body': stmt.tree,
+                'times': cste,
+                'body': stmt,
             }
+        else:
+            limit = cste()
+            span = (p.lexpos(1), p.lexpos(5))
+            true_span = (p.lexpos(3), p.lexpos(5))
+            false_span = (p.lexpos(5), p.lexpos(5))
+
+            def repeat():
+                for i in range(limit):
+                    self.karel.event_callback('repeat', span, cste.span, i,
+                                              true_span)
+                    stmt()
+                self.karel.event_callback('repeat', span, cste.span, limit,
+                        false_span)
         p[0] = repeat
 
     def p_cond(self, p):
         '''cond : cond_without_not
                 | NOT C_LBRACE cond_without_not C_RBRACE
         '''
-        if callable(p[1]):
+        if p[1] != 'not':
             p[0] = p[1]
-        else: # NOT
+            return
+
+        if self.build_tree:
+            fn = {
+                'type': 'not',
+                'cond': p[3],
+            }
+        else:
             span = (p.lexpos(1), p.lexpos(4))
-            cond_without_not = p[3]
-            fn = lambda: not cond_without_not()
-            fn.span = span
-            if self.build_tree:
-                fn.tree = {
-                    'type': 'not',
-                    'cond': cond_without_not.tree,
-                }
-            p[0] = fn
+            cond_without_not, _ = p[3]
+            fn = (lambda: not cond_without_not(), span)
+
+        p[0] = fn
 
     def p_cond_without_not(self, p):
         '''cond_without_not : FRONT_IS_CLEAR
@@ -331,16 +336,13 @@ class KarelForSynthesisParser(Parser):
                             | NO_MARKERS_PRESENT
         '''
         cond_without_not = p[1]
-        span = (p.lexpos(1), p.lexpos(1))
-        karel = self.karel
-        def cond():
-            return getattr(karel, cond_without_not)()
-        cond.span = span
         if self.build_tree:
-            cond.tree = {
+            cond = {
                 'type': cond_without_not,
             }
-
+        else:
+            span = (p.lexpos(1), p.lexpos(1))
+            cond = (getattr(self.karel, cond_without_not), span)
         p[0] = cond
 
     def p_action(self, p):
@@ -351,28 +353,26 @@ class KarelForSynthesisParser(Parser):
                   | PUT_MARKER
         '''
         action_name = p[1]
-        karel = self.karel
         if self.build_tree:
-            def action():
-                return getattr(karel, action_name)()
-            action.tree = {'type': action_name}
+            action = {'type': action_name}
         else:
-            action = getattr(karel, action_name)
+            action = getattr(self.karel, action_name)
         p[0] = action
 
     def p_cste(self, p):
         '''cste : INT
         '''
         value = p[1]
-        span = (p.lexpos(1), p.lexpos(1))
-        def fn():
-            return int(value)
-        fn.span = span
         if self.build_tree:
-            fn.tree = {
+            fn = {
                 'type': 'count',
                 'value': value,
             }
+        else:
+            span = (p.lexpos(1), p.lexpos(1))
+            def fn():
+                return int(value)
+            fn.span = span
         p[0] = fn
 
     def p_error(self, p):
