@@ -9,7 +9,7 @@ import tqdm
 def str_to_arr(s):
     result = [int(v.split(':')[0]) for v in s.split(' ')]
     result.sort()
-    return result
+    return np.array(result, dtype=np.uint16)
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
