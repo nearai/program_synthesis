@@ -383,27 +383,27 @@ class KarelForSynthesisParser(Parser):
 
 
 type_to_list_fn = {
-        'run': lambda v: ['DEF', 'run', 'm('] +  tree_to_tokens(v['body']) + ['m)'],
-        'if': lambda v: ['IF', 'c('] + tree_to_tokens(v['cond']) + ['c)', 'i(']
-        + tree_to_tokens(v['body']) + ['i)'],
-        'ifElse': lambda v: ['IFELSE', 'c('] + tree_to_tokens(v['cond']) +
-        ['c)', 'i('] + tree_to_tokens(v['ifBody']) + ['i)', 'ELSE', 'e('] +
-        tree_to_tokens(v['elseBody']) + ['e)'],
-        'while': lambda v: ['WHILE', 'c('] + tree_to_tokens(v['cond']) + ['c)', 'w(']
-        + tree_to_tokens(v['body']) + ['w)'],
-        'repeat': lambda v: ['REPEAT'] + tree_to_tokens(v['times']) + ['r(']
-        + tree_to_tokens(v['body']) + ['r)'],
-        'count': lambda v: ['R={:d}'.format(v['value'])],
-        'not': lambda v: ['not', 'c('] + tree_to_tokens(v['cond']) + ['c)'],
+        'run': lambda v: ('DEF', 'run', 'm(') +  tree_to_tokens(v['body']) + ('m)',),
+        'if': lambda v: ('IF', 'c(') + tree_to_tokens(v['cond']) + ('c)', 'i(')
+        + tree_to_tokens(v['body']) + ('i)',),
+        'ifElse': lambda v: ('IFELSE', 'c(') + tree_to_tokens(v['cond']) +
+        ('c)', 'i(') + tree_to_tokens(v['ifBody']) + ('i)', 'ELSE', 'e(') +
+        tree_to_tokens(v['elseBody']) + ('e)',),
+        'while': lambda v: ('WHILE', 'c(') + tree_to_tokens(v['cond']) + ('c)', 'w(')
+        + tree_to_tokens(v['body']) + ('w)',),
+        'repeat': lambda v: ('REPEAT',) + tree_to_tokens(v['times']) + ('r(',)
+        + tree_to_tokens(v['body']) + ('r)',),
+        'count': lambda v: ('R={:d}'.format(v['value']),),
+        'not': lambda v: ('not', 'c(') + tree_to_tokens(v['cond']) + ('c)',),
 }
 for k in (KarelForSynthesisParser.conditional_functions +
         KarelForSynthesisParser.action_functions):
-    type_to_list_fn[k] = lambda v, k=k: [k]
+    type_to_list_fn[k] = lambda v, k=k: (k,)
 
 
 def tree_to_tokens(node):
     if isinstance(node, list):
-        return [token for item in node for token in tree_to_tokens(item)]
+        return tuple(token for item in node for token in tree_to_tokens(item))
     return type_to_list_fn[node['type']](node)
 
 

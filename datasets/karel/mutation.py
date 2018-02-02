@@ -1,7 +1,10 @@
 import collections
+import copy
 import itertools
 
 import numpy as np
+
+import parser_for_synthesis
 
 # Tree structure
 # - run: body
@@ -17,14 +20,6 @@ def masked_uniform(choices, i):
     prob[i] = 0
     return prob
 
-
-ADD_ACTION = 0
-REMOVE_ACTION = 1
-REPLACE_ACTION = 2
-UNWRAP_BLOCK = 3
-WRAP_BLOCK = 4
-WRAP_IFELSE = 5
-REPLACE_COND = 6
 
 conds = [{
     'type': t
@@ -63,22 +58,37 @@ def random_singular_block():
         return {'type': type_, 'cond': np.random.choice(conds)}
 
 
-def mutate(tree, probs=np.array([0.2, 0.2, 0.2, 0.1, 0.075, 0.025, 0.2])):
+ADD_ACTION = 0
+REMOVE_ACTION = 1
+REPLACE_ACTION = 2
+UNWRAP_BLOCK = 3
+WRAP_BLOCK = 4
+WRAP_IFELSE = 5
+REPLACE_COND = 6
+SWITCH_IF_WHILE = 7
+DEFAULT_PROBS = np.array([.5, 1, 1, 1, .25, .75, 1, 1], dtype=float)
+
+def mutate(tree, probs=None):
     # operations:
     # - Add action
     # - Remove action
     # - Replace action
     # - Unwrap if/ifElse/while/repeat
-    # - Wrap with if/ifElse/while/repeat
-    # - Change condition in while/if/ifelse
+    # - Wrap with if/while/repeat
+    # - Wrap with ifElse
+    # - Change condition in if/ifElse/while
+    # - Switch between if/while
 
-    assert len(probs) == 7
+    if probs is None:
+        probs = DEFAULT_PROBS.copy()
+    assert len(probs) == 8
     assert tree['type'] == 'run'
 
     action_locs = []
     cond_locs = []
     all_bodies = []
     unwrappables = []
+    all_if_whiles = []
 
     queue = collections.deque([(tree, (None, None))])
     while queue:
@@ -93,15 +103,17 @@ def mutate(tree, probs=np.array([0.2, 0.2, 0.2, 0.1, 0.075, 0.025, 0.2])):
         else:
             bodies = []
             action_locs.append(address)
+        if 'cond' in node or 'times' in node:
+            cond_locs.append(node)
+        if node['type'] in ('if', 'while'):
+            all_if_whiles.append(node)
 
         for body in bodies:
             for i, child in enumerate(body):
                 queue.append((child, (body, i)))
         all_bodies.extend(bodies)
-        if 'cond' in node or 'times' in node:
-            cond_locs.append(node)
-    bodies = None
 
+    bodies = None
     add_locs = [(body, i) for body in all_bodies for i in range(len(body) + 1)]
     remove_locs = [x for x in action_locs if len(x[0]) > 1]
 
@@ -123,9 +135,13 @@ def mutate(tree, probs=np.array([0.2, 0.2, 0.2, 0.1, 0.075, 0.025, 0.2])):
     probs[WRAP_BLOCK] *= sum(wrap_block_choices)
     probs[WRAP_IFELSE] *= sum(wrap_ifelse_choices)
     probs[REPLACE_COND] *= len(cond_locs)
-    probs /= np.sum(probs)
+    probs[SWITCH_IF_WHILE] *=  len(all_if_whiles)
+    probs_sum = np.sum(probs)
+    if probs_sum == 0:
+        raise Exception('No mutation possible')
+    probs /= probs_sum
 
-    choice = np.random.choice(7, p=probs)
+    choice = np.random.choice(8, p=probs)
     if choice == ADD_ACTION:
         body, i = add_locs[np.random.choice(len(add_locs))]
         body.insert(i, np.random.choice(actions))
@@ -171,7 +187,7 @@ def mutate(tree, probs=np.array([0.2, 0.2, 0.2, 0.1, 0.075, 0.025, 0.2])):
         }
         body.insert(left, new_block)
     elif choice == REPLACE_COND:
-        node = np.random.choice(cond_locs)
+        node = cond_locs[np.random.choice(len(cond_locs))]
         if 'cond' in node:
             node['cond'] = np.random.choice(
                 conds,
@@ -181,8 +197,29 @@ def mutate(tree, probs=np.array([0.2, 0.2, 0.2, 0.1, 0.075, 0.025, 0.2])):
             node['repeat'] = np.random.choice(
                     repeat_counts,
                     p=repeat_masked_probs[node['repeat']['times']['value']])
+    elif choice == SWITCH_IF_WHILE:
+        node = all_if_whiles[np.random.choice(len(all_if_whiles))]
+        node['type'] = {'if': 'while', 'while': 'if'}[node['type']]
 
     return tree
+
+
+def mutate_n(tree, count, probs=None):
+    previous_seqs = set([parser_for_synthesis.tree_to_tokens(tree)])
+    for i in range(count):
+        found = False
+        for _ in range(1000):
+            tree = copy.deepcopy(tree)
+            mutate(tree, probs)
+            new_seq = parser_for_synthesis.tree_to_tokens(tree)
+            if new_seq not in previous_seqs:
+                previous_seqs.add(new_seq)
+                found = True
+                break
+        if not found:
+            raise Exception('Rejection sampling failed')
+    return tree
+
 
 # Obsolete notes
 # ==============
