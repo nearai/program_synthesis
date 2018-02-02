@@ -77,41 +77,8 @@ class BaseModel(object):
     def inference(self, batch):
         raise NotImplementedError
 
-    def format_code(self, tree, seq, lang):
-        if tree is not None:
-            return data.format_code(tree, lang)
-        else:
-            try:
-                tree, complete = data.unflatten_code(seq, lang)
-            except:
-                complete = False
-            if complete:
-                return data.format_code(tree, lang)
-            return ' '.join(seq)
-
     def debug(self, batch):
-        lang = batch[0].language
-        print("Text:   %s" % ' '.join(batch[0].text))
-        if batch[0].funcs:
-            funcs = '\n'.join(
-                ['\t%s: %s' % (code_func.name, ' '.join(code_func.code_sequence))
-                 for code_func in batch[0].funcs])
-            print(funcs)
-        print("Schema: %s" % ', '.join(batch[0].schema.args))
-
-        if batch[0].candidate_code_sequence is not None:
-            print("Cand:   %s" % self.format_code_seq(
-                batch[0].candidate_code_sequence, lang))
-
-        print("Code:  %s" % self.format_code(
-            batch[0].code_tree, batch[0].code_sequence, lang))
-
-        res = self.inference([batch[0]])
-        print("Res:   %s" % self.format_code(
-            res[0].code_tree, res[0].code_sequence, lang))
-
-        if res[0].info:
-            print("Info:   %s" % res[0].info)
+        raise NotImplementedError
 
     def train(self, batch):
         self.update_lr()

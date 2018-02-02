@@ -1,14 +1,16 @@
 import argparse
+import cPickle as pickle
 import collections
+import gzip
+import json
 import os
+import random
+import struct
 import sys
+import time
 
 import numpy as np
-import cPickle as pickle
-import gzip
-import random
-import json
-import time
+import torch.utils.data
 
 import data
 import executor
@@ -165,7 +167,7 @@ class BucketizedSampler(object):
         print("Buckets: " + ", ".join(['%s: %s' % (key, len(self.bucket_ids[key])) for key in buckets]))
 
     def __len__(self):
-        return (len(self.dataset.data) - 1) // self.dataset.batch_size + 1
+        return len(self.dataset)
 
     def __iter__(self):
         if self.dataset.shuffle:
@@ -388,6 +390,32 @@ class NearDataset(Dataset):
         super(NearDataset, self).__init__(batch_size, tasks, shuffle)
 
 
+class KarelTorchDataset(torch.utils.data.Dataset):
+
+    def __init__(self, filename, mutator=lambda x: x):
+        self.filename = filename
+        self.mutator = mutator
+
+        self.file = None
+        self.index = []
+        with open(self.filename + '.index') as index_file:
+            while True:
+                offset = index_file.read(8)
+                if not offset:
+                    break
+                offset, = struct.unpack('<Q', offset)
+                self.index.append(offset)
+
+    def __len__(self):
+        return len(self.index)
+
+    def __getitem__(self, idx):
+        if self.file is None:
+            self.file = open(self.filename)
+        self.file.seek(self.index[idx])
+        return self.mutator(KarelExample.from_dict(pickle.load(self.file)))
+
+
 class KarelDataset(object):
 
     def __init__(self, filename, batch_size, mutator=lambda x: x):
@@ -453,14 +481,22 @@ def get_karel_dataset(args):
     else:
         train_mutator = dev_mutator = lambda x: x
 
-    train_data = KarelDataset(
-        relpath('../data/karel/train{}.pkl'.format(suffix)), args.batch_size,
-        train_mutator)
+    train_data = torch.utils.data.DataLoader(
+        KarelTorchDataset(
+            relpath('../data/karel/train{}.pkl'.format(suffix)),
+            train_mutator),
+        args.batch_size,
+        collate_fn=lambda x: x,
+        num_workers=4)
     if not os.path.exists(args.word_vocab):
         data.save_vocab(args.word_vocab, train_data.build_vocab())
-    dev_data = KarelDataset(
-        relpath('../data/karel/val{}.pkl'.format(suffix)), args.batch_size,
-        dev_mutator)
+    dev_data = torch.utils.data.DataLoader(
+        KarelTorchDataset(
+            relpath('../data/karel/val{}.pkl'.format(suffix)),
+            dev_mutator),
+        args.batch_size,
+        collate_fn=lambda x: x,
+        num_workers=2)
     return train_data, dev_data
 
 
@@ -482,9 +518,13 @@ def get_karel_eval_dataset(args):
     else:
         dev_mutator = lambda x: x
 
-    dev_data = KarelDataset(
+    dev_data = torch.utils.data.DataLoader(
+        KarelTorchDataset(
             relpath('../data/karel/val{}.pkl'.format(suffix)),
-            args.batch_size, dev_mutator)
+            dev_mutator),
+        args.batch_size,
+        collate_fn=lambda x: x,
+        num_workers=2)
     return dev_data
 
 
