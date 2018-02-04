@@ -16,6 +16,7 @@ def get_arg_parser(title, mode):
     parser.add_argument('--dataset_bucket', action='store_true', default=False)
     parser.add_argument('--vocab_min_freq', type=int, default=50)
     parser.add_argument('--batch_size', type=int, default=32)
+    parser.add_argument('--load-sync', action='store_true')
 
     parser.add_argument(
         '--pretrained', type=str, default='', 

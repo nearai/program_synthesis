@@ -47,6 +47,11 @@ class PackedSequencePlus(collections.namedtuple('PackedSequencePlus',
             self.sort_to_orig], [seq_lengths[i] for i in self.sort_to_orig]
         return results + tuple(t[self.sort_to_orig] for t in others_to_unsort)
 
+    def cuda(self, async=False):
+        if self.ps.data.is_cuda:
+            return self
+        return self.apply(lambda d: d.cuda(async=async))
+
 
 def sort_lists_by_length(lists):
     # lists_sorted: lists sorted by length of each element, descending

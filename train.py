@@ -15,6 +15,7 @@ import arguments
 import datasets
 import models
 import tools
+from tools import timer
 
 
 def loop_iterable(x):
@@ -35,6 +36,7 @@ def trigger_random(step, frac):
 
 def get_sampler(train_data, args):
     sampler = train_data
+    # TODO: fix this to work with the torch DataLoader.
     if args.dataset_bucket:
         buckets = [10, 50] + [x for x in range(100, 2000, 100)]
         def map_to_bucket(example):
@@ -51,11 +53,12 @@ def get_sampler(train_data, args):
 
 def train_start(args):
     print("\tModel type: %s\n\tModel path: %s" % (args.model_type, args.model_dir))
-    train_data, dev_data = datasets.get_dataset(args)
-    sampler = get_sampler(train_data, args)
-    dev_data.shuffle = True
+    datasets.set_vocab(args)
     m = models.get_model(args)
     m.model.train()
+    train_data, dev_data = datasets.get_dataset(args, m)
+    dev_data.shuffle = True
+    sampler = get_sampler(train_data, args)
     tools.save_args(args)
     return train_data, dev_data, m, sampler
 

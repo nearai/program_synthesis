@@ -20,11 +20,12 @@ def evaluate(args):
     print("\tModel type: %s\n\tModel path: %s" % (args.model_type, args.model_dir))
     tools.restore_args(args)
     arguments.backport_default_args(args)
-    if args.eval_train:
-        eval_dataset, _ = datasets.get_dataset(args)
-    else:
-        eval_dataset = datasets.get_eval_dataset(args)
+    datasets.set_vocab(args)
     m = models.get_model(args)
+    if args.eval_train:
+        eval_dataset, _ = datasets.get_dataset(args, m)
+    else:
+        eval_dataset = datasets.get_eval_dataset(args, m)
     if m.last_step == 0:
         raise ValueError('Attempting to evaluate on untrained model')
     m.model.eval()

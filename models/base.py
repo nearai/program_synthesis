@@ -114,6 +114,12 @@ class BaseModel(object):
         for param_group in self.optimizer.param_groups:
             param_group['lr'] = lr
 
+    def batch_processor(self, for_eval):
+        '''Returns a function used to process batched data for this class.'''
+        def default_processor(batch):
+            return batch
+        return default_processor
+
 
 class BaseCodeModel(BaseModel):
 

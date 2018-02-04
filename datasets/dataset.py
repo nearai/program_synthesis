@@ -138,7 +138,7 @@ class KarelExample(object):
             ref_example = KarelExample.from_dict(ref_dict)
         else:
             ref_example = None
-        return cls(d['guid'], d['code'], all_examples[:5], all_examples,
+        return cls(d['guid'], d['code'], all_examples[:5], all_examples[5:],
                 ref_example)
 
     def to_dict(self):
@@ -148,7 +148,7 @@ class KarelExample(object):
                 'in': example['input'],
                 'out': example['output'],
                 'trace_grids': example.get('trace', self._empty_trace).grids,
-            } for example in self.tests],
+            } for example in self.input_tests + self.tests],
             'code': self.code_sequence,
             'ref': self.ref_example.to_dict() if self.ref_example else None
         }
@@ -454,23 +454,20 @@ class KarelDataset(object):
         return data.get_vocab(tokens, 1)
 
 
-def get_algolisp_dataset(args):
-    args.word_vocab = relpath('../data/algolisp/word.vocab')
+
+def get_algolisp_dataset(args, _):
     train_data = NearDataset(
         relpath('../data/algolisp/dataset.train.jsonl'),
         args.batch_size, shuffle=True, max_size=args.dataset_max_size,
         max_code_length=args.dataset_max_code_length)
-    if not os.path.exists(args.word_vocab):
-        data.save_vocab(args.word_vocab, train_data.build_vocab(min_freq=args.vocab_min_freq))
     dev_data = NearDataset(
         relpath('../data/algolisp/dataset.dev.jsonl'),
         args.batch_size, shuffle=False)
     return train_data, dev_data
 
 
-def get_karel_dataset(args):
+def get_karel_dataset(args, model):
     suffix = args.dataset[5:]
-    args.word_vocab = relpath('../data/karel/word.vocab')
 
     if args.karel_mutate_ref:
         mutation_dist = [float(x) for x in args.karel_mutate_n_dist.split(',')]
@@ -486,31 +483,28 @@ def get_karel_dataset(args):
             relpath('../data/karel/train{}.pkl'.format(suffix)),
             train_mutator),
         args.batch_size,
-        collate_fn=lambda x: x,
-        num_workers=4)
-    if not os.path.exists(args.word_vocab):
-        data.save_vocab(args.word_vocab, train_data.build_vocab())
+        collate_fn=model.batch_processor(for_eval=False),
+        num_workers=0 if args.load_sync else 4,
+        pin_memory=False)
     dev_data = torch.utils.data.DataLoader(
         KarelTorchDataset(
             relpath('../data/karel/val{}.pkl'.format(suffix)),
             dev_mutator),
         args.batch_size,
-        collate_fn=lambda x: x,
-        num_workers=2)
+        collate_fn=model.batch_processor(for_eval=True),
+        num_workers=0 if args.load_sync else 2,
+        pin_memory=False)
     return train_data, dev_data
 
 
-def get_algolisp_eval_dataset(args):
-    args.word_vocab = relpath('../data/algolisp/word.vocab')
+def get_algolisp_eval_dataset(args, _):
     return NearDataset(
         relpath('../data/algolisp/dataset.dev.jsonl'),
         args.batch_size, shuffle=True, max_size=args.dataset_max_size)
 
 
-def get_karel_eval_dataset(args):
+def get_karel_eval_dataset(args, model):
     suffix = args.dataset[5:]
-    args.word_vocab = relpath('../data/karel/word.vocab')
-
     if args.karel_mutate_ref:
         mutation_dist = [float(x) for x in args.karel_mutate_n_dist.split(',')]
         dev_mutator = KarelExampleMutator(mutation_dist, rng_fixed=True,
@@ -523,25 +517,34 @@ def get_karel_eval_dataset(args):
             relpath('../data/karel/val{}.pkl'.format(suffix)),
             dev_mutator),
         args.batch_size,
-        collate_fn=lambda x: x,
-        num_workers=2)
+        collate_fn=model.batch_processor(for_eval=True),
+        num_workers=0 if args.load_sync else 2)
     return dev_data
 
 
-def get_dataset(args):
+def set_vocab(args):
     if args.dataset == 'algolisp':
-        return get_algolisp_dataset(args)
+        args.word_vocab = relpath('../data/algolisp/word.vocab')
     elif args.dataset.startswith('karel'):
-        return get_karel_dataset(args)
+        args.word_vocab = relpath('../data/karel/word.vocab')
     else:
         raise ValueError("Unknown dataset %s" % args.dataset)
 
 
-def get_eval_dataset(args):
+def get_dataset(args, model):
     if args.dataset == 'algolisp':
-        return get_algolisp_eval_dataset(args)
+        return get_algolisp_dataset(args, model)
     elif args.dataset.startswith('karel'):
-        return get_karel_eval_dataset(args)
+        return get_karel_dataset(args, model)
+    else:
+        raise ValueError("Unknown dataset %s" % args.dataset)
+
+
+def get_eval_dataset(args, model):
+    if args.dataset == 'algolisp':
+        return get_algolisp_eval_dataset(args, model)
+    elif args.dataset.startswith('karel'):
+        return get_karel_eval_dataset(args, model)
     else:
         raise ValueError("Unknown dataset %s" % args.dataset)
 

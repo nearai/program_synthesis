@@ -93,12 +93,17 @@ class LGRLTaskEncoder(nn.Module):
         self.fc = nn.Linear(64 * 18 * 18, 512)
 
     def forward(self, input_grid, output_grid):
+        batch_dims = input_grid.shape[:-3]
+        input_grid = input_grid.contiguous().view(-1, 15, 18, 18)
+        output_grid  = output_grid.contiguous().view(-1, 15, 18, 18)
+
         input_enc = self.input_encoder(input_grid)
         output_enc = self.output_encoder(output_grid)
         enc = torch.cat([input_enc, output_enc], 1)
         enc = enc + self.block_1(enc)
         enc = enc + self.block_2(enc)
-        enc = self.fc(enc.view(enc.shape[0], -1))
+
+        enc = self.fc(enc.view(*(batch_dims + (-1,))))
         return enc
 
 
@@ -389,14 +394,14 @@ class TimeConvTraceEncoder(TraceEncoder):
 
         self.fc = nn.Linear(c * 18 * 18, out_dim)
 
-    def forward(self, code_enc, traces):
+    def forward(self, code_enc, traces_grids, traces_events):
         if self.interleave_events:
             raise NotImplementedError
 
         # grids: batch x seq length x 15 (channels) x 18 x 18
         # TODO: Don't unsort the batch here so that we can call
         # pack_padded_sequence more easily later.
-        grids, seq_lengths = traces.grids.pad(batch_first=True)
+        grids, seq_lengths = traces_grids.pad(batch_first=True)
         #grids, seq_lengths = nn.utils.rnn.pad_packed_sequence(
         #    traces.grids, batch_first=True)
         # grids: batch x 15 x seq length x 18 x 18
@@ -412,7 +417,7 @@ class TimeConvTraceEncoder(TraceEncoder):
         # enc: batch x seq length x out_dim
         enc = self.fc(enc.contiguous().view(enc.shape[0], enc.shape[1], -1))
 
-        return traces.grids.with_new_ps(
+        return traces_grids.with_new_ps(
             nn.utils.rnn.pack_padded_sequence(
                 enc, seq_lengths, batch_first=True))
 
@@ -456,7 +461,7 @@ class RecurrentTraceEncoder(TraceEncoder):
         ])
         self.grid_fc = nn.Linear(64 * 18 * 18, 256)
 
-    def forward(self, code_enc, traces):
+    def forward(self, code_enc, traces_grids, traces_events):
         if self.interleave_events:
             raise NotImplementedError
 
@@ -467,7 +472,7 @@ class RecurrentTraceEncoder(TraceEncoder):
             enc = self.grid_fc(enc.view(enc.shape[0], -1))
             return enc
 
-        emb_grids = traces.grids.apply(net)
+        emb_grids = traces_grids.apply(net)
 
         # output: PackedSequence, batch size x seq length x hidden (256 * 2)
         # state: 2 (layers) * 2 (directions) x batch x hidden size (256)
@@ -699,10 +704,12 @@ class LGRLRefineKarel(nn.Module):
         self.encoder = LGRLTaskEncoder(args)
         self.decoder = LGRLSeqRefineDecoder(vocab_size, args)
 
-    def encode(self, input_grid, output_grid, ref_code, ref_trace):
+    def encode(self, input_grid, output_grid, ref_code, ref_trace_grids,
+               ref_trace_events):
         io_embed = self.encoder(input_grid, output_grid)
         ref_code_memory = self.code_encoder(ref_code)
-        ref_trace_memory = self.trace_encoder(ref_code_memory, ref_trace)
+        ref_trace_memory = self.trace_encoder(ref_code_memory, ref_trace_grids,
+                                              ref_trace_events)
         return io_embed, ref_code_memory, ref_trace_memory
 
     def decode(self, io_embed, ref_code_memory, ref_trace_memory, outputs):
