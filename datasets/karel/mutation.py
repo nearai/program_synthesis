@@ -5,6 +5,7 @@ import struct
 
 import numpy as np
 
+from ..dataset import executor
 import parser_for_synthesis
 
 # Tree structure
@@ -144,19 +145,19 @@ def mutate(tree, probs=None, rng=None):
         raise Exception('No mutation possible')
     probs /= probs_sum
 
-    choice = np.random.choice(8, p=probs)
+    choice = rng.choice(8, p=probs)
     if choice == ADD_ACTION:
-        body, i = add_locs[np.random.choice(len(add_locs))]
-        body.insert(i, np.random.choice(actions))
+        body, i = add_locs[rng.choice(len(add_locs))]
+        body.insert(i, rng.choice(actions))
     elif choice == REMOVE_ACTION:
-        body, i = remove_locs[np.random.choice(len(remove_locs))]
+        body, i = remove_locs[rng.choice(len(remove_locs))]
         del body[i]
     elif choice == REPLACE_ACTION:
-        body, i = action_locs[np.random.choice(len(action_locs))]
-        body[i] = np.random.choice(actions,
+        body, i = action_locs[rng.choice(len(action_locs))]
+        body[i] = rng.choice(actions,
                 p=actions_masked_probs[body[i]['type']])
     elif choice == UNWRAP_BLOCK:
-        body, i = unwrappables[np.random.choice(len(unwrappables))]
+        body, i = unwrappables[rng.choice(len(unwrappables))]
         block = body[i]
         del body[i]
         body[i:i] = block.get('body', [])
@@ -164,10 +165,10 @@ def mutate(tree, probs=None, rng=None):
         body[i:i] = block.get('ifBody', [])
     elif choice == WRAP_BLOCK:
         wrap_block_choices /= np.sum(wrap_block_choices)
-        body = all_bodies[np.random.choice(
+        body = all_bodies[rng.choice(
             len(all_bodies), p=wrap_block_choices)]
         bounds = list(itertools.combinations(xrange(len(body) + 1), 2))
-        left, right = bounds[np.random.choice(len(bounds))]
+        left, right = bounds[rng.choice(len(bounds))]
         subseq = body[left:right]
         del body[left:right]
         new_block = random_singular_block()
@@ -175,33 +176,33 @@ def mutate(tree, probs=None, rng=None):
         body.insert(left, new_block)
     elif choice == WRAP_IFELSE:
         wrap_ifelse_choices /= np.sum(wrap_ifelse_choices)
-        body = all_bodies[np.random.choice(
+        body = all_bodies[rng.choice(
             len(all_bodies), p=wrap_ifelse_choices)]
         bounds = list(itertools.combinations(xrange(len(body) + 1), 3))
-        left, mid, right = bounds[np.random.choice(len(bounds))]
+        left, mid, right = bounds[rng.choice(len(bounds))]
         if_body = body[left:mid]
         else_body = body[mid:right]
         del body[left:right]
         new_block = {
             'type': 'ifElse',
-            'cond': np.random.choice(conds),
+            'cond': rng.choice(conds),
             'ifBody': if_body,
             'elseBody': else_body
         }
         body.insert(left, new_block)
     elif choice == REPLACE_COND:
-        node = cond_locs[np.random.choice(len(cond_locs))]
+        node = cond_locs[rng.choice(len(cond_locs))]
         if 'cond' in node:
-            node['cond'] = np.random.choice(
+            node['cond'] = rng.choice(
                 conds,
                 p=conds_masked_probs[node['cond']['type'] + node['cond'].get(
                     'cond', {}).get('type', '')])
         elif 'repeat' in node:
-            node['repeat'] = np.random.choice(
+            node['repeat'] = rng.choice(
                     repeat_counts,
                     p=repeat_masked_probs[node['repeat']['times']['value']])
     elif choice == SWITCH_IF_WHILE:
-        node = all_if_whiles[np.random.choice(len(all_if_whiles))]
+        node = all_if_whiles[rng.choice(len(all_if_whiles))]
         node['type'] = {'if': 'while', 'while': 'if'}[node['type']]
 
     return tree
@@ -255,11 +256,21 @@ class KarelExampleMutator(object):
 
         new_tree = mutate_n(tree, n, self.probs, self.rng, allow_in_place=True)
         new_code = parser_for_synthesis.tree_to_tokens(new_tree)
+
+        # TODO: Get the real trace
+        new_tests = []
+        for ex in karel_example.input_tests:
+            new_ex = dict(ex)
+            new_ex['trace'] = executor.KarelTrace(
+                    grids=[ex['input'], ex['output']],
+                    events=[])
+            new_tests.append(new_ex)
+
         karel_example.ref_example = KarelExample(
                 guid=None,
                 code_sequence=new_code,
-                input_tests=None,
-                tests=None)
+                input_tests=new_tests,
+                tests=karel_example.tests)
         return karel_example
 
 
