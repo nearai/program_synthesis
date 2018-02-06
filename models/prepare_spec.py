@@ -29,20 +29,28 @@ def numpy_to_tensor(arr, cuda, volatile):
 
 
 class PackedSequencePlus(collections.namedtuple('PackedSequencePlus',
-        ['ps', 'lengths', 'sort_to_orig'])):
+        ['ps', 'lengths', 'sort_to_orig', 'orig_to_sort'])):
+    def __init__(self, ps, lengths, sort_to_orig, orig_to_sort):
+        sort_to_orig = np.array(sort_to_orig)
+        orig_to_sort = np.array(orig_to_sort)
+        super(PackedSequencePlus, self).__init__(
+                ps, lengths, sort_to_orig, orig_to_sort)
+        self.cum_batch_sizes = np.cumsum([0] + self.ps.batch_sizes[:-1])
 
     def apply(self, fn):
         return PackedSequencePlus(
             torch.nn.utils.rnn.PackedSequence(
                 fn(self.ps.data), self.ps.batch_sizes), self.lengths,
-            self.sort_to_orig)
+            self.sort_to_orig,
+            self.orig_to_sort)
 
     def with_new_ps(self, ps):
-        return PackedSequencePlus(ps, self.lengths, self.sort_to_orig)
+        return PackedSequencePlus(ps, self.lengths, self.sort_to_orig,
+                self.orig_to_sort)
 
-    def pad(self, batch_first, others_to_unsort=()):
+    def pad(self, batch_first, others_to_unsort=(), padding_value=0.0):
         padded, seq_lengths = torch.nn.utils.rnn.pad_packed_sequence(
-            self.ps, batch_first=batch_first)
+            self.ps, batch_first=batch_first, padding_value=padding_value)
         results = padded[
             self.sort_to_orig], [seq_lengths[i] for i in self.sort_to_orig]
         return results + tuple(t[self.sort_to_orig] for t in others_to_unsort)
@@ -51,6 +59,25 @@ class PackedSequencePlus(collections.namedtuple('PackedSequencePlus',
         if self.ps.data.is_cuda:
             return self
         return self.apply(lambda d: d.cuda(async=async))
+
+    def raw_index(self, orig_batch_idx, seq_idx):
+        result = np.take(self.cum_batch_sizes, seq_idx) + np.take(
+                self.sort_to_orig, orig_batch_idx)
+        assert np.all(result < len(self.ps.data))
+        return result
+
+    def orig_index(self, raw_idx):
+        seq_idx = np.searchsorted(
+                self.cum_batch_sizes, raw_idx, side='right') - 1
+        batch_idx = raw_idx - self.cum_batch_sizes[seq_idx]
+        orig_batch_idx = self.sort_to_orig[batch_idx]
+        return orig_batch_idx, seq_idx
+
+    def orig_batch_indices(self):
+        result = []
+        for bs in self.ps.batch_sizes:
+            result.extend(self.orig_to_sort[:bs])
+        return np.array(result)
 
 
 def sort_lists_by_length(lists):
@@ -66,7 +93,7 @@ def sort_lists_by_length(lists):
             enumerate(orig_to_sort), key=operator.itemgetter(1))
     ]
 
-    return lists_sorted, sort_to_orig
+    return lists_sorted, sort_to_orig, orig_to_sort
 
 
 def batch_bounds_for_packing(lengths):
@@ -82,13 +109,94 @@ def batch_bounds_for_packing(lengths):
     last_length = 0
     count = len(lengths)
     result = []
-    for length, group in itertools.groupby(reversed(lengths)):
-        if length <= last_length:
+    for i, (length, group) in enumerate(itertools.groupby(reversed(lengths))):
+        # TODO: Check that things don't blow up when some lengths are 0
+        if i > 0 and  length <= last_length:
             raise ValueError('lengths must be decreasing and positive')
         result.extend([count] * (length - last_length))
         count -= sum(1 for _ in group)
         last_length = length
     return result
+
+
+def interleave_packed_sequences(psps, interleave_indices):
+    # psps: list of PackedSequencePluses.
+    #       Each PackedSequencePlus has batch size x seq length items.
+    # interleave_indices: list of list of psp_idx, indicating which psp to take
+    #                     from which the next element should originate.
+    #   len(interleave_indices) = len(psps)
+    #   interleave_indices[batch_idx][j] == psp_idx
+    #   <--> result[batch_idx, j] = psps[psp_idx][batch_idx,
+    #      np.sum(interleave_indices[batch_idx][:j] == psp_idx)]
+    #
+    # Precondition:- all PSPs have same type and item shape
+    #
+    # Output: a result computed by
+    # result[output_indices[i]] = psps[i].ps.data[input_indices[i]]
+
+    result = Variable(psps[0].ps.data.data.new(
+        sum(psp.ps.data.shape[0] for psp in psps), *psps[0].ps.data.shape[1:]))
+    output_indices = [[] for _ in psps]
+    input_indices = [[] for _ in psps]
+
+    # combined_lengths: length of each sequence, in original batch order.
+    combined_lengths = np.sum(
+            [[psp.lengths[i] for i in psp.sort_to_orig] for psp in psps],
+            axis=0)
+    orig_to_sort, sorted_lengths = zip(*sorted(
+        enumerate(combined_lengths), key=operator.itemgetter(1), reverse=True))
+    sort_to_orig = [
+        x[0] for x in sorted(
+            enumerate(orig_to_sort), key=operator.itemgetter(1))
+    ]
+    batch_bounds = batch_bounds_for_packing(sorted_lengths)
+    interleave_iters = [iter(lst) for lst in interleave_indices]
+
+    # idx: current cursor into result
+    # i: distance from begining of sequence
+    write_idx = 0
+    read_idx = [[0] * len(psps) for _ in sorted_lengths]
+    try:
+        for i, bound in enumerate(batch_bounds):
+            for  j, orig_batch_idx in enumerate(orig_to_sort[:bound]):
+                # Figure out which PSP we should get
+                psp_idx = next(interleave_iters[orig_batch_idx])
+                # Record that we should write the value from this PSP here
+                output_indices[psp_idx].append(write_idx)
+                current_idx = read_idx[orig_batch_idx][psp_idx]
+                # Figure out what current_idx corresponds to inside the PSP.
+                input_indices[psp_idx].append(
+                        int(psps[psp_idx].raw_index(orig_batch_idx,
+                            current_idx)))
+                read_idx[orig_batch_idx][psp_idx] += 1
+                write_idx += 1
+    except StopIteration:
+        raise Exception('interleave_indices[{}] ended early'.format(
+            orig_batch_idx))
+
+    # Check that all of interleave_indices have been used
+    for it in interleave_iters:
+        ended = False
+        try:
+            next(it)
+        except StopIteration:
+            ended = True
+        assert ended
+
+    # TODO: perform this move outside
+    for out_idx, inp_idx, psp in zip(output_indices, input_indices, psps):
+        # psp.ps.data is a torch.autograd.Variable (despite its name)
+        inp_idx = torch.LongTensor(inp_idx)
+        out_idx = torch.LongTensor(out_idx)
+        if psp.ps.data.is_cuda:
+            inp_idx = inp_idx.cuda()
+            out_idx = out_idx.cuda()
+
+        result[out_idx] = psp.ps.data[inp_idx]
+
+    return PackedSequencePlus(
+            torch.nn.utils.rnn.PackedSequence(result, batch_bounds),
+            sorted_lengths, sort_to_orig, orig_to_sort)
 
 
 def lists_to_packed_sequence(lists, stoi, cuda, volatile):
@@ -105,13 +213,16 @@ def lists_to_packed_sequence(lists, stoi, cuda, volatile):
     sort_to_orig = [x[0] for x in sorted(
             enumerate(orig_to_sort), key=operator.itemgetter(1))]
 
+    lists_sorted, sort_to_orig, orig_to_sort = sort_lists_by_length(lists)
+
     v = numpy_to_tensor(lists_to_numpy(lists_sorted, stoi, 0), cuda, volatile)
     lens = lengths(lists_sorted)
     return PackedSequencePlus(
         torch.nn.utils.rnn.pack_padded_sequence(
             v, lens, batch_first=True),
         lens,
-        sort_to_orig)
+        sort_to_orig,
+        orig_to_sort)
 
 
 def apply_to_packed_sequence(fn, ps):

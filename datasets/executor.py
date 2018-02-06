@@ -1,10 +1,12 @@
 import collections
+import operator
 import traceback
 
 import numpy as np
 import pylru
 
 from karel import KarelForSynthesisParser, KarelSyntaxError, TimeoutError
+from karel.utils import Timeout
 
 
 ExecutionResult = collections.namedtuple(
@@ -47,7 +49,14 @@ def evaluate_code(code, arguments, tests, do_execute):
 
 
 KarelTrace = collections.namedtuple('KarelTrace', ['grids', 'events'])
-KarelEvent = collections.namedtuple('KarelEvent', ['timestep', 'type', 'success'])
+KarelEvent = collections.namedtuple('KarelEvent', [
+    'timestep',  # event happened before corresponding index in grids
+    'type',  # move, turnLeft/Right, put/pickMarker, if, ifElse, repeat
+    'span', # (i, j) for first, last token for block
+    'cond_span', # (i, j)  for first, last token contained in c( c)
+    'cond_value', # True/False for if/ifElse, remaining iters for repeat
+    'success', # False if action failed or loop will repeat forever
+])
 
 
 class KarelExecutor(object):
@@ -65,28 +74,39 @@ class KarelExecutor(object):
         field.ravel()[inp] = True
 
         trace = []
-        successes = []
-        steps_taken = [0]
+        timeout = Timeout(self.action_limit)
         if record_trace:
-            def action_callback(action_name, success, metadata):
-                trace.events.append(KarelEvent(timestep=len(trace.grids),
-                    type=action_name, success=success))
-                trace.grids.append(np.where(field.ravel())[0].tolist())
-                successes.append(success)
-                steps_taken[0] += 1
-                if steps_taken[0] > self.action_limit:
+            trace = KarelTrace([inp], [])
+            def action_callback(action_name, success, span):
+                trace.events.append(KarelEvent(
+                    timestep=len(trace.grids),
+                    type=action_name,
+                    span=span,
+                    cond_span=None,
+                    cond_value=None,
+                    success=success))
+                if strict and not success:
                     raise ExecutorRuntimeException
+                trace.grids.append(np.where(field.ravel())[0].tolist())
+                timeout.inc()
+
+            def event_callback(block_name, block_span, cond_span, cond_value,
+                    selected_span):
+                trace.events.append(KarelEvent(
+                    timestep=len(trace.grids),
+                    type=block_name,
+                    span=block_span,
+                    cond_span=cond_span,
+                    cond_value=cond_value,
+                    success=True))
+                timeout.inc()
         else:
             def action_callback(action_name, success, metadata):
-                successes.append(success)
-                steps_taken[0] += 1
-                if steps_taken[0] > self.action_limit:
+                if strict and not success:
                     raise ExecutorRuntimeException
-
-        def event_callback(block_name, *args):
-            steps_taken[0] += 1
-            if steps_taken[0] > self.action_limit:
-                raise ExecutorRuntimeException
+                timeout.inc()
+            def event_callback(block_name, *args):
+                timeout.inc()
 
         self.parser.karel.init_from_array(field)
         self.parser.karel.action_callback = action_callback
@@ -100,10 +120,51 @@ class KarelExecutor(object):
             compiled()
         except KarelSyntaxError:
             raise ExecutorSyntaxException
-        except TimeoutError:
-            raise ExecutorRuntimeException
-        if strict and not all(successes):
-            raise ExecutorRuntimeException
+        except (TimeoutError, ExecutorRuntimeException) as e:
+            if not record_trace:
+                raise
+            if isinstance(e, TimeoutError):
+                # Heuristic to find the root cause of TimeoutError:
+                # - while with the longest current string of True cond_value
+                # - repeat nested too much
+                while_counts = collections.defaultdict(int)
+                while_locs = {}
+                for i, event in enumerate(trace.events):
+                    if event.type != 'while':
+                        continue
+                    if event.cond_value:
+                        if while_counts[event.span] == 0:
+                            while_locs[event.span] = i
+                        while_counts[event.span]  += 1
+                    else:
+                        while_counts[event.span] = 0
+
+                if while_counts:
+                    offending_span, count = max(
+                            while_counts.iteritems(),
+                            key=operator.itemgetter(1))
+                    offending_loc = while_locs[offending_span]
+                    del trace.events[offending_loc+1:]
+                    trace.events[-1] = KarelEvent(
+                           *(trace.events[-1][:-1] + (False,)))
+                else:
+                    # No whiles in the code; blame the first repeat
+                    repeat_found = False
+                    for i, event in enumerate(trace.events):
+                        if event.type == 'repeat':
+                            repeat_found = True
+                            break
+                    if not repeat_found:
+                       raise Exception('Karel timeout with neither while nor repeat')
+                    del trace.events[i+1:]
+                    trace.events[-1] = KarelEvent(
+                           *(trace.events[-1][:-1] + (False,)))
+
+                # Delete all grids accumulated after where we decided to have
+                # the cutoff
+                del trace.grids[trace.events[-1].timestep:]
+
+            return ExecutionResult(None, trace)
 
         return ExecutionResult(np.where(field.ravel())[0].tolist(), trace)
 

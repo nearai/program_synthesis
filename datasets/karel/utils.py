@@ -11,6 +11,16 @@ class TimeoutError(Exception):
 class KarelSyntaxError(Exception):
     pass
 
+class Timeout(object):
+    def __init__(self, max_steps):
+        self.max_steps = max_steps
+        self.steps = 0
+
+    def inc(self):
+        self.steps += 1
+        if self.steps >= self.max_steps:
+            raise TimeoutError
+
 def str2bool(v):
     return v.lower() in ('true', '1')
 

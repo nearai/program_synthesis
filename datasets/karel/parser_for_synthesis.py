@@ -1,4 +1,5 @@
 from __future__ import print_function
+import functools
 
 import ply.lex
 
@@ -300,11 +301,11 @@ class KarelForSynthesisParser(Parser):
             false_span = (p.lexpos(5), p.lexpos(5))
 
             def repeat():
-                for i in range(limit):
+                for i in range(limit, 0, -1):
                     self.karel.event_callback('repeat', span, cste.span, i,
                                               true_span)
                     stmt()
-                self.karel.event_callback('repeat', span, cste.span, limit,
+                self.karel.event_callback('repeat', span, cste.span, 0,
                         false_span)
         p[0] = repeat
 
@@ -356,7 +357,9 @@ class KarelForSynthesisParser(Parser):
         if self.build_tree:
             action = {'type': action_name}
         else:
-            action = getattr(self.karel, action_name)
+            action = functools.partial(
+                    getattr(self.karel, action_name),
+                    metadata=(p.lexpos(1), p.lexpos(1)))
         p[0] = action
 
     def p_cste(self, p):
@@ -370,8 +373,9 @@ class KarelForSynthesisParser(Parser):
             }
         else:
             span = (p.lexpos(1), p.lexpos(1))
+            value = int(value)
             def fn():
-                return int(value)
+                return value
             fn.span = span
         p[0] = fn
 

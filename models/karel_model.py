@@ -1,5 +1,8 @@
 import collections
 import numpy as np
+import operator
+import traceback
+
 import torch
 from torch import nn
 from torch.autograd import Variable
@@ -43,6 +46,46 @@ def maybe_cuda(tensor, async=False):
     if tensor is None:
         return None
     return tensor.cuda(async=async)
+
+
+def lists_to_packed_sequence(lists, item_shape, tensor_type, item_to_tensor):
+    # TODO: deduplicate with the version in prepare_spec.
+    result = tensor_type(sum(len(lst) for lst in lists), *item_shape)
+
+    sorted_lists, sort_to_orig, orig_to_sort = prepare_spec.sort_lists_by_length(lists)
+    lengths = prepare_spec.lengths(sorted_lists)
+    batch_bounds = prepare_spec.batch_bounds_for_packing(lengths)
+    idx = 0
+    for i, bound in enumerate(batch_bounds):
+        for batch_idx, lst  in enumerate(sorted_lists[:bound]):
+            result[idx] = item_to_tensor(lst[i])
+            idx += 1
+
+    result = Variable(result)
+    return prepare_spec.PackedSequencePlus(
+            nn.utils.rnn.PackedSequence(result, batch_bounds),
+            lengths, sort_to_orig, orig_to_sort)
+
+
+def interleave(source_lists, interleave_indices):
+    result = []
+
+    try:
+        source_iters = [iter(lst) for lst in source_lists]
+        for i in interleave_indices:
+            result.append(next(source_iters[i]))
+    except StopIteration:
+        raise Exception('source_lists[{}] ended early'.format(i))
+
+    for it in source_iters:
+        ended = False
+        try:
+            next(it)
+        except StopIteration:
+            ended = True
+        assert ended
+
+    return result
 
 
 class BaseKarelModel(BaseCodeModel):
@@ -174,19 +217,19 @@ class KarelLGRLRefineModel(BaseKarelModel):
         super(KarelLGRLRefineModel, self).__init__(args)
 
     def compute_loss(self, (input_grids, output_grids, code_seqs, ref_code,
-                            ref_trace_grids, ref_trace_events, _)):
+        ref_trace_grids, ref_trace_events, cag_interleave, _)):
         if self.args.cuda:
             input_grids = input_grids.cuda(async=True)
             output_grids = output_grids.cuda(async=True)
             code_seqs = code_seqs.cuda(async=True)
-            ref_code = ref_code.cuda(async=True)
-            ref_trace_grids = ref_trace_grids.cuda(async=True)
-            ref_trace_events = ref_trace_events.cuda(async=True)
+            ref_code = maybe_cuda(ref_code, async=True)
+            ref_trace_grids = maybe_cuda(ref_trace_grids, async=True)
+            ref_trace_events = maybe_cuda(ref_trace_events, async=True)
 
         # io_embeds shape: batch size x num pairs (5) x hidden size (512)
         io_embed, ref_code_memory, ref_trace_memory = self.model.encode(
             input_grids, output_grids, ref_code, ref_trace_grids,
-            ref_trace_events)
+            ref_trace_events, cag_interleave)
         logits, labels = self.model.decode(io_embed, ref_code_memory,
                                            ref_trace_memory, code_seqs)
         return self.criterion(
@@ -196,8 +239,9 @@ class KarelLGRLRefineModel(BaseKarelModel):
         code = code_to_tokens(batch.code_seqs.data[0, 1:], self.vocab)
         print("Code: %s" % ' '.join(code))
 
-    def inference(self, (input_grids, output_grids, _1, ref_code,
-                         ref_trace_grids, ref_trace_events, _2)):
+    def inference(self,
+                  (input_grids, output_grids, _1, ref_code, ref_trace_grids,
+                   ref_trace_events, cag_interleave, _2)):
         if self.args.cuda:
             input_grids = input_grids.cuda(async=True)
             output_grids = output_grids.cuda(async=True)
@@ -207,7 +251,7 @@ class KarelLGRLRefineModel(BaseKarelModel):
 
         io_embed, ref_code_memory, ref_trace_memory = self.model.encode(
             input_grids, output_grids, ref_code, ref_trace_grids,
-            ref_trace_events)
+            ref_trace_events, cag_interleave)
         init_state = self.model.decoder.zero_state(io_embed.shape[0],
                                                    io_embed.shape[1])
         memory = self.model.decoder.prepare_memory(io_embed, ref_code_memory,
@@ -231,7 +275,20 @@ class KarelLGRLRefineModel(BaseKarelModel):
 
 KarelLGRLRefineExample = collections.namedtuple('KarelLGRLRefineExample', (
     'input_grids', 'output_grids', 'code_seqs', 'ref_code', 'ref_trace_grids',
-    'ref_trace_events', 'orig_examples'))
+    'ref_trace_events', 'cond_action_grid_interleave', 'orig_examples'))
+
+class PackedTrace(collections.namedtuple('PackedTrace', ('actions',
+    'action_code_indices', 'conds', 'cond_code_indices',
+    'interleave_indices'))):
+    def cuda(self, async=False):
+        actions = maybe_cuda(self.actions, async)
+        action_code_indices = maybe_cuda(self.action_code_indices, async)
+        conds = maybe_cuda(self.conds, async)
+        cond_code_indices = maybe_cuda(self.cond_code_indices, async)
+
+        return PackedTrace(actions, action_code_indices, conds,
+                cond_code_indices, self.interleave_indices)
+
 
 
 class KarelLGRLRefineBatchProcessor(object):
@@ -255,36 +312,73 @@ class KarelLGRLRefineBatchProcessor(object):
 
         if self.args.karel_trace_enc == 'none':
             ref_trace_grids, ref_trace_events = None, None
+            cag_interleave = None
         else:
-            ref_trace_grids, ref_trace_events = self.prepare_traces(batch)
+            ref_trace_grids = self.prepare_traces_grids(batch)
+            ref_trace_events = self.prepare_traces_events(batch, ref_code)
+
+            cag_interleave = []
+            grid_lengths = [ref_trace_grids.lengths[i] for i in
+                    ref_trace_grids.sort_to_orig]
+            for idx, (
+                    grid_length, trace_interleave,
+                    g_ca_interleave) in enumerate(
+                        zip(grid_lengths, ref_trace_events.interleave_indices,
+                            self.interleave_grids_events(batch))):
+                cag_interleave.append(
+                    interleave([[2] * grid_length, trace_interleave],
+                               g_ca_interleave))
 
         orig_examples = batch if self.for_eval else None
 
-        return KarelLGRLRefineExample(input_grids, output_grids, code_seqs,
-                                      ref_code, ref_trace_grids,
-                                      ref_trace_events, orig_examples)
+        return KarelLGRLRefineExample(
+            input_grids, output_grids, code_seqs, ref_code, ref_trace_grids,
+            ref_trace_events, cag_interleave, orig_examples)
 
-    def prepare_traces(self, batch):
-        ref_trace_grids = torch.zeros(
-            sum(
-                len(test['trace'].grids)
-                for item in batch
-                for test in item.ref_example.input_tests), 15, 18, 18)
-        trace_grids_lists, sort_to_orig = prepare_spec.sort_lists_by_length([
+    def interleave_grids_events(self, batch):
+        events_lists = [
+            test['trace'].events
+            for item in batch for test in item.ref_example.input_tests
+        ]
+        result = []
+        for events_list in events_lists:
+            get_from_events = []
+            last_timestep = None
+            for ev in events_list:
+                if last_timestep != ev.timestep:
+                    get_from_events.append(0)
+                    last_timestep = ev.timestep
+                get_from_events.append(1)
+            # TODO: Devise better way to test if an event is an action
+            if ev.cond_span is None and ev.success:
+                # Trace ends with a grid, if last event is action and it is
+                # successful
+                get_from_events.append(0)
+            result.append(get_from_events)
+        return result
+
+    def prepare_traces_grids(self, batch):
+        grids_lists = [
             test['trace'].grids
             for item in batch for test in item.ref_example.input_tests
-        ])
+        ]
+        ref_trace_grids = torch.zeros(
+                sum(len(lst) for lst in grids_lists),
+                15, 18, 18)
+        trace_grids_lists, sort_to_orig, orig_to_sort = prepare_spec.sort_lists_by_length(
+                grids_lists)
         lengths = prepare_spec.lengths(trace_grids_lists)
         batch_bounds = prepare_spec.batch_bounds_for_packing(lengths)
         idx = 0
 
+        # TODO: use lists_to_packed_sequence.
         last_grids = [set() for _ in trace_grids_lists]
         for i, bound in enumerate(batch_bounds):
             for batch_idx, trace_grids in enumerate(trace_grids_lists[:bound]):
                 if isinstance(trace_grids[i], dict):
                     last_grid = last_grids[batch_idx]
-                    #assert last_grid.isdisjoint(trace_grids[i]['plus'])
-                    #assert last_grid >= trace_grids[i]['minus']
+                    assert last_grid.isdisjoint(trace_grids[i]['plus'])
+                    assert last_grid >= trace_grids[i]['minus']
                     last_grid.update(trace_grids[i]['plus'])
                     last_grid.difference_update(trace_grids[i]['minus'])
                 else:
@@ -295,7 +389,62 @@ class KarelLGRLRefineBatchProcessor(object):
 
         ref_trace_grids = prepare_spec.PackedSequencePlus(
             nn.utils.rnn.PackedSequence(ref_trace_grids, batch_bounds),
-            lengths, sort_to_orig)
-        # TODO: replace this placeholder
-        ref_trace_events = None
-        return ref_trace_grids, ref_trace_events
+            lengths, sort_to_orig, orig_to_sort)
+        return ref_trace_grids
+
+    def prepare_traces_events(self, batch, ref_code):
+        # Split into action and cond events
+        all_action_events = []
+        all_cond_events = []
+        interleave_indices = []
+        for item in batch:
+            for test in item.ref_example.input_tests:
+                action_events, cond_events, interleave  = [], [], []
+                for event in test['trace'].events:
+                    # TODO: Devise better way to test if an event is an action
+                    if event.cond_span is None:
+                        action_events.append(event)
+                        interleave.append(1)
+                    else:
+                        cond_events.append(event)
+                        interleave.append(0)
+                all_action_events.append(action_events)
+                all_cond_events.append(cond_events)
+                interleave_indices.append(interleave)
+
+        packed_action_events = lists_to_packed_sequence(
+                all_action_events,
+                [2],
+                torch.LongTensor,
+                lambda ev: torch.LongTensor([
+                    #{'if': 0, 'ifElse': 1, 'while': 2, 'repeat': 3}[ev.type],
+                    ev.span[0], ev.success]))
+        action_code_indices = None
+        if ref_code:
+            action_code_indices = Variable(torch.LongTensor(
+                    ref_code.raw_index(
+                        # TODO: Don't hardcode 5.
+                        # TODO: May need to work with code replicated 5 times.
+                        packed_action_events.orig_batch_indices() // 5,
+                        packed_action_events.ps.data.data[:, 0].numpy())))
+
+        packed_cond_events = lists_to_packed_sequence(
+                all_cond_events,
+                [6],
+                torch.LongTensor,
+                lambda ev: torch.LongTensor([ev.span[0], ev.span[1],
+                    ev.cond_span[0], ev.cond_span[1], int(ev.cond_value) if
+                    isinstance(ev.cond_value, bool) else ev.cond_value + 2, ev.success]))
+        cond_code_indices = None
+        if ref_code:
+            cond_code_indices = Variable(torch.LongTensor(
+                    ref_code.raw_index(
+                        # TODO: Don't hardcode 5.
+                        np.expand_dims(
+                            packed_cond_events.orig_batch_indices() // 5,
+                            axis=1),
+                        packed_cond_events.ps.data.data[:, :4].numpy())))
+
+        return PackedTrace(
+                packed_action_events, action_code_indices, packed_cond_events,
+                cond_code_indices, interleave_indices)

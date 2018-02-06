@@ -243,8 +243,7 @@ class KarelExampleMutator(object):
         self.rng = np.random.RandomState()
         self.parser = parser_for_synthesis.KarelForSynthesisParser(
                 build_tree=True)
-
-        assert not add_trace
+        self.executor = executor.KarelExecutor()
 
     def __call__(self, karel_example):
         from ..dataset import KarelExample
@@ -258,15 +257,17 @@ class KarelExampleMutator(object):
         new_code = parser_for_synthesis.tree_to_tokens(new_tree)
 
         # TODO: Get the real trace
-        new_tests = []
-        for ex in karel_example.input_tests:
-            new_ex = dict(ex)
-            new_ex['trace'] = executor.KarelTrace(
-                    grids=[ex['input'], ex['output']],
-                    events=[])
-            new_tests.append(new_ex)
+        if self.add_trace:
+            new_tests = []
+            for ex in karel_example.input_tests:
+                result = self.executor.execute(new_code, None, ex['input'],
+                        record_trace=True, strict=True)
+                new_ex = dict(ex)
+                new_ex['trace'] = result.trace
+                new_tests.append(new_ex)
 
         karel_example.ref_example = KarelExample(
+                idx=None,
                 guid=None,
                 code_sequence=new_code,
                 input_tests=new_tests,

@@ -100,6 +100,7 @@ class CodeExample(object):
 
 class KarelExample(object):
     __slots__ = (
+         'idx',
         'guid',
         'code_sequence',
         'input_tests',
@@ -110,8 +111,9 @@ class KarelExample(object):
     code_tree = []
     _empty_trace = executor.KarelTrace([], [])
 
-    def __init__(self, guid, code_sequence, input_tests, tests,
+    def __init__(self, idx, guid, code_sequence, input_tests, tests,
             ref_example=None):
+        self.idx = idx
         self.guid = guid
         self.code_sequence = code_sequence
         self.input_tests = input_tests
@@ -138,11 +140,12 @@ class KarelExample(object):
             ref_example = KarelExample.from_dict(ref_dict)
         else:
             ref_example = None
-        return cls(d['guid'], d['code'], all_examples[:5], all_examples[5:],
+        return cls(d['id'], d['guid'], d['code'], all_examples[:5], all_examples[5:],
                 ref_example)
 
     def to_dict(self):
         return {
+            'id': self.idx,
             'guid': self.guid,
             'examples': [{
                 'in': example['input'],
@@ -472,9 +475,9 @@ def get_karel_dataset(args, model):
     if args.karel_mutate_ref:
         mutation_dist = [float(x) for x in args.karel_mutate_n_dist.split(',')]
         train_mutator = KarelExampleMutator(mutation_dist, rng_fixed=False,
-                add_trace=False)
+                add_trace=args.karel_trace_enc != 'none')
         dev_mutator = KarelExampleMutator(mutation_dist, rng_fixed=True,
-                add_trace=False)
+                add_trace=args.karel_trace_enc != 'none')
     else:
         train_mutator = dev_mutator = lambda x: x
 
@@ -508,7 +511,7 @@ def get_karel_eval_dataset(args, model):
     if args.karel_mutate_ref:
         mutation_dist = [float(x) for x in args.karel_mutate_n_dist.split(',')]
         dev_mutator = KarelExampleMutator(mutation_dist, rng_fixed=True,
-                add_trace=False)
+                add_trace=args.karel_trace_enc != 'none')
     else:
         dev_mutator = lambda x: x
 

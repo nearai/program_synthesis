@@ -5,7 +5,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.autograd import Variable
 
-from models import base
+from models import base, prepare_spec
 from .. import beam_search
 from datasets import data
 from attention import SimpleSDPAttention
@@ -40,6 +40,12 @@ def maybe_concat(items, dim=None):
         return to_concat[0]
     else:
         return torch.cat(to_concat, dim)
+
+
+def take(tensor, indices):
+    '''Equivalent of numpy.take for Torch tensors.'''
+    indices_flat = indices.contiguous().view(-1)
+    return tensor[indices_flat].view(indices.shape + tensor.shape[1:])
 
 
 def lstm_init(cuda, num_layers, hidden_size, *batch_sizes):
@@ -429,7 +435,7 @@ class RecurrentTraceEncoder(TraceEncoder):
             # Include initial/final states
             concat_io=False,
             # Whether to include actions/control flow in the middle
-            interleave_events=False,
+            interleave_events=True,
             # Only include actions or also include control flow events
             include_flow_events=False,
             # Get embeddings from code_seq using boundary information
@@ -461,25 +467,50 @@ class RecurrentTraceEncoder(TraceEncoder):
         ])
         self.grid_fc = nn.Linear(64 * 18 * 18, 256)
 
-    def forward(self, code_enc, traces_grids, traces_events):
-        if self.interleave_events:
-            raise NotImplementedError
+        self.success_emb = nn.Embedding(2, 256)
+        self.action_code_proj = nn.Linear(512, 256)
+        self.cond_code_proj = nn.Linear(512, 256 / 4)
+        # 2: false, true
+        # 11: 0..10
+        self.cond_emb = nn.Embedding(13, 256)
 
+    def forward(self, code_enc, traces_grids, traces_events, cag_interleave):
         def net(inp):
             enc = self.initial_conv(inp)
             for block in self.blocks:
                 enc = enc + block(enc)
             enc = self.grid_fc(enc.view(enc.shape[0], -1))
             return enc
+        grid_embs = traces_grids.apply(net)
 
-        emb_grids = traces_grids.apply(net)
+        if self.interleave_events:
+            action_embs = traces_events.actions.apply(
+                lambda d: self.action_code_proj(
+                    code_enc.ps.data[traces_events.action_code_indices]) * self.success_emb(d[:, 1])
+            )
+
+            assert (traces_events.cond_code_indices >=
+                    len(code_enc.ps.data)).data.sum() == 0
+            cond_embs = traces_events.conds.apply(
+                    lambda d:
+                       # Shape: sum(cond trace lengths) x 256 after view
+                        self.cond_code_proj(
+                          # Shape: sum(cond trace lengths) x 4 x 512
+                          take(code_enc.ps.data,
+                              traces_events.cond_code_indices)).view(-1, 256)
+                          * self.cond_emb(d[:, 4])
+                          * self.success_emb(d[:, 5]))
+            seq_embs = prepare_spec.interleave_packed_sequences((cond_embs,
+                action_embs, grid_embs), cag_interleave)
+        else:
+            seq_embs = grid_embs
 
         # output: PackedSequence, batch size x seq length x hidden (256 * 2)
         # state: 2 (layers) * 2 (directions) x batch x hidden size (256)
-        output, state = self.encoder(emb_grids.ps,
+        output, state = self.encoder(seq_embs.ps,
                                      lstm_init(self._cuda, 4, 256,
-                                               emb_grids.ps.batch_sizes[0]))
-        return emb_grids.with_new_ps(output)
+                                               seq_embs.ps.batch_sizes[0]))
+        return seq_embs.with_new_ps(output)
 
 
 class LGRLSeqRefineDecoder(nn.Module):
@@ -705,11 +736,14 @@ class LGRLRefineKarel(nn.Module):
         self.decoder = LGRLSeqRefineDecoder(vocab_size, args)
 
     def encode(self, input_grid, output_grid, ref_code, ref_trace_grids,
-               ref_trace_events):
+               ref_trace_events, cag_interleave):
+        # batch size x num pairs x 512
         io_embed = self.encoder(input_grid, output_grid)
+        # PackedSequencePlus, batch size x length x 512
         ref_code_memory = self.code_encoder(ref_code)
+        # PackedSequencePlus, batch size x num pairs x length x  512
         ref_trace_memory = self.trace_encoder(ref_code_memory, ref_trace_grids,
-                                              ref_trace_events)
+                                              ref_trace_events, cag_interleave)
         return io_embed, ref_code_memory, ref_trace_memory
 
     def decode(self, io_embed, ref_code_memory, ref_trace_memory, outputs):
