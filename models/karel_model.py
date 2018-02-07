@@ -214,10 +214,29 @@ class KarelLGRLRefineModel(BaseKarelModel):
         self.model = karel.LGRLRefineKarel(
             len(self.vocab) - self.args.num_placeholders, args)
         self.executor = executor.get_executor(args)()
+
+        self.trace_grid_lengths = []
+        self.trace_event_lengths  = []
+        self.trace_lengths = []
         super(KarelLGRLRefineModel, self).__init__(args)
 
     def compute_loss(self, (input_grids, output_grids, code_seqs, ref_code,
-        ref_trace_grids, ref_trace_events, cag_interleave, _)):
+        ref_trace_grids, ref_trace_events, cag_interleave, orig_examples)):
+        if orig_examples:
+            for i, orig_example in  enumerate(orig_examples):
+                self.trace_grid_lengths.append((orig_example.idx, [
+                    ref_trace_grids.lengths[ref_trace_grids.sort_to_orig[i * 5
+                                                                         + j]]
+                    for j in range(5)
+                ]))
+                self.trace_event_lengths.append((orig_example.idx, [
+                    len(ref_trace_events.interleave_indices[i * 5 + j])
+                    for j in range(5)
+                ]))
+                self.trace_lengths.append(
+                    (orig_example.idx, np.array(self.trace_grid_lengths[-1][1])
+                     + np.array(self.trace_event_lengths[-1][1])))
+
         if self.args.cuda:
             input_grids = input_grids.cuda(async=True)
             output_grids = output_grids.cuda(async=True)
