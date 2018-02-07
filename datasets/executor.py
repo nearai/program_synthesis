@@ -120,6 +120,8 @@ class KarelExecutor(object):
             raise ExecutorSyntaxException
         except (TimeoutError, ExecutorRuntimeException) as e:
             if not record_trace:
+                if isinstance(e, TimeoutError):
+                    raise ExecutorRuntimeException
                 raise
             if isinstance(e, TimeoutError):
                 # Heuristic to find the root cause of TimeoutError:
