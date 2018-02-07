@@ -139,15 +139,18 @@ class KarelExecutor(object):
                     else:
                         while_counts[event.span] = 0
 
-                if while_locs:
-                    offending_span, count = max(
-                            while_counts.iteritems(),
-                            key=operator.itemgetter(1))
-                    offending_loc = while_locs[offending_span]
-                    del trace.events[offending_loc+1:]
-                    trace.events[-1] = KarelEvent(
-                           *(trace.events[-1][:-1] + (False,)))
-                else:
+                finished = False
+                if while_locs and while_counts:
+                    offending_span, count = max(while_counts.iteritems(),
+                                                key=operator.itemgetter(1))
+                    if count > 0 and offending_span in while_locs:
+                        offending_loc = while_locs[offending_span]
+                        del trace.events[offending_loc+1:]
+                        trace.events[-1] = KarelEvent(
+                               *(trace.events[-1][:-1] + (False,)))
+                        finished = True
+
+                if not finished:
                     # No whiles in the code; blame the first repeat
                     repeat_found = False
                     for i, event in enumerate(trace.events):
@@ -155,7 +158,7 @@ class KarelExecutor(object):
                             repeat_found = True
                             break
                     if not repeat_found:
-                       raise Exception('Karel timeout with neither while nor repeat')
+                        raise Exception('Karel timeout with neither while nor repeat')
                     del trace.events[i+1:]
                     trace.events[-1] = KarelEvent(
                            *(trace.events[-1][:-1] + (False,)))
