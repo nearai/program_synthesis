@@ -437,12 +437,23 @@ class RecurrentTraceEncoder(TraceEncoder):
             # Whether to include actions/control flow in the middle
             interleave_events=True,
             # Only include actions or also include control flow events
-            include_flow_events=False,
+            include_flow_events=True,
             # Get embeddings from code_seq using boundary information
-            event_emb_from_code_seq=False, ):
+            event_emb_from_code_seq=True, ):
         super(RecurrentTraceEncoder, self).__init__(
             interleave_events, include_flow_events, event_emb_from_code_seq)
         self._cuda = args.cuda
+
+        pieces = args.karel_trace_enc.split(':')
+        if 'noev' in pieces:
+            self.interleave_events = False
+        if 'nocond' in pieces:
+            self.include_flow_events = False
+            raise NotImplementedError
+        if 'noact' in pieces:
+            raise NotImplementedError
+        if 'staticemb' in pieces:
+            raise NotImplementedError
 
         self.encoder = nn.LSTM(
             input_size=256,
@@ -716,9 +727,9 @@ class LGRLRefineKarel(nn.Module):
         super(LGRLRefineKarel, self).__init__()
         self.args = args
 
-        if self.args.karel_trace_enc == 'conv3d':
+        if self.args.karel_trace_enc.startswith('conv3d'):
             self.trace_encoder = TimeConvTraceEncoder(self.args)
-        elif self.args.karel_trace_enc == 'lstm':
+        elif self.args.karel_trace_enc.startswith('lstm'):
             self.trace_encoder = RecurrentTraceEncoder(self.args)
         elif self.args.karel_trace_enc == 'none':
             self.trace_encoder = lambda *args: None
