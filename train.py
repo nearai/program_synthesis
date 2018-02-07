@@ -81,7 +81,9 @@ def train(args):
                     stats['total'] += batch_res['total']
                     if dev_idx > args.eval_n_steps:
                         break
-                print("Dev accuracy: %.5f" % (float(stats['correct']) / stats['total']))
+                accuracy = float(stats['correct']) / stats['total']
+                print("Dev accuracy: %.5f" % accuracy)
+                reporter.record(m.last_step, **{'accuracy/dev': accuracy})
                 m.model.train()
 
 
