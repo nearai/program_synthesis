@@ -73,7 +73,7 @@ class KarelExecutor(object):
         field = np.zeros((15, 18, 18), dtype=np.bool)
         field.ravel()[inp] = True
 
-        trace = []
+        trace = None
         timeout = Timeout(self.action_limit)
         if record_trace:
             trace = KarelTrace([inp], [])
@@ -85,8 +85,6 @@ class KarelExecutor(object):
                     cond_span=None,
                     cond_value=None,
                     success=success))
-                if strict and not success:
-                    raise ExecutorRuntimeException
                 trace.grids.append(np.where(field.ravel())[0].tolist())
                 timeout.inc()
 
@@ -139,7 +137,7 @@ class KarelExecutor(object):
                     else:
                         while_counts[event.span] = 0
 
-                if while_counts:
+                if while_locs:
                     offending_span, count = max(
                             while_counts.iteritems(),
                             key=operator.itemgetter(1))
@@ -165,6 +163,20 @@ class KarelExecutor(object):
                 del trace.grids[trace.events[-1].timestep:]
 
             return ExecutionResult(None, trace)
+
+        if record_trace:
+            # Cut off at last failed action
+            failure = False
+            for i,  event in enumerate(trace.events):
+                if not event.success:
+                    failure = True
+                    break
+            if failure:
+                del trace.events[i+1:]
+                # Delete all grids accumulated after where we decided to have
+                # the cutoff
+                del trace.grids[trace.events[-1].timestep:]
+                return ExecutionResult(None, trace)
 
         return ExecutionResult(np.where(field.ravel())[0].tolist(), trace)
 

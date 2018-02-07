@@ -243,7 +243,7 @@ class KarelExampleMutator(object):
         self.rng = np.random.RandomState()
         self.parser = parser_for_synthesis.KarelForSynthesisParser(
                 build_tree=True)
-        self.executor = executor.KarelExecutor()
+        self.executor = executor.KarelExecutor(action_limit=500)
 
     def __call__(self, karel_example):
         from ..dataset import KarelExample
