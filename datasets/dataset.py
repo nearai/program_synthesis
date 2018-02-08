@@ -140,7 +140,7 @@ class KarelExample(object):
             ref_example = KarelExample.from_dict(ref_dict)
         else:
             ref_example = None
-        return cls(d['id'], d['guid'], d['code'], all_examples[:5], all_examples[5:],
+        return cls(d.get('id', None), d['guid'], d['code'], all_examples[:5], all_examples[5:],
                 ref_example)
 
     def to_dict(self):
