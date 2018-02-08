@@ -58,7 +58,7 @@ def lists_to_packed_sequence(lists, item_shape, tensor_type, item_to_tensor):
     idx = 0
     for i, bound in enumerate(batch_bounds):
         for batch_idx, lst  in enumerate(sorted_lists[:bound]):
-            result[idx] = item_to_tensor(lst[i])
+            item_to_tensor(lst[i], batch_idx, result[idx])
             idx += 1
 
     result = Variable(result)
@@ -381,34 +381,21 @@ class KarelLGRLRefineBatchProcessor(object):
             test['trace'].grids
             for item in batch for test in item.ref_example.input_tests
         ]
-        ref_trace_grids = torch.zeros(
-                sum(len(lst) for lst in grids_lists),
-                15, 18, 18)
-        trace_grids_lists, sort_to_orig, orig_to_sort = prepare_spec.sort_lists_by_length(
-                grids_lists)
-        lengths = prepare_spec.lengths(trace_grids_lists)
-        batch_bounds = prepare_spec.batch_bounds_for_packing(lengths)
-        idx = 0
 
-        # TODO: use lists_to_packed_sequence.
-        last_grids = [set() for _ in trace_grids_lists]
-        for i, bound in enumerate(batch_bounds):
-            for batch_idx, trace_grids in enumerate(trace_grids_lists[:bound]):
-                if isinstance(trace_grids[i], dict):
-                    last_grid = last_grids[batch_idx]
-                    assert last_grid.isdisjoint(trace_grids[i]['plus'])
-                    assert last_grid >= trace_grids[i]['minus']
-                    last_grid.update(trace_grids[i]['plus'])
-                    last_grid.difference_update(trace_grids[i]['minus'])
-                else:
-                    last_grid = last_grids[batch_idx] = set(trace_grids[i])
-                ref_trace_grids[idx].view(-1)[list(last_grid)] = 1
-                idx += 1
-        ref_trace_grids = Variable(ref_trace_grids)
-
-        ref_trace_grids = prepare_spec.PackedSequencePlus(
-            nn.utils.rnn.PackedSequence(ref_trace_grids, batch_bounds),
-            lengths, sort_to_orig, orig_to_sort)
+        last_grids = [set() for _ in grids_lists]
+        def fill(grid, batch_idx, out):
+            if isinstance(grid, dict):
+                last_grid = last_grids[batch_idx]
+                assert last_grid.isdisjoint(grid['plus'])
+                assert last_grid >= grid['minus']
+                last_grid.update(grid['plus'])
+                last_grid.difference_update(grid['minus'])
+            else:
+                last_grid = last_grids[batch_idx] = set(grid)
+            out.zero_()
+            out.view(-1)[list(last_grid)] = 1
+        ref_trace_grids = lists_to_packed_sequence(grids_lists, (15, 18, 18),
+                torch.FloatTensor, fill)
         return ref_trace_grids
 
     def prepare_traces_events(self, batch, ref_code):
@@ -435,9 +422,9 @@ class KarelLGRLRefineBatchProcessor(object):
                 all_action_events,
                 [2],
                 torch.LongTensor,
-                lambda ev: torch.LongTensor([
+                lambda ev, batch_idx, out: out.copy_(torch.LongTensor([
                     #{'if': 0, 'ifElse': 1, 'while': 2, 'repeat': 3}[ev.type],
-                    ev.span[0], ev.success]))
+                    ev.span[0], ev.success])))
         action_code_indices = None
         if ref_code:
             action_code_indices = Variable(torch.LongTensor(
@@ -451,9 +438,13 @@ class KarelLGRLRefineBatchProcessor(object):
                 all_cond_events,
                 [6],
                 torch.LongTensor,
-                lambda ev: torch.LongTensor([ev.span[0], ev.span[1],
-                    ev.cond_span[0], ev.cond_span[1], int(ev.cond_value) if
-                    isinstance(ev.cond_value, bool) else ev.cond_value + 2, ev.success]))
+                lambda ev, batch_idx, out: out.copy_(
+                    torch.LongTensor([
+                        ev.span[0], ev.span[1],
+                        ev.cond_span[0], ev.cond_span[1],
+                        int(ev.cond_value) if isinstance(ev.cond_value, bool)
+                        else ev.cond_value + 2,
+                        ev.success])))
         cond_code_indices = None
         if ref_code:
             cond_code_indices = Variable(torch.LongTensor(
