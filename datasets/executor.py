@@ -158,7 +158,9 @@ class KarelExecutor(object):
                             repeat_found = True
                             break
                     if not repeat_found:
-                        raise Exception('Karel timeout with neither while nor repeat')
+                        raise Exception(
+                                'Karel timeout with neither while nor repeat. '
+                                'Code: ' + ' '.join(code))
                     del trace.events[i+1:]
                     trace.events[-1] = KarelEvent(
                            *(trace.events[-1][:-1] + (False,)))

@@ -4,6 +4,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.autograd import Variable
+import numpy as np
 
 from models import base, prepare_spec
 from .. import beam_search
@@ -274,6 +275,9 @@ class LGRLSeqDecoder(nn.Module):
         logits = self.out(decoder_output)
 
         return new_state, logits
+
+    def postprocess_output(self, sequences, _):
+        return sequences
 
     def zero_state(self, *args):
         return lstm_init(self._cuda, 2, 256, *args)
@@ -555,7 +559,7 @@ class LGRLSeqRefineDecoder(nn.Module):
             vocab_size + self.num_placeholders,
             bias=False)
 
-    def prepare_memory(self, io_embed, code_memory, trace_memory):
+    def prepare_memory(self, io_embed, code_memory, trace_memory, _):
         # code_memory:
         #   PackedSequencePlus, batch size x code length x 512
         #   or None
@@ -587,7 +591,7 @@ class LGRLSeqRefineDecoder(nn.Module):
 
         return LGRLRefineMemory(io_embed, code_memory, trace_memory)
 
-    def forward(self, io_embed, code_memory, trace_memory, outputs):
+    def forward(self, io_embed, code_memory, trace_memory, outputs, _):
         # io_embed: batch size x num pairs x 512
         # code_memory:
         #   PackedSequencePlus, batch size x code length x 512
@@ -611,7 +615,7 @@ class LGRLSeqRefineDecoder(nn.Module):
         out_embed = out_embed.unsqueeze(1).expand(-1, pairs_per_example, -1,
                                                   -1)
 
-        memory = self.prepare_memory(io_embed, code_memory, trace_memory)
+        memory = self.prepare_memory(io_embed, code_memory, trace_memory, None)
         state = self.zero_state(out_embed.shape[0], out_embed.shape[1])
 
         all_logits = []
@@ -695,6 +699,9 @@ class LGRLSeqRefineDecoder(nn.Module):
             new_context.view(-1, pairs_per_example, new_context.shape[-1]),
             *new_state), logits
 
+    def postprocess_output(self, sequences, memory):
+        return sequences
+
     def zero_state(self, *args):
         context_size = args + (512, )
         context = Variable(torch.zeros(*context_size))
@@ -702,6 +709,246 @@ class LGRLSeqRefineDecoder(nn.Module):
             context = context.cuda()
         return LGRLRefineDecoderState(context,
                                       *lstm_init(self._cuda, 2, 256, *args))
+
+
+class LGRLRefineEditDecoderState(
+        collections.namedtuple('LGRLRefineEditDecoderState', [
+            'source_locs', 'h', 'c',
+        ]),
+        # source_locs: batch size (* beam size)
+        beam_search.BeamSearchState):
+    def select_for_beams(self, batch_size, indices):
+        '''Return the hidden state necessary to continue the beams.
+
+        batch size: int
+        indices: 2 x batch size * beam size LongTensor
+        '''
+        selected = [self.source_locs.reshape(batch_size, -1)[
+            tuple(indices.data.numpy())]]
+        for v in self.h, self.c:
+            # before: 2 x batch size (* beam size) x num pairs x hidden
+            # after:  2 x batch size x beam size x num pairs x hidden
+            v = v.view(2, batch_size, -1, *v.shape[2:])
+            # result: 2 x indices.shape[1] x num pairs x hidden
+            selected.append(v[(slice(None), ) + tuple(indices.data.numpy())])
+        return LGRLRefineEditDecoderState(*selected)
+
+
+class LGRLRefineEditMemory(beam_search.BeamSearchMemory):
+    __slots__ = ('io', 'code', 'ref_code')
+
+    def __init__(self, io, code, ref_code):
+        # io: batch (* beam size) x num pairs x hidden size
+        self.io = io
+        # code: PackedSequencePlus, batch (* beam size) x code length x 512
+        self.code = code
+        # ref_code: PackedSequencePlus, batch x seq length
+        self.ref_code = ref_code
+
+    def expand_by_beam(self, beam_size):
+        io_exp = expand(self.io, beam_size)
+        code_exp = None if self.code is None else self.code.expand(beam_size)
+        ref_code_exp = self.ref_code.expand(beam_size)
+        #source_tokens_exp = [
+        #    tokens for tokens in self.source_tokens for _ in range(beam_size)
+        #]
+        #return LGRLRefineMemory(io_exp, code_exp, source_tokens_exp)
+        return LGRLRefineEditMemory(io_exp, code_exp, ref_code_exp)
+
+
+class LGRLSeqRefineEditDecoder(nn.Module):
+    def __init__(self, vocab_size, args):
+        super(LGRLSeqRefineEditDecoder, self).__init__()
+        assert args.karel_code_enc != 'none'
+        assert args.num_placeholders == 0
+        self.args = args
+        self._cuda = args.cuda
+
+        num_ops = 4 + 2 * vocab_size
+
+        self.op_embed = nn.Embedding(num_ops, 256)
+        self.last_token_embed = nn.Embedding(vocab_size, 256)
+        self.decoder = nn.LSTM(
+            input_size=512 + 512 + 512,
+            hidden_size=256,
+            num_layers=2)
+        self.out = nn.Linear(256, num_ops, bias=False)
+
+        # Given the past op, whether to increment source_loc or not.
+        # Don't increment for <s>, </s>, insert ops
+        self.increment_source_loc = np.ones(num_ops, dtype=int)
+        self.increment_source_loc[:2] = 0
+        self.increment_source_loc[range(4, num_ops, 2)] = 0
+
+        # If we have exhausted all source tokens, then we allow </s> and
+        # insertion only.
+        # In all cases, don't allow <s>.
+        # Positions where mask is 1 will get -inf as the logit.
+        self.end_mask = Variable(torch.ByteTensor([
+            [1] + [0] * (num_ops - 1),
+            # <s>, </s>, keep, delete
+            np.concatenate(([1, 0, 1, 1],  self.increment_source_loc[4:]))
+        ]))
+        if self._cuda:
+            self.end_mask = self.end_mask.cuda()
+
+    def prepare_memory(self, io_embed, code_memory, _, ref_code):
+        # code_memory:
+        #   PackedSequencePlus, batch size x code length x 512
+        #   or None
+        ref_code = ref_code.cpu()
+        return LGRLRefineEditMemory(io_embed, code_memory, ref_code)
+
+    def forward(self, io_embed, code_memory, _1, _2, dec_data):
+        # io_embed: batch size x num pairs x 512
+        # code_memory:
+        #   PackedSequencePlus, batch size x code length x 512
+        #   or None
+        # dec_input:
+        #   PackedSequencePlus, batch size x num ops x 4
+        #      (op, emb pos, last token, io_embed index)
+        # dec_output:
+        #   PackedSequencePlus, batch size x num ops x 1 (op)
+        pairs_per_example = io_embed.shape[1]
+
+        io_embed_flat = io_embed.view(-1, *io_embed.shape[2:])
+
+        dec_input = dec_data.input.apply(
+                lambda d:  torch.cat([
+                    self.op_embed(d[:, 0]),  # 256
+                   code_memory.ps.data[d[:, 1]], # 512
+                   self.last_token_embed(d[:, 2])], # 256
+                   dim=1)).expand(pairs_per_example)
+
+        dec_input = dec_input.apply(
+                lambda d: torch.cat([d,
+                    io_embed_flat[dec_data.io_embed_indices]], dim=1))
+
+        dec_output, _ = self.decoder(dec_input.ps)
+        dec_output, _ = dec_output.data.view(-1, pairs_per_example,
+                *dec_output.data.shape[1:]).max(dim=1)
+
+        logits = self.out(dec_output)
+        labels = dec_data.output.ps.data
+
+        return logits, labels
+
+    def decode_token(self, token, state, memory, attentions):
+        pairs_per_example  = memory.io.shape[1]
+
+        # token shape: batch size (* beam size)
+        # op_emb shape: batch size (* beam size) x 256
+        op_emb = self.op_embed(token)
+
+        # Relevant code_memory:
+        # - same as last code_memory if we have insert, <s>, </s>
+        # - incremented otherwise
+        new_source_locs = state.source_locs + self.increment_source_loc[
+                token.data.cpu().numpy()]
+        code_memory_indices = memory.code.raw_index(
+                orig_batch_idx=range(len(state.source_locs)),
+                seq_idx=new_source_locs)
+        code_memory = memory.code.ps.data[code_memory_indices]
+
+        # Last token embedings
+        # keep: token from appropriate source location
+        #   (state.source_locs, not new_source_locs)
+        # delete: UNK (ID 2)
+        # insert, replace: the inserted/replaced token
+        last_token_indices = []
+        for batch_idx, t in enumerate(token.data.cpu()):
+            if t < 2:     # <s> or </s>
+                last_token_indices.append(t)
+            elif t == 2:  # keep
+                last_token_indices.append(
+                        memory.ref_code.select(batch_idx,
+                            state.source_locs[batch_idx]).data[0])
+                #last_token_indices.append(memory.source_tokens[batch_idx][
+                #    state.source_locs[batch_idx]])
+            elif t == 3: # delete
+                last_token_indices.append(2) # UNK
+            elif t >= 4:
+                last_token_indices.append((t - 4) // 2)
+            else:
+                raise ValueError(t)
+        last_token_indices = Variable(
+                torch.LongTensor(last_token_indices))
+        if self._cuda:
+            last_token_indices = last_token_indices.cuda()
+        last_token_emb = self.last_token_embed(last_token_indices)
+
+        dec_input = torch.cat([op_emb, code_memory, last_token_emb], dim=1)
+        dec_input = expand(dec_input, pairs_per_example)
+        dec_input = torch.cat([dec_input, flatten(memory.io, 0)], dim=1)
+
+        dec_output, new_state = self.decoder(
+                # 1 (time) x batch (* beam) * num pairs x hidden size
+                dec_input.unsqueeze(0),
+                # v before: 2 x batch (* beam) x num pairs x hidden
+                # v after:  2 x batch (* beam) * num pairs x hidden
+                (flatten(state.h, 1), flatten(state.c, 1)))
+        new_state = (new_state[0].view_as(state.h),
+                                 new_state[1].view_as(state.c))
+
+        # shape after squeezing: batch size (* beam size) * num pairs x hidden
+        dec_output = dec_output.squeeze(0)
+        dec_output = dec_output.view(-1, pairs_per_example,
+                                     *dec_output.shape[1:])
+        dec_output, _ = dec_output.max(dim=1)
+
+        # batch (* beam) x vocab size
+        logits = self.out(dec_output)
+
+        # If we have depleted the source tokens, then all we can do is end the
+        # output or insert new tokens.
+        end_mask = []
+        for i, (loc, source_len) in enumerate(zip(new_source_locs,
+                memory.ref_code.orig_lengths())):
+            # source_len is 1 longer than in reality because we appended
+            # </s> to each source sequence.
+            if loc == source_len - 1:
+                end_mask.append(1)
+            elif loc >= source_len or loc < 0:
+                raise ValueError(loc)
+            else:
+                end_mask.append(0)
+        # TODO: Figure out why Torch complains with float('-inf')
+        logits.masked_fill_(self.end_mask[end_mask], -10e10)
+
+        return LGRLRefineEditDecoderState(new_source_locs, *new_state), logits
+
+    def postprocess_output(self, sequences, memory):
+        ref_code = memory.ref_code.cpu()
+
+        result = []
+        for batch_idx, beam_outputs in enumerate(sequences):
+            processed_beam_outputs = []
+            for ops in beam_outputs:
+                real_tokens = []
+                source_index = 0
+                for op in ops:
+                    if op == 2:  # keep
+                        real_tokens.append(
+                            ref_code.select(batch_idx, source_index).data[0])
+                        source_index += 1
+                    elif op == 3:  # delete
+                        source_index += 1
+                    elif op >= 4:
+                        t = (op - 4) // 2
+                        is_replace = (op - 4) % 2
+                        real_tokens.append(t)
+                        source_index += is_replace
+                    else:
+                        raise ValueError(op)
+                processed_beam_outputs.append(real_tokens)
+            result.append(processed_beam_outputs)
+
+        return result
+
+    def zero_state(self, batch_size, pairs_per_example):
+        return LGRLRefineEditDecoderState(
+                np.zeros(batch_size, dtype=int),
+                *lstm_init(self._cuda, 2, 256, batch_size, pairs_per_example))
 
 
 class LGRLKarel(nn.Module):
@@ -743,8 +990,14 @@ class LGRLRefineKarel(nn.Module):
         else:
             raise ValueError(self.args.karel_code_enc)
 
+        if self.args.karel_refine_dec == 'default':
+            self.decoder = LGRLSeqRefineDecoder(vocab_size, args)
+        elif self.args.karel_refine_dec == 'edit':
+            self.decoder = LGRLSeqRefineEditDecoder(vocab_size, args)
+        else:
+            raise ValueError(self.args.karel_refine_dec)
+
         self.encoder = LGRLTaskEncoder(args)
-        self.decoder = LGRLSeqRefineDecoder(vocab_size, args)
 
     def encode(self, input_grid, output_grid, ref_code, ref_trace_grids,
                ref_trace_events, cag_interleave):
@@ -757,9 +1010,10 @@ class LGRLRefineKarel(nn.Module):
                                               ref_trace_events, cag_interleave)
         return io_embed, ref_code_memory, ref_trace_memory
 
-    def decode(self, io_embed, ref_code_memory, ref_trace_memory, outputs):
+    def decode(self, io_embed, ref_code_memory, ref_trace_memory, outputs,
+            dec_data):
         return self.decoder(io_embed, ref_code_memory, ref_trace_memory,
-                            outputs)
+                            outputs, dec_data)
 
     def decode_token(self, token, state, memory, attentions=None):
         return self.decoder.decode_token(token, state, memory, attentions)

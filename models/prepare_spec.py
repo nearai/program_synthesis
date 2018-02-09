@@ -66,6 +66,9 @@ class PackedSequencePlus(collections.namedtuple('PackedSequencePlus',
         assert np.all(result < len(self.ps.data))
         return result
 
+    def select(self, orig_batch_idx, seq_idx):
+        return self.ps.data[self.raw_index(orig_batch_idx, seq_idx)]
+
     def orig_index(self, raw_idx):
         seq_idx = np.searchsorted(
                 self.cum_batch_sizes, raw_idx, side='right') - 1
@@ -79,15 +82,48 @@ class PackedSequencePlus(collections.namedtuple('PackedSequencePlus',
             result.extend(self.orig_to_sort[:bs])
         return np.array(result)
 
+    def orig_lengths(self):
+        for sort_idx in self.sort_to_orig:
+            yield self.lengths[sort_idx]
+
+    def expand(self, k):
+        # Conceptually, this function does the following:
+        #   Input: d1 x ...
+        #   Output: d1 * k x ... where
+        #     out[0] = out[1] = ... out[k],
+        #     out[k + 0] = out[k + 1] = ... out[k + k],
+        #   and so on.
+        v = self.ps.data
+        ps_data = v.unsqueeze(1).repeat(1, k, *(
+            [1] * (v.dim() - 1))).view(-1, *v.shape[1:])
+        batch_sizes = (np.array(self.ps.batch_sizes) * k).tolist()
+        lengths = np.repeat(self.lengths, k).tolist()
+        sort_to_orig = [
+            exp_i for i in self.sort_to_orig for exp_i in range(i * k, i * k + k)
+        ]
+        orig_to_sort = [
+            exp_i for i in self.orig_to_sort for exp_i in range(i * k, i * k + k)
+        ]
+        return PackedSequencePlus(
+                torch.nn.utils.rnn.PackedSequence(ps_data, batch_sizes), 
+                lengths, sort_to_orig, orig_to_sort)
+
+    def cpu(self):
+        if not self.ps.data.is_cuda:
+            return self
+        return self.apply(lambda d: d.cpu())
+
 
 def sort_lists_by_length(lists):
     # lists_sorted: lists sorted by length of each element, descending
     # orig_to_sort: tuple of integers, satisfies the following:
     #   tuple(lists[i] for i in orig_to_sort) == lists_sorted
+    #   lists[orig_to_sort[sort_idx]] == lists_sorted[sort_idx]
     orig_to_sort, lists_sorted = zip(*sorted(
         enumerate(lists), key=lambda x: len(x[1]), reverse=True))
     # sort_to_orig: list of integers, satisfies the following:
     #   [lists_sorted[i] for i in sort_to_orig] == lists
+    #   lists_sorted[sort_to_orig[orig_idx]] == lists[orig_idx]
     sort_to_orig = [
         x[0] for x in sorted(
             enumerate(orig_to_sort), key=operator.itemgetter(1))

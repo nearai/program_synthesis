@@ -1,4 +1,5 @@
 import collections
+import itertools
 import numpy as np
 import operator
 import traceback
@@ -10,6 +11,7 @@ from torch.autograd import Variable
 from base import BaseCodeModel, InferenceResult
 from datasets import data, dataset, executor
 from modules import karel
+from tools import edit
 import beam_search
 import prepare_spec
 
@@ -220,8 +222,9 @@ class KarelLGRLRefineModel(BaseKarelModel):
         self.trace_lengths = []
         super(KarelLGRLRefineModel, self).__init__(args)
 
-    def compute_loss(self, (input_grids, output_grids, code_seqs, ref_code,
-        ref_trace_grids, ref_trace_events, cag_interleave, orig_examples)):
+    def compute_loss(self, (input_grids, output_grids, code_seqs, dec_data,
+                            ref_code, ref_trace_grids, ref_trace_events,
+                            cag_interleave, orig_examples)):
         if orig_examples:
             for i, orig_example in  enumerate(orig_examples):
                 self.trace_grid_lengths.append((orig_example.idx, [
@@ -240,7 +243,8 @@ class KarelLGRLRefineModel(BaseKarelModel):
         if self.args.cuda:
             input_grids = input_grids.cuda(async=True)
             output_grids = output_grids.cuda(async=True)
-            code_seqs = code_seqs.cuda(async=True)
+            code_seqs = maybe_cuda(code_seqs, async=True)
+            dec_data = maybe_cuda(dec_data, async=True)
             ref_code = maybe_cuda(ref_code, async=True)
             ref_trace_grids = maybe_cuda(ref_trace_grids, async=True)
             ref_trace_events = maybe_cuda(ref_trace_events, async=True)
@@ -250,7 +254,8 @@ class KarelLGRLRefineModel(BaseKarelModel):
             input_grids, output_grids, ref_code, ref_trace_grids,
             ref_trace_events, cag_interleave)
         logits, labels = self.model.decode(io_embed, ref_code_memory,
-                                           ref_trace_memory, code_seqs)
+                                           ref_trace_memory, code_seqs,
+                                           dec_data)
         return self.criterion(
             logits.view(-1, logits.shape[-1]), labels.contiguous().view(-1))
 
@@ -259,11 +264,12 @@ class KarelLGRLRefineModel(BaseKarelModel):
         print("Code: %s" % ' '.join(code))
 
     def inference(self,
-                  (input_grids, output_grids, _1, ref_code, ref_trace_grids,
-                   ref_trace_events, cag_interleave, _2)):
+                  (input_grids, output_grids, _1, dec_data, ref_code,
+                      ref_trace_grids, ref_trace_events, cag_interleave, _2)):
         if self.args.cuda:
             input_grids = input_grids.cuda(async=True)
             output_grids = output_grids.cuda(async=True)
+            dec_data = maybe_cuda(dec_data, async=True)
             ref_code = maybe_cuda(ref_code, async=True)
             ref_trace_grids = maybe_cuda(ref_trace_grids, async=True)
             ref_trace_events = maybe_cuda(ref_trace_events, async=True)
@@ -274,7 +280,7 @@ class KarelLGRLRefineModel(BaseKarelModel):
         init_state = self.model.decoder.zero_state(io_embed.shape[0],
                                                    io_embed.shape[1])
         memory = self.model.decoder.prepare_memory(io_embed, ref_code_memory,
-                                                   ref_trace_memory)
+                                                   ref_trace_memory, ref_code)
 
         sequences = beam_search.beam_search(
             len(input_grids),
@@ -285,6 +291,8 @@ class KarelLGRLRefineModel(BaseKarelModel):
             cuda=self.args.cuda,
             max_decoder_length=self.args.max_decoder_length)
 
+        sequences = self.model.decoder.postprocess_output(sequences, memory)
+
         return self._try_sequences(self.vocab, sequences, input_grids,
                                    output_grids, self.args.max_beam_trees)
 
@@ -293,8 +301,10 @@ class KarelLGRLRefineModel(BaseKarelModel):
 
 
 KarelLGRLRefineExample = collections.namedtuple('KarelLGRLRefineExample', (
-    'input_grids', 'output_grids', 'code_seqs', 'ref_code', 'ref_trace_grids',
-    'ref_trace_events', 'cond_action_grid_interleave', 'orig_examples'))
+    'input_grids', 'output_grids', 'code_seqs', 'dec_data',
+    'ref_code', 'ref_trace_grids', 'ref_trace_events',
+    'cond_action_grid_interleave', 'orig_examples'))
+
 
 class PackedTrace(collections.namedtuple('PackedTrace', ('actions',
     'action_code_indices', 'conds', 'cond_code_indices',
@@ -308,6 +318,14 @@ class PackedTrace(collections.namedtuple('PackedTrace', ('actions',
         return PackedTrace(actions, action_code_indices, conds,
                 cond_code_indices, self.interleave_indices)
 
+
+class PackedDecoderData(collections.namedtuple('PackedDecoderData', ('input',
+    'output', 'io_embed_indices'))):
+    def cuda(self, async=False):
+        input_ = maybe_cuda(self.input, async)
+        output = maybe_cuda(self.output, async)
+        io_embed_indices = maybe_cuda(self.io_embed_indices, async)
+        return PackedDecoderData(input_, output, io_embed_indices)
 
 
 class KarelLGRLRefineBatchProcessor(object):
@@ -323,11 +341,19 @@ class KarelLGRLRefineBatchProcessor(object):
         if self.args.karel_code_enc == 'none':
             ref_code = None
         else:
+            append_eos = self.args.karel_refine_dec == 'edit'
             ref_code = prepare_spec.lists_to_packed_sequence(
+                [item.ref_example.code_sequence + ('</S>',) for item in batch]
+                if append_eos else
                 [item.ref_example.code_sequence for item in batch],
                 self.vocab.stoi,
                 False,
                 volatile=False)
+
+        if self.args.karel_refine_dec == 'edit':
+            dec_data = self.compute_edit_ops(batch, ref_code)
+        else:
+            dec_data = None
 
         if self.args.karel_trace_enc == 'none':
             ref_trace_grids, ref_trace_events = None, None
@@ -351,8 +377,99 @@ class KarelLGRLRefineBatchProcessor(object):
         orig_examples = batch if self.for_eval else None
 
         return KarelLGRLRefineExample(
-            input_grids, output_grids, code_seqs, ref_code, ref_trace_grids,
-            ref_trace_events, cag_interleave, orig_examples)
+            input_grids, output_grids, code_seqs, dec_data,
+            ref_code, ref_trace_grids, ref_trace_events, cag_interleave,
+            orig_examples)
+
+    def compute_edit_ops(self, batch, ref_code):
+        # Sequence length: 2 + len(edit_ops)
+        #
+        # Op encoding:
+        #   0: <s>
+        #   1: </s>
+        #   2: keep
+        #   3: delete
+        #   4: insert vocab 0
+        #   5: replace vocab 0
+        #   6: insert vocab 1
+        #   7: replace vocab 1
+        #   ...
+        #
+        # Inputs to RNN:
+        # - <s> + op
+        # - emb from source position + </s>
+        # - <s> + last generated token (or null if last action was deletion)
+        #
+        # Outputs of RNN:
+        # - op + </s>
+        edit_lists = []
+        for batch_idx, item in enumerate(batch):
+            edit_ops =  list(
+                    edit.compute_edit_ops(item.ref_example.code_sequence,
+                        item.code_sequence, self.vocab.stoi))
+            dest_iter = itertools.chain(['<s>'], item.code_sequence)
+
+            # Op = <s>, emb location, last token = <s>
+            source_locs, ops, values = [list(x) for x in zip(*edit_ops)]
+            source_locs.append(len(item.ref_example.code_sequence))
+            ops = [0] + ops
+            values = [None] + values
+
+            edit_list = []
+            op_idx = 0
+            for source_loc, op, value in zip(source_locs, ops, values):
+                if op == 'keep':
+                    op_idx = 2
+                elif op == 'delete':
+                    op_idx = 3
+                elif op == 'insert':
+                    op_idx = 4 + 2 * self.vocab.stoi(value)
+                elif op == 'replace':
+                    op_idx = 5 + 2 * self.vocab.stoi(value)
+                elif isinstance(op, int):
+                    op_idx = op
+                else:
+                    raise ValueError(op)
+
+                # Set last token to UNK if operation is delete
+                try:
+                    last_token = 2 if op_idx == 3 else self.vocab.stoi(
+                            next(dest_iter))
+                except StopIteration:
+                    raise Exception('dest_iter ended early')
+
+                assert source_loc < ref_code.lengths[ref_code.sort_to_orig[batch_idx]]
+                edit_list.append((
+                    op_idx, ref_code.raw_index(batch_idx, source_loc),
+                    last_token))
+            stopped = False
+            try:
+                next(dest_iter)
+            except StopIteration:
+                stopped = True
+            assert stopped
+
+            # Op = </s>, emb location and last token are irrelevant
+            edit_list.append((1, None, None))
+            edit_lists.append(edit_list)
+
+        rnn_inputs = lists_to_packed_sequence(
+                [lst[:-1] for lst in edit_lists], (3,), torch.LongTensor,
+                lambda (op, emb_pos, last_token), _, out:
+                out.copy_(torch.LongTensor([op, emb_pos, last_token])))
+        rnn_outputs = lists_to_packed_sequence(
+                [lst[1:] for lst in edit_lists], (1,), torch.LongTensor,
+                lambda (op, emb_pos, last_token), _, out:
+                out.copy_(torch.LongTensor([op])))
+
+        io_embed_indices = torch.LongTensor([
+            expanded_idx
+            for b in rnn_inputs.ps.batch_sizes
+            for orig_idx in rnn_inputs.orig_to_sort[:b]
+            for expanded_idx in range(orig_idx * 5, orig_idx * 5 + 5)
+        ])
+
+        return PackedDecoderData(rnn_inputs, rnn_outputs, io_embed_indices)
 
     def interleave_grids_events(self, batch):
         events_lists = [
