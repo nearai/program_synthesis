@@ -170,7 +170,7 @@ class KarelLGRLModel(BaseKarelModel):
             output_grids = output_grids.cuda(async=True)
 
         io_embed = self.model.encode(input_grids, output_grids)
-        init_state = karel.LGRLDecoderState(*self.model.decoder.zero_state(
+        init_state = karel.LGRLDecoderState(*self.model.decoder.init_state(
             io_embed.shape[0], io_embed.shape[1]))
         memory = karel.LGRLMemory(io_embed)
 
@@ -277,8 +277,9 @@ class KarelLGRLRefineModel(BaseKarelModel):
         io_embed, ref_code_memory, ref_trace_memory = self.model.encode(
             input_grids, output_grids, ref_code, ref_trace_grids,
             ref_trace_events, cag_interleave)
-        init_state = self.model.decoder.zero_state(io_embed.shape[0],
-                                                   io_embed.shape[1])
+        init_state = self.model.decoder.init_state(
+                ref_code_memory, ref_trace_memory,
+                io_embed.shape[0], io_embed.shape[1])
         memory = self.model.decoder.prepare_memory(io_embed, ref_code_memory,
                                                    ref_trace_memory, ref_code)
 
