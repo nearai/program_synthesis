@@ -31,7 +31,7 @@ def encode_grids_and_outputs(batch, vocab):
         torch.zeros(len(batch), 5, 15, 18, 18) for _ in range(2)
     ]
     for batch_idx, item in enumerate(batch):
-        assert len(item.input_tests) == 5
+        assert len(item.input_tests) == 5, len(item.input_tests)
         for test_idx, test in enumerate(item.input_tests):
             inp, out = test['input'], test['output']
             input_grids[batch_idx, test_idx].view(-1)[inp] = 1
@@ -433,6 +433,7 @@ class KarelLGRLRefineBatchProcessor(object):
                     raise ValueError(op)
 
                 # Set last token to UNK if operation is delete
+                # XXX last_token should be 0 (<s>) at the beginning
                 try:
                     last_token = 2 if op_idx == 3 else self.vocab.stoi(
                             next(dest_iter))
