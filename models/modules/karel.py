@@ -697,8 +697,8 @@ class LGRLSeqRefineDecoder(nn.Module):
         # last_token_emb: batch (* beam) x num pairs x hidden size
         pairs_per_example = memory.io.shape[1]
 
-        decoder_input = torch.cat([last_token_emb, memory.io] + ([state.context]
-                if self.has_memory else []), dim=2)
+        decoder_input = maybe_concat([last_token_emb, memory.io, state.context
+                if self.has_memory else None], dim=2)
         decoder_input = decoder_input.view(-1, decoder_input.shape[-1])
 
         # decoder_output: 1 x batch (* beam) * num pairs x hidden size
@@ -780,7 +780,7 @@ class LGRLSeqRefineDecoder(nn.Module):
                     # Input: batch x num pairs x directions * hidden size (=512)
                     # Output: batch x num pairs x 256
                     new_s.append(proj_layer(s_layer))
-                # Shape: 1 x batch x pairs per example x 256
+                # Shape: 2 x batch x pairs per example x 256
                 new_state.append(torch.stack(new_s))
             return LGRLRefineDecoderState(context,
                                           *new_state)
@@ -842,12 +842,17 @@ class LGRLSeqRefineEditDecoder(nn.Module):
         self.args = args
         self._cuda = args.cuda
 
+        code_usage = set(args.karel_code_usage.split(','))
+        self.use_code_memory = set_pop(code_usage, 'memory')
+        self.use_code_state = set_pop(code_usage, 'state')
+        assert not code_usage
+
         num_ops = 4 + 2 * vocab_size
 
         self.op_embed = nn.Embedding(num_ops, 256)
         self.last_token_embed = nn.Embedding(vocab_size, 256)
         self.decoder = nn.LSTM(
-            input_size=512 + 512 + 512,
+            input_size=512 + 512 + (512 if self.use_code_memory else 0),
             hidden_size=256,
             num_layers=2)
         self.out = nn.Linear(256, num_ops, bias=False)
@@ -870,9 +875,18 @@ class LGRLSeqRefineEditDecoder(nn.Module):
         if self._cuda:
             self.end_mask = self.end_mask.cuda()
 
+        if self.use_code_state:
+            self.state_h_proj = torch.nn.ModuleList(
+                [nn.Linear(512, 256) for _ in range(2)])
+            self.state_c_proj = torch.nn.ModuleList(
+                [nn.Linear(512, 256) for _ in range(2)])
+
     def prepare_memory(self, io_embed, code_memory, _, ref_code):
         # code_memory:
-        #   PackedSequencePlus, batch size x code length x 512
+        #   SequenceMemory, containing:
+        #     mem: PackedSequencePlus, batch size x code length x 512
+        #     state: tuple containing two of
+        #       2 (layers) * 2 (directions) x batch size x 256
         #   or None
         ref_code = ref_code.cpu()
         return LGRLRefineEditMemory(io_embed, code_memory, ref_code)
@@ -887,22 +901,26 @@ class LGRLSeqRefineEditDecoder(nn.Module):
         #      (op, emb pos, last token, io_embed index)
         # dec_output:
         #   PackedSequencePlus, batch size x num ops x 1 (op)
-        pairs_per_example = io_embed.shape[1]
+        batch_size, pairs_per_example = io_embed.shape[:2]
 
         io_embed_flat = io_embed.view(-1, *io_embed.shape[2:])
 
-        dec_input = dec_data.input.apply(
-                lambda d:  torch.cat([
-                    self.op_embed(d[:, 0]),  # 256
-                   code_memory.ps.data[d[:, 1]], # 512
-                   self.last_token_embed(d[:, 2])], # 256
-                   dim=1)).expand(pairs_per_example)
+        dec_input = dec_data.input.apply(lambda d: maybe_concat(
+            [
+                self.op_embed(d[:, 0]),  # 256
+                code_memory.mem.ps.data[d[:, 1]] if self.use_code_memory else None,  # 512
+                self.last_token_embed(d[:, 2])],  # 256
+            dim=1)).expand(pairs_per_example)
 
         dec_input = dec_input.apply(
                 lambda d: torch.cat([d,
                     io_embed_flat[dec_data.io_embed_indices]], dim=1))
 
-        dec_output, _ = self.decoder(dec_input.ps)
+        state = self.init_state(code_memory, None, batch_size,
+                pairs_per_example)
+        state = (flatten(state.h, 1), flatten(state.c, 1))
+
+        dec_output, _ = self.decoder(dec_input.ps, state)
         dec_output, _ = dec_output.data.view(-1, pairs_per_example,
                 *dec_output.data.shape[1:]).max(dim=1)
 
@@ -1025,8 +1043,32 @@ class LGRLSeqRefineEditDecoder(nn.Module):
 
     def init_state(self, ref_code_memory, ref_trace_memory,
             batch_size, pairs_per_example):
+        source_locs = np.zeros(batch_size, dtype=int)
+        if self.use_code_state:
+            new_state = []
+            for s, proj in zip(ref_code_memory.state, (self.state_h_proj, self.state_c_proj)):
+                # Shape: layers (2) x directions (2) x batch x hidden size
+                s = s.contiguous().view(-1, 2, *s.shape[1:])
+                # Shape: layers (2) x batch x directions (2) x hidden size
+                s = s.permute(0, 2,  1, 3)
+                # Shape: layers (2) x batch x directions * hidden size
+                s = s.contiguous().view(*(s.shape[:2] + (-1,)))
+                new_s = []
+                for s_layer, proj_layer in zip(s, proj):
+                    # Input: batch x directions * hidden size (=512)
+                    # Output: batch x 256
+                    new_s.append(proj_layer(s_layer))
+                # Shape: 2 x batch x 256
+                new_s = torch.stack(new_s)
+                # Shape: 2 x batch x num pairs x 256
+                new_state.append(
+                    new_s.unsqueeze(2).repeat(1, 1, pairs_per_example, 1))
+            return LGRLRefineEditDecoderState(
+                    source_locs,
+                    *new_state)
+
         return LGRLRefineEditDecoderState(
-                np.zeros(batch_size, dtype=int),
+                source_locs,
                 *lstm_init(self._cuda, 2, 256, batch_size, pairs_per_example))
 
 
