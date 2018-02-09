@@ -52,12 +52,12 @@ repeat_masked_probs = [None, None] + [masked_uniform(len(repeat_counts), i) for
         i in range(len(repeat_counts))]
 
 
-def random_singular_block():
-    type_ = np.random.choice(('if', 'while', 'repeat'))
+def random_singular_block(rng):
+    type_ = rng.choice(('if', 'while', 'repeat'))
     if type_ == 'repeat':
-        return {'type': type_, 'times': np.random.choice(repeat_counts)}
+        return {'type': type_, 'times': rng.choice(repeat_counts)}
     else:
-        return {'type': type_, 'cond': np.random.choice(conds)}
+        return {'type': type_, 'cond': rng.choice(conds)}
 
 
 # operations:
@@ -171,7 +171,7 @@ def mutate(tree, probs=None, rng=None):
         left, right = bounds[rng.choice(len(bounds))]
         subseq = body[left:right]
         del body[left:right]
-        new_block = random_singular_block()
+        new_block = random_singular_block(rng)
         new_block['body'] = subseq
         body.insert(left, new_block)
     elif choice == WRAP_IFELSE:
@@ -257,8 +257,8 @@ class KarelExampleMutator(object):
         new_code = parser_for_synthesis.tree_to_tokens(new_tree)
 
         # TODO: Get the real trace
+        new_tests = []
         if self.add_trace:
-            new_tests = []
             for ex in karel_example.input_tests:
                 result = self.executor.execute(new_code, None, ex['input'],
                         record_trace=True, strict=True)
