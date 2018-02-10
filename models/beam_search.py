@@ -125,15 +125,15 @@ def beam_search(batch_size,
                 if token == 1:  # 1 == </S>
                     finished[batch_id].append(BeamSearchResult(
                         sequence=prev_result[batch_id][kidx].sequence,
-                        total_log_prob=prev_probs.data[batch_id][idx],
-                        log_probs=prev_result[batch_id][kidx].log_probs + [log_probs[batch_id][kidx][token]]))
+                        total_log_prob=prev_probs.data[batch_id, idx],
+                        log_probs=prev_result[batch_id][kidx].log_probs + [log_probs.data[batch_id, kidx, token]]))
                     result[batch_id].append(BeamSearchResult(sequence=[], log_probs=[], total_log_prob=0))
                     prev_probs.data[batch_id][idx] = float('-inf')
                 else:
                     result[batch_id].append(BeamSearchResult(
                         sequence=prev_result[batch_id][kidx].sequence + [token],
-                        total_log_prob=prev_probs.data[batch_id][idx],
-                        log_probs=prev_result[batch_id][kidx].log_probs + [log_probs[batch_id][kidx][token]]))
+                        total_log_prob=prev_probs.data[batch_id, idx],
+                        log_probs=prev_result[batch_id][kidx].log_probs + [log_probs.data[batch_id, kidx, token]]))
                     can_stop = False
             if len(finished[batch_id]) >= beam_size:
                 # Sort and clip.
