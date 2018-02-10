@@ -321,12 +321,13 @@ class PackedTrace(collections.namedtuple('PackedTrace', ('actions',
 
 
 class PackedDecoderData(collections.namedtuple('PackedDecoderData', ('input',
-    'output', 'io_embed_indices'))):
+    'output', 'io_embed_indices', 'ref_code'))):
     def cuda(self, async=False):
         input_ = maybe_cuda(self.input, async)
         output = maybe_cuda(self.output, async)
         io_embed_indices = maybe_cuda(self.io_embed_indices, async)
-        return PackedDecoderData(input_, output, io_embed_indices)
+        ref_code = maybe_cuda(self.ref_code, async)
+        return PackedDecoderData(input_, output, io_embed_indices, ref_code)
 
 
 class KarelLGRLRefineBatchProcessor(object):
@@ -471,7 +472,8 @@ class KarelLGRLRefineBatchProcessor(object):
             for expanded_idx in range(orig_idx * 5, orig_idx * 5 + 5)
         ])
 
-        return PackedDecoderData(rnn_inputs, rnn_outputs, io_embed_indices)
+        return PackedDecoderData(rnn_inputs, rnn_outputs, io_embed_indices,
+                ref_code)
 
     def interleave_grids_events(self, batch):
         events_lists = [

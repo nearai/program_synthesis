@@ -24,6 +24,9 @@ class MaskedMemory(collections.namedtuple('MaskedMemory', ['memory',
         return MaskedMemory(*(v.unsqueeze(1).repeat(1, beam_size, *([1] * (
             v.dim() - 1))).view(-1, *v.shape[1:]) for v in self))
 
+    def apply(self, fn):
+        return MaskedMemory(fn(self.memory), fn(self.attn_mask))
+
 
 def get_attn_mask(seq_lengths, cuda):
     max_length, batch_size = max(seq_lengths), len(seq_lengths)
