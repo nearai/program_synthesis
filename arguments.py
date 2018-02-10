@@ -122,6 +122,8 @@ def backport_default_args(args):
         "read_code": False,
         "optimizer": "adam",
         "dataset_filter_code_length": 0,
+        "karel_trace_usage": "memory",
+        "karel_code_usage": "memory",
     }
     for key, value in backport.items():
         if not hasattr(args, key):

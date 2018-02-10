@@ -105,7 +105,7 @@ class PackedSequencePlus(collections.namedtuple('PackedSequencePlus',
             exp_i for i in self.orig_to_sort for exp_i in range(i * k, i * k + k)
         ]
         return PackedSequencePlus(
-                torch.nn.utils.rnn.PackedSequence(ps_data, batch_sizes), 
+                torch.nn.utils.rnn.PackedSequence(ps_data, batch_sizes),
                 lengths, sort_to_orig, orig_to_sort)
 
     def cpu(self):
