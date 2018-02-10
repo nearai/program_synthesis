@@ -1040,6 +1040,11 @@ class LGRLSeqRefineEditDecoder(nn.Module):
         ref_code = memory.ref_code.cpu()
 
         result = []
+
+        ref_code_insert_locs = []
+        ref_code_batch_indices = []
+        ref_code_seq_indices = []
+
         for batch_idx, beam_outputs in enumerate(sequences):
             processed_beam_outputs = []
             for ops in beam_outputs:
@@ -1047,8 +1052,13 @@ class LGRLSeqRefineEditDecoder(nn.Module):
                 source_index = 0
                 for op in ops:
                     if op == 2:  # keep
-                        real_tokens.append(
-                            ref_code.select(batch_idx, source_index).data[0])
+                        ref_code_insert_locs.append(
+                            (len(result), len(processed_beam_outputs),
+                             len(real_tokens)))
+                        ref_code_batch_indices.append(batch_idx)
+                        ref_code_seq_indices.append(source_index)
+
+                        real_tokens.append(-1)
                         source_index += 1
                     elif op == 3:  # delete
                         source_index += 1
@@ -1061,6 +1071,13 @@ class LGRLSeqRefineEditDecoder(nn.Module):
                         raise ValueError(op)
                 processed_beam_outputs.append(real_tokens)
             result.append(processed_beam_outputs)
+
+        if ref_code_insert_locs:
+            tokens = ref_code.select(
+                    ref_code_batch_indices,
+                    ref_code_seq_indices).data.numpy()
+            for (b, p,  s), t in zip(ref_code_insert_locs, tokens):
+                result[b][p][s] = t
 
         return result
 
