@@ -107,6 +107,8 @@ def beam_search(batch_size,
         prev_result = result
         result = [[] for _ in range(batch_size)]
         can_stop = True
+        prev_probs_np = prev_probs.data.cpu().numpy()
+        log_probs_np = log_probs.data.cpu().numpy()
         k_idx = k_idx.data.numpy()
         indices = indices.data.numpy()
         for batch_id in range(batch_size):
@@ -115,7 +117,7 @@ def beam_search(batch_size,
             # print(step, finished[batch_id])
             if len(finished[batch_id]) >= beam_size:
                 # If last in finished has bigger log prob then best in topk, stop.
-                if finished[batch_id][-1].total_log_prob > prev_probs.data[batch_id][0]:
+                if finished[batch_id][-1].total_log_prob > prev_probs_np[batch_id, 0]:
                     batch_finished[batch_id] = True
                     continue
             for idx in range(beam_size):
@@ -125,15 +127,15 @@ def beam_search(batch_size,
                 if token == 1:  # 1 == </S>
                     finished[batch_id].append(BeamSearchResult(
                         sequence=prev_result[batch_id][kidx].sequence,
-                        total_log_prob=prev_probs.data[batch_id, idx],
-                        log_probs=prev_result[batch_id][kidx].log_probs + [log_probs.data[batch_id, kidx, token]]))
+                        total_log_prob=prev_probs_np[batch_id, idx],
+                        log_probs=prev_result[batch_id][kidx].log_probs + [log_probs_np[batch_id, kidx, token]]))
                     result[batch_id].append(BeamSearchResult(sequence=[], log_probs=[], total_log_prob=0))
                     prev_probs.data[batch_id][idx] = float('-inf')
                 else:
                     result[batch_id].append(BeamSearchResult(
                         sequence=prev_result[batch_id][kidx].sequence + [token],
-                        total_log_prob=prev_probs.data[batch_id, idx],
-                        log_probs=prev_result[batch_id][kidx].log_probs + [log_probs.data[batch_id, kidx, token]]))
+                        total_log_prob=prev_probs_np[batch_id, idx],
+                        log_probs=prev_result[batch_id][kidx].log_probs + [log_probs_np[batch_id, kidx, token]]))
                     can_stop = False
             if len(finished[batch_id]) >= beam_size:
                 # Sort and clip.
