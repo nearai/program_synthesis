@@ -156,10 +156,13 @@ class KarelForSynthesisParser(Parser):
         t.lexer.skip(1)
 
     def token_list_to_tokenfunc(self, tokens):
-        tokens = [
-            self.string_to_token_map[token](i)
-            for i, token in enumerate(tokens)
-        ]
+        try:
+            tokens = [
+                self.string_to_token_map[token](i)
+                for i, token in enumerate(tokens)
+            ]
+        except KeyError as e:
+            raise KarelSyntaxError('Unknown token: {}'.format(e))
         tokens.append(None)
         return iter(tokens).next
 
