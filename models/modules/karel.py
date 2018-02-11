@@ -866,7 +866,7 @@ class LGRLSeqRefineEditDecoder(nn.Module):
         self.use_code_attn = set_pop(code_usage, 'memory-attn')
         self.use_code_state = set_pop(code_usage, 'state')
         assert not code_usage
-        assert not self.use_code_memory  and self.use_code_attn
+        assert not (self.use_code_memory and self.use_code_attn)
 
         num_ops = 4 + 2 * vocab_size
 
