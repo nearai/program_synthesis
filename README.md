@@ -1,9 +1,11 @@
 # Setup
+
 This codebase uses Python 2.
 
 1. (optionally) Create a virtualenv.
 2. Install PyTorch from https://pytorch.org
 3. Install packages from `requirements.txt`: `pip install -r requirements.txt`
+4. Install program_synthesis as package for development: `pip install -e .`
 
 # Training models
 
