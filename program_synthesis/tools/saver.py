@@ -16,17 +16,7 @@ class ArgsDict(dict):
         super(ArgsDict, self).__init__()
         for key, value in kwargs.items():
             self[key] = value
-
-    def __getattribute__(self, name):
-        if name in self:
-            return self[name]
-        super(ArgsDict, self).__getattribute__(name)
-
-    def __setattr__(self, name, value):
-        if hasattr(self, name):
-            super(ArgsDict, self).__setattr__(name, value)
-        else:
-            self[name] = value
+        self.__dict__ = self
 
 
 def load_checkpoint(model, optimizer, model_dir, map_to_cpu=False, step=None):
