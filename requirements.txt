@@ -6,5 +6,8 @@ ply
 prompt_toolkit
 pylru
 pyparsing
+python-Levenshtein
 tensorflow
 torch
+
+-e .
