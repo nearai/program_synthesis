@@ -10,6 +10,15 @@ import json
 CHECKPOINT_PATTERN = re.compile('^checkpoint-(\d+)$')
 
 
+class ArgsDict(dict):
+
+    def __init__(self, **kwargs):
+        super(ArgsDict, self).__init__()
+        for key, value in kwargs.items():
+            self[key] = value
+        self.__dict__ = self
+
+
 def load_checkpoint(model, optimizer, model_dir, map_to_cpu=False, step=None):
     path = os.path.join(model_dir, 'checkpoint')
     if step is not None:
