@@ -92,6 +92,7 @@ def get_arg_parser(title, mode):
         eval_group.add_argument('--eval-train', action='store_true', default=False)
         eval_group.add_argument('--hide-example-info', action='store_true', default=False)
         eval_group.add_argument('--report-path')
+        eval_group.add_argument('--eval-final', action='store_true')
 
     infer_group = parser.add_argument_group('infer')
     infer_group.add_argument('--max_decoder_length', type=int, default=100)
@@ -124,6 +125,7 @@ def backport_default_args(args):
         "dataset_filter_code_length": 0,
         "karel_trace_usage": "memory",
         "karel_code_usage": "memory",
+        "karel_refine_dec": "default",
     }
     for key, value in backport.items():
         if not hasattr(args, key):

@@ -525,6 +525,25 @@ def get_karel_eval_dataset(args, model):
     return dev_data
 
 
+def get_karel_eval_final_dataset(args, model):
+    suffix = args.dataset[5:]
+    if args.karel_mutate_ref:
+        mutation_dist = [float(x) for x in args.karel_mutate_n_dist.split(',')]
+        dev_mutator = KarelExampleMutator(mutation_dist, rng_fixed=True,
+                add_trace=args.karel_trace_enc != 'none')
+    else:
+        dev_mutator = lambda x: x
+
+    dev_data = torch.utils.data.DataLoader(
+        KarelTorchDataset(
+            relpath('../data/karel/test{}.pkl'.format(suffix)),
+            dev_mutator),
+        args.batch_size,
+        collate_fn=model.batch_processor(for_eval=True),
+        num_workers=0 if args.load_sync else 2)
+    return dev_data
+
+
 def set_vocab(args):
     if args.dataset == 'algolisp':
         args.word_vocab = relpath('../data/algolisp/word.vocab')
@@ -548,6 +567,15 @@ def get_eval_dataset(args, model):
         return get_algolisp_eval_dataset(args, model)
     elif args.dataset.startswith('karel'):
         return get_karel_eval_dataset(args, model)
+    else:
+        raise ValueError("Unknown dataset %s" % args.dataset)
+
+
+def get_eval_final_dataset(args, model):
+    if args.dataset == 'algolisp':
+        return get_algolisp_eval_final_dataset(args, model)
+    elif args.dataset.startswith('karel'):
+        return get_karel_eval_final_dataset(args, model)
     else:
         raise ValueError("Unknown dataset %s" % args.dataset)
 

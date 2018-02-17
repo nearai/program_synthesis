@@ -22,7 +22,9 @@ def evaluate(args):
     arguments.backport_default_args(args)
     datasets.set_vocab(args)
     m = models.get_model(args)
-    if args.eval_train:
+    if args.eval_final:
+        eval_dataset = datasets.get_eval_final_dataset(args, m)
+    elif args.eval_train:
         eval_dataset, _ = datasets.get_dataset(args, m)
     else:
         eval_dataset = datasets.get_eval_dataset(args, m)
