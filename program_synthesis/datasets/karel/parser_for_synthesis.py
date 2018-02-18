@@ -357,12 +357,15 @@ class KarelForSynthesisParser(Parser):
                   | PUT_MARKER
         '''
         action_name = p[1]
+        span = (p.lexpos(1), p.lexpos(1))
+        self.action_spans.append(span)
+
         if self.build_tree:
             action = {'type': action_name}
         else:
             action = functools.partial(
                     getattr(self.karel, action_name),
-                    metadata=(p.lexpos(1), p.lexpos(1)))
+                    metadata=span)
         p[0] = action
 
     def p_cste(self, p):
