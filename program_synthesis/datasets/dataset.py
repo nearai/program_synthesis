@@ -460,11 +460,11 @@ class KarelDataset(object):
 
 def get_algolisp_dataset(args, _):
     train_data = NearDataset(
-        relpath('../data/algolisp/dataset.train.jsonl'),
+        relpath('../../data/algolisp/dataset.train.jsonl'),
         args.batch_size, shuffle=True, max_size=args.dataset_max_size,
         max_code_length=args.dataset_max_code_length)
     dev_data = NearDataset(
-        relpath('../data/algolisp/dataset.dev.jsonl'),
+        relpath('../../data/algolisp/dataset.dev.jsonl'),
         args.batch_size, shuffle=False)
     return train_data, dev_data
 
@@ -483,7 +483,7 @@ def get_karel_dataset(args, model):
 
     train_data = torch.utils.data.DataLoader(
         KarelTorchDataset(
-            relpath('../data/karel/train{}.pkl'.format(suffix)),
+            relpath('../../data/karel/train{}.pkl'.format(suffix)),
             train_mutator),
         args.batch_size,
         collate_fn=model.batch_processor(for_eval=False),
@@ -491,7 +491,7 @@ def get_karel_dataset(args, model):
         pin_memory=False)
     dev_data = torch.utils.data.DataLoader(
         KarelTorchDataset(
-            relpath('../data/karel/val{}.pkl'.format(suffix)),
+            relpath('../../data/karel/val{}.pkl'.format(suffix)),
             dev_mutator),
         args.batch_size,
         collate_fn=model.batch_processor(for_eval=True),
@@ -502,7 +502,7 @@ def get_karel_dataset(args, model):
 
 def get_algolisp_eval_dataset(args, _):
     return NearDataset(
-        relpath('../data/algolisp/dataset.dev.jsonl'),
+        relpath('../../data/algolisp/dataset.dev.jsonl'),
         args.batch_size, shuffle=True, max_size=args.dataset_max_size)
 
 
@@ -517,7 +517,7 @@ def get_karel_eval_dataset(args, model):
 
     dev_data = torch.utils.data.DataLoader(
         KarelTorchDataset(
-            relpath('../data/karel/val{}.pkl'.format(suffix)),
+            relpath('../../data/karel/val{}.pkl'.format(suffix)),
             dev_mutator),
         args.batch_size,
         collate_fn=model.batch_processor(for_eval=True),
@@ -536,7 +536,7 @@ def get_karel_eval_final_dataset(args, model):
 
     dev_data = torch.utils.data.DataLoader(
         KarelTorchDataset(
-            relpath('../data/karel/test{}.pkl'.format(suffix)),
+            relpath('../../data/karel/test{}.pkl'.format(suffix)),
             dev_mutator),
         args.batch_size,
         collate_fn=model.batch_processor(for_eval=True),
@@ -546,9 +546,9 @@ def get_karel_eval_final_dataset(args, model):
 
 def set_vocab(args):
     if args.dataset == 'algolisp':
-        args.word_vocab = relpath('../data/algolisp/word.vocab')
+        args.word_vocab = relpath('../../data/algolisp/word.vocab')
     elif args.dataset.startswith('karel'):
-        args.word_vocab = relpath('../data/karel/word.vocab')
+        args.word_vocab = relpath('../../data/karel/word.vocab')
     else:
         raise ValueError("Unknown dataset %s" % args.dataset)
 
