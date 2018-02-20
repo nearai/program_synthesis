@@ -155,11 +155,16 @@ def batch_bounds_for_packing(lengths):
     return result
 
 
-def interleave_packed_sequences(psps, interleave_indices):
+PSPInterleaveInfo = collections.namedtuple('PSPInterleaveInfo',
+        ['input_indices', 'output_indices', 'batch_bounds', 'sorted_lengths',
+            'sort_to_orig', 'orig_to_sort'])
+
+
+def prepare_interleave_packed_sequences(psps, interleave_indices):
     # psps: list of PackedSequencePluses.
     #       Each PackedSequencePlus has batch size x seq length items.
-    # interleave_indices: list of list of psp_idx, indicating which psp to take
-    #                     from which the next element should originate.
+    # interleave_indices: list of list of psp_idx, indicating from which psp
+    #                     the next element should originate.
     #   len(interleave_indices) = len(psps)
     #   interleave_indices[batch_idx][j] == psp_idx
     #   <--> result[batch_idx, j] = psps[psp_idx][batch_idx,
@@ -169,9 +174,6 @@ def interleave_packed_sequences(psps, interleave_indices):
     #
     # Output: a result computed by
     # result[output_indices[i]] = psps[i].ps.data[input_indices[i]]
-
-    result = Variable(psps[0].ps.data.data.new(
-        sum(psp.ps.data.shape[0] for psp in psps), *psps[0].ps.data.shape[1:]))
     output_indices = [[] for _ in psps]
     input_indices = [[] for _ in psps]
 
@@ -219,20 +221,32 @@ def interleave_packed_sequences(psps, interleave_indices):
             ended = True
         assert ended
 
-    # TODO: perform this move outside
-    for out_idx, inp_idx, psp in zip(output_indices, input_indices, psps):
-        # psp.ps.data is a torch.autograd.Variable (despite its name)
-        inp_idx = torch.LongTensor(inp_idx)
-        out_idx = torch.LongTensor(out_idx)
+    input_indices = [torch.LongTensor(t) for t in input_indices]
+    output_indices = [torch.LongTensor(t) for t in output_indices]
+
+    return PSPInterleaveInfo(input_indices, output_indices, batch_bounds,
+            sorted_lengths, sort_to_orig, orig_to_sort)
+
+
+def execute_interleave_psps(psps, interleave_info):
+    result = Variable(psps[0].ps.data.data.new(
+        sum(psp.ps.data.shape[0] for psp in psps), *psps[0].ps.data.shape[1:]))
+
+    for out_idx, inp_idx, psp in zip(interleave_info.output_indices,
+            interleave_info.input_indices, psps):
         if psp.ps.data.is_cuda:
             inp_idx = inp_idx.cuda()
             out_idx = out_idx.cuda()
-
+        # psp.ps.data is a torch.autograd.Variable (despite its name)
         result[out_idx] = psp.ps.data[inp_idx]
 
     return PackedSequencePlus(
-            torch.nn.utils.rnn.PackedSequence(result, batch_bounds),
-            sorted_lengths, sort_to_orig, orig_to_sort)
+            torch.nn.utils.rnn.PackedSequence(result,
+                interleave_info.batch_bounds),
+            interleave_info.sorted_lengths,
+            interleave_info.sort_to_orig,
+            interleave_info.orig_to_sort)
+
 
 
 def lists_to_packed_sequence(lists, stoi, cuda, volatile):

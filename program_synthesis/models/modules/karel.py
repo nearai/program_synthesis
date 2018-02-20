@@ -521,8 +521,8 @@ class RecurrentTraceEncoder(TraceEncoder):
                     code_enc.mem.ps.data[traces_events.action_code_indices]) * self.success_emb(d[:, 1])
             )
 
-            assert (traces_events.cond_code_indices >=
-                    len(code_enc.mem.ps.data)).data.sum() == 0
+            assert (traces_events.cond_code_indices.data >=
+                    len(code_enc.mem.ps.data)).sum() == 0
             cond_embs = traces_events.conds.apply(
                     lambda d:
                        # Shape: sum(cond trace lengths) x 256 after view
@@ -532,7 +532,7 @@ class RecurrentTraceEncoder(TraceEncoder):
                               traces_events.cond_code_indices)).view(-1, 256)
                           * self.cond_emb(d[:, 4])
                           * self.success_emb(d[:, 5]))
-            seq_embs = prepare_spec.interleave_packed_sequences((cond_embs,
+            seq_embs = prepare_spec.execute_interleave_psps((cond_embs,
                 action_embs, grid_embs), cag_interleave)
         else:
             seq_embs = grid_embs

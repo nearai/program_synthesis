@@ -372,9 +372,13 @@ class KarelLGRLRefineBatchProcessor(object):
                     g_ca_interleave) in enumerate(
                         zip(grid_lengths, ref_trace_events.interleave_indices,
                             self.interleave_grids_events(batch))):
-                cag_interleave.append(
-                    interleave([[2] * grid_length, trace_interleave],
-                               g_ca_interleave))
+                cag_for_item =  interleave([[2] * grid_length,
+                    trace_interleave], g_ca_interleave)
+                cag_interleave.append(cag_for_item)
+
+            cag_interleave = prepare_spec.prepare_interleave_packed_sequences(
+                (ref_trace_events.conds, ref_trace_events.actions,
+                 ref_trace_grids), cag_interleave)
 
         orig_examples = batch if self.for_eval else None
 
