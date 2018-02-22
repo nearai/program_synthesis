@@ -8,12 +8,12 @@ import torch
 from torch import nn
 from torch.autograd import Variable
 
-from base import BaseCodeModel, InferenceResult
-from datasets import data, dataset, executor
-from modules import karel
-from tools import edit
-import beam_search
-import prepare_spec
+from .base import BaseCodeModel, InferenceResult
+from program_synthesis.datasets import data, dataset, executor
+from program_synthesis.tools import edit
+from . import beam_search
+from . import prepare_spec
+from .modules import karel
 
 
 def code_to_tokens(seq, vocab):
@@ -146,7 +146,8 @@ class KarelLGRLModel(BaseKarelModel):
         self.executor = executor.get_executor(args)()
         super(KarelLGRLModel, self).__init__(args)
 
-    def compute_loss(self, (input_grids, output_grids, code_seqs, _)):
+    def compute_loss(self, input_output_code_seq):
+        input_grids, output_grids, code_seqs, _ = input_output_code_seq
         if self.args.cuda:
             input_grids = input_grids.cuda(async=True)
             output_grids = output_grids.cuda(async=True)
@@ -164,7 +165,8 @@ class KarelLGRLModel(BaseKarelModel):
         res, = self.inference(batch)
         print("Out:  %s" % ' '.join(res.code_sequence))
 
-    def inference(self, (input_grids, output_grids, _1, _2)):
+    def inference(self, input_output_grids):
+        input_grids, output_grids, _1, _2 = input_output_grids
         if self.args.cuda:
             input_grids = input_grids.cuda(async=True)
             output_grids = output_grids.cuda(async=True)
@@ -222,9 +224,10 @@ class KarelLGRLRefineModel(BaseKarelModel):
         self.trace_lengths = []
         super(KarelLGRLRefineModel, self).__init__(args)
 
-    def compute_loss(self, (input_grids, output_grids, code_seqs, dec_data,
-                            ref_code, ref_trace_grids, ref_trace_events,
-                            cag_interleave, orig_examples)):
+    def compute_loss(self, args):
+        (input_grids, output_grids, code_seqs, dec_data,
+         ref_code, ref_trace_grids, ref_trace_events,
+         cag_interleave, orig_examples) = args
         if orig_examples:
             for i, orig_example in  enumerate(orig_examples):
                 self.trace_grid_lengths.append((orig_example.idx, [
@@ -263,9 +266,9 @@ class KarelLGRLRefineModel(BaseKarelModel):
         code = code_to_tokens(batch.code_seqs.data[0, 1:], self.vocab)
         print("Code: %s" % ' '.join(code))
 
-    def inference(self,
-                  (input_grids, output_grids, _1, dec_data, ref_code,
-                      ref_trace_grids, ref_trace_events, cag_interleave, _2)):
+    def inference(self, args):
+        (input_grids, output_grids, _1, dec_data, ref_code,
+         ref_trace_grids, ref_trace_events, cag_interleave, _2) = args
         if self.args.cuda:
             input_grids = input_grids.cuda(async=True)
             output_grids = output_grids.cuda(async=True)
@@ -460,14 +463,17 @@ class KarelLGRLRefineBatchProcessor(object):
             edit_list.append((1, None, None))
             edit_lists.append(edit_list)
 
+        def padder3d(op_emb_pos_last_token, _, out):
+            op, emb_pos, last_token = op_emb_pos_last_token
+            return out.copy_(torch.LongTensor([op, emb_pos, last_token]))
+        def padder1d(op_emb_pos_last_token, _, out):
+            return out.copy_(torch.LongTensor([op_emb_pos_last_token[0]]))
         rnn_inputs = lists_to_packed_sequence(
                 [lst[:-1] for lst in edit_lists], (3,), torch.LongTensor,
-                lambda (op, emb_pos, last_token), _, out:
-                out.copy_(torch.LongTensor([op, emb_pos, last_token])))
+                padder3d)
         rnn_outputs = lists_to_packed_sequence(
                 [lst[1:] for lst in edit_lists], (1,), torch.LongTensor,
-                lambda (op, emb_pos, last_token), _, out:
-                out.copy_(torch.LongTensor([op])))
+                padder1d)
 
         io_embed_indices = torch.LongTensor([
             expanded_idx

@@ -5,8 +5,8 @@ import traceback
 import numpy as np
 import pylru
 
-from karel import KarelForSynthesisParser, KarelSyntaxError, TimeoutError
-from karel.utils import Timeout
+from .karel import KarelForSynthesisParser, KarelSyntaxError, TimeoutError
+from .karel.utils import Timeout
 
 
 ExecutionResult = collections.namedtuple(

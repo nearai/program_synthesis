@@ -13,8 +13,8 @@ import torch.nn.functional as F
 
 from pytorch_tools import torchfold
 
-from datasets import data, executor
-from tools import saver
+from program_synthesis.datasets import data, executor
+from program_synthesis.tools import saver
 
 
 class MaskedMemory(collections.namedtuple('MaskedMemory', ['memory',

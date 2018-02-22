@@ -6,10 +6,10 @@ import torch.nn.functional as F
 from torch.autograd import Variable
 import numpy as np
 
-from models import base, prepare_spec
-from .. import beam_search
-from datasets import data
-from attention import SimpleSDPAttention
+from program_synthesis.models import base, prepare_spec
+from program_synthesis.models import beam_search
+from program_synthesis.datasets import data
+from .attention import SimpleSDPAttention
 
 
 def default(value, if_none):

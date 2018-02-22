@@ -4,7 +4,6 @@ import time
 import re
 import tokenize
 import json
-import StringIO
 import string
 import unicodedata
 import os

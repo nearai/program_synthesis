@@ -1,4 +1,4 @@
-from karel_model import KarelLGRLModel, KarelLGRLRefineModel
+from .karel_model import KarelLGRLModel, KarelLGRLRefineModel
 
 
 def get_model(args):

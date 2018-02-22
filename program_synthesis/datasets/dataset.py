@@ -1,5 +1,4 @@
 import argparse
-import cPickle as pickle
 import collections
 import gzip
 import json
@@ -7,15 +6,21 @@ import os
 import random
 import struct
 import sys
+import six
 import time
+
+if six.PY2:
+    import cPickle as pickle
+else:
+    import pickle
 
 import numpy as np
 import torch.utils.data
 
-import data
-import executor
-import stats
-from karel.mutation import KarelExampleMutator
+from . import data
+from . import executor
+from . import stats
+from .karel.mutation import KarelExampleMutator
 
 
 Schema = collections.namedtuple("Schema", ["args", "return_type"])

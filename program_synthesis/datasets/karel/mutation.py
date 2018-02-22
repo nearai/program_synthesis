@@ -6,7 +6,7 @@ import struct
 import numpy as np
 
 from ..dataset import executor
-import parser_for_synthesis
+from . import parser_for_synthesis
 
 # Tree structure
 # - run: body
