@@ -63,7 +63,8 @@ class PackedSequencePlus(collections.namedtuple('PackedSequencePlus',
     def raw_index(self, orig_batch_idx, seq_idx):
         result = np.take(self.cum_batch_sizes, seq_idx) + np.take(
                 self.sort_to_orig, orig_batch_idx)
-        assert np.all(result < len(self.ps.data))
+        if self.ps.data is not None:
+            assert np.all(result < len(self.ps.data))
         return result
 
     def select(self, orig_batch_idx, seq_idx):
@@ -156,8 +157,7 @@ def batch_bounds_for_packing(lengths):
 
 
 PSPInterleaveInfo = collections.namedtuple('PSPInterleaveInfo',
-        ['input_indices', 'output_indices', 'batch_bounds', 'sorted_lengths',
-            'sort_to_orig', 'orig_to_sort'])
+        ['input_indices', 'output_indices', 'psp_template'])
 
 
 def prepare_interleave_packed_sequences(psps, interleave_indices):
@@ -224,8 +224,12 @@ def prepare_interleave_packed_sequences(psps, interleave_indices):
     input_indices = [torch.LongTensor(t) for t in input_indices]
     output_indices = [torch.LongTensor(t) for t in output_indices]
 
-    return PSPInterleaveInfo(input_indices, output_indices, batch_bounds,
-            sorted_lengths, sort_to_orig, orig_to_sort)
+    return PSPInterleaveInfo(input_indices, output_indices,
+            PackedSequencePlus(
+                torch.nn.utils.rnn.PackedSequence(None, batch_bounds),
+                sorted_lengths,
+                sort_to_orig,
+                orig_to_sort))
 
 
 def execute_interleave_psps(psps, interleave_info):
@@ -240,13 +244,7 @@ def execute_interleave_psps(psps, interleave_info):
         # psp.ps.data is a torch.autograd.Variable (despite its name)
         result[out_idx] = psp.ps.data[inp_idx]
 
-    return PackedSequencePlus(
-            torch.nn.utils.rnn.PackedSequence(result,
-                interleave_info.batch_bounds),
-            interleave_info.sorted_lengths,
-            interleave_info.sort_to_orig,
-            interleave_info.orig_to_sort)
-
+    return interleave_info.psp_template.apply(lambda _: result)
 
 
 def lists_to_packed_sequence(lists, stoi, cuda, volatile):

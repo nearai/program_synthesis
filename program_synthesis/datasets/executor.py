@@ -53,7 +53,7 @@ KarelEvent = collections.namedtuple('KarelEvent', [
     'timestep',  # event happened before corresponding index in grids
     'type',  # move, turnLeft/Right, put/pickMarker, if, ifElse, repeat
     'span', # (i, j) for first, last token for block
-    'cond_span', # (i, j)  for first, last token contained in c( c)
+    'cond_span', # (i, j) for first, last token contained in c( c)
     'cond_value', # True/False for if/ifElse, remaining iters for repeat
     'success', # False if action failed or loop will repeat forever
 ])

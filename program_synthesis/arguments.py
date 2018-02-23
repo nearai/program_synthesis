@@ -79,6 +79,9 @@ def get_arg_parser(title, mode):
 
         train_group.add_argument('--karel-trace-enc', default='lstm')
         train_group.add_argument('--karel-code-enc', default='default')
+        train_group.add_argument('--karel-code-update', default='default')
+        train_group.add_argument('--karel-code-update-steps', default=0,
+                type=int)
         train_group.add_argument('--karel-refine-dec', default='default')
         train_group.add_argument('--karel-trace-usage', default='memory')
         train_group.add_argument('--karel-code-usage', default='memory')

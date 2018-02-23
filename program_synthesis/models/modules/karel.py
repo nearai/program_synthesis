@@ -16,19 +16,22 @@ def default(value, if_none):
     return if_none if value is None else value
 
 
-def expand(v, k):
-    # Input: d1 x ...
-    # Output: d1 * k x ... where
-    #   out[0] = out[1] = ... out[k],
-    #   out[k + 0] = out[k + 1] = ... out[k + k],
+def expand(v, k, dim=0):
+    # Input: ... x d_dim x ...
+    # Output: ... x d_dim * k x ... where
+    #   out[..., 0] = out[..., 1] = ... out[..., k],
+    #   out[..., k + 0] = out[..., k + 1] = ... out[..., k + k],
     # and so on.
-    return v.unsqueeze(1).repeat(1, k, *([1] *
-                                         (v.dim() - 1))).view(-1, *v.shape[1:])
+    dim += 1
+    return v.unsqueeze(dim).repeat(
+        *([1] * dim + [k] + [1] *
+          (v.dim() - dim))).view(*(v.shape[:dim - 1] + (-1, ) + v.shape[dim:]))
 
-def unexpand(v, k):
-    # Input: d1 x ...
-    # Output: d1 / k x k x ...
-    return v.view(-1, k, *v.shape[1:])
+
+def unexpand(v, k, dim=0):
+    # Input: ... x d_dim x ...
+    # Output: ... x  d_dim / k x k x ...
+    return v.view(*(v.shape[:dim] + (-1, k) + v.shape[dim+1:]))
 
 
 def flatten(v, k):
@@ -69,7 +72,14 @@ def lstm_init(cuda, num_layers, hidden_size, *batch_sizes):
     return (init, init)
 
 
-SequenceMemory = collections.namedtuple('SequenceMemory', ['mem', 'state'])
+class SequenceMemory(
+        collections.namedtuple('SequenceMemory', ['mem', 'state'])):
+    def expand(self, k):
+        mem = None if self.mem is None else self.mem.expand(k)
+        # Assumes state is for an LSTM.
+        state = None if self.state is None else tuple(
+                expand(state_elem, k, dim=1) for state_elem in self.state)
+        return SequenceMemory(mem, state)
 
 
 class LGRLTaskEncoder(nn.Module):
@@ -325,6 +335,71 @@ class CodeEncoder(nn.Module):
                 state)
 
 
+class CodeUpdater(nn.Module):
+    def __init__(self,  args):
+        super(CodeUpdater, self).__init__()
+        self._cuda = args.cuda
+        self.encoder = nn.LSTM(
+                input_size=512 + 512,
+                hidden_size=256,
+                num_layers=1,
+                bidirectional=True)
+
+        #self.zero_memory = Variable(torch.zeros(1, 256))
+        self.trace_gate = nn.Sequential(
+                nn.Linear(512 + 512, 512),
+                nn.Sigmoid())
+
+    def forward(self, code_memory, trace_memory, code_update_info):
+        # For each code position, find all of the times that the code has been
+        # referenced in the execution trace: action and cond events.
+        # - Scale each one by a sigmoid and then sum?
+        # - Run a separate RNN over each one?
+        #
+        # For each x_i, find t_i1, ..., t_ik.
+        # r_ik = sigmoid(W [x_i t_i1])
+        # x_i' = concat(x_i, sum_k (r_ik * t_ik))
+        # inputs: PackedSequencePlus, batch size x seq length x hidden (256 * 2)
+        #
+        # code_indices: indices of code tokens
+        # trace_indices: indices of trace events
+
+        selected_code_memory = code_memory.mem.ps.data[
+            code_update_info.code_indices]
+        selected_trace_memory = trace_memory.mem.ps.data[
+            code_update_info.trace_indices]
+
+        # Shape: num items x 512
+        trace_gates = self.trace_gate(torch.cat(
+                (selected_code_memory, selected_trace_memory), dim=1))
+        gated_trace_memory = trace_gates * selected_trace_memory
+
+        # max_trace_refs:
+        #   maximum number of times that some token is referenced in the trace
+        # code length x max trace refs x 256
+        code_trace_update = Variable(
+            torch.zeros(
+                code_memory.mem.ps.data.shape[0] *
+                code_update_info.max_trace_refs,
+                512,
+                out=torch.cuda.FloatTensor()
+                if self._cuda else torch.FloatTensor()))
+
+        code_trace_update.index_copy_(
+            0, code_update_info.code_trace_update_indices, gated_trace_memory)
+        # code length x 256
+        code_trace_update = code_trace_update.view(
+            code_memory.mem.ps.data.shape[0], code_update_info.max_trace_refs,
+            512).sum(dim=1)
+
+        updates, new_state = self.encoder(
+                code_memory.mem.apply(
+                    lambda t: torch.cat([t, code_trace_update], dim=1)).ps)
+
+        code_memory = code_memory.mem.apply(lambda t: t + updates.data)
+        return SequenceMemory(code_memory, new_state)
+
+
 class TraceEncoder(nn.Module):
     def __init__(self, interleave_events, include_flow_events,
                  event_emb_from_code_seq):
@@ -554,8 +629,8 @@ class LGRLSeqRefineDecoder(nn.Module):
 
         code_enc = self.args.karel_code_enc != 'none'
         trace_enc = self.args.karel_trace_enc != 'none'
-        code_usage = set(args.karel_code_usage.split(','))
-        trace_usage = set(args.karel_trace_usage.split(','))
+        code_usage = set(x for x in args.karel_code_usage.split(',') if x)
+        trace_usage = set(x for x in args.karel_trace_usage.split(',') if x)
         self.use_code_memory = set_pop(code_usage, 'memory')
         self.use_code_state = set_pop(code_usage, 'state')
         self.use_trace_memory = set_pop(trace_usage, 'memory')
@@ -600,9 +675,10 @@ class LGRLSeqRefineDecoder(nn.Module):
     def prepare_memory(self, io_embed, code_memory, trace_memory, _):
         # code_memory:
         #   SequenceMemory, containing:
-        #     mem: PackedSequencePlus, batch size x code length x 512
+        #     mem: PackedSequencePlus,
+        #          batch size * num pairs x code length x 512
         #     state: tuple containing two of
-        #       2 (layers) * 2 (directions) x batch size x 256
+        #       2 (layers) * 2 (directions) x batch size * num pairs x 256
         #   or None
         # trace_memory:
         #    Same as code_memory
@@ -613,9 +689,14 @@ class LGRLSeqRefineDecoder(nn.Module):
             # batch x code length x 512
             code_memory, code_lengths = code_memory.mem.pad(batch_first=True)
             code_mask = base.get_attn_mask(code_lengths, self._cuda)
-            code_memory = code_memory.unsqueeze(1).repeat(1, pairs_per_example,
-                                                          1, 1)
-            code_mask = code_mask.unsqueeze(1).repeat(1, pairs_per_example, 1)
+            #code_memory = code_memory.unsqueeze(1).repeat(1, pairs_per_example,
+            #                                              1, 1)
+            #code_mask = code_mask.unsqueeze(1).repeat(1, pairs_per_example, 1)
+            # batch x num pairs x code length x 512
+            code_memory = code_memory.view(batch_size, pairs_per_example,
+                                             *code_memory.shape[1:])
+            code_mask = code_mask.view(batch_size, pairs_per_example,
+                                         *code_mask.shape[1:])
             code_memory = base.MaskedMemory(code_memory, code_mask)
         else:
             code_memory = None
@@ -638,10 +719,18 @@ class LGRLSeqRefineDecoder(nn.Module):
     def forward(self, io_embed, code_memory, trace_memory, outputs, _):
         # io_embed: batch size x num pairs x 512
         # code_memory:
-        #   PackedSequencePlus, batch size x code length x 512
+        #   SequenceMemory, containing:
+        #     mem: PackedSequencePlus,
+        #          batch size (* num pairs) x code length x 512
+        #     state: tuple containing two of
+        #       2 (layers) * 2 (directions) x batch size (* num pairs) x 256
         #   or None
         # trace_memory:
-        #   PackedSequencePlus, batch size * num pairs x seq x 512
+        #   SequenceMemory, containing:
+        #     mem: PackedSequencePlus,
+        #          batch size * num pairs x code length x 512
+        #     state: tuple containing two of
+        #       2 (layers) * 2 (directions) x batch size * num pairs x 256
         #   or None
         # outputs:
         #   batch size x output length
@@ -756,13 +845,15 @@ class LGRLSeqRefineDecoder(nn.Module):
             context = context.cuda()
 
         if self.num_state_inputs > 0:
+            # h, c: layers * directions x batch * num pairs x hidden
             h, c = [
                 maybe_concat(
                     [
-                        ref_code_memory.state[i].unsqueeze(2).expand(
-                            -1, -1, pairs_per_example, -1)
+                       unexpand(ref_code_memory.state[i], pairs_per_example,
+                           dim=1)
                         if self.use_code_state else None,
-                        unexpand(ref_trace_memory.state[0], pairs_per_example)
+                        unexpand(ref_trace_memory.state[i], pairs_per_example,
+                            dim=1)
                         if self.use_trace_state else None
                     ],
                     dim=2) for i in (0, 1)
@@ -910,9 +1001,10 @@ class LGRLSeqRefineEditDecoder(nn.Module):
     def prepare_memory(self, io_embed, code_memory, _, ref_code):
         # code_memory:
         #   SequenceMemory, containing:
-        #     mem: PackedSequencePlus, batch size x code length x 512
+        #     mem: PackedSequencePlus,
+        #          batch size * num pairs x code length x 512
         #     state: tuple containing two of
-        #       2 (layers) * 2 (directions) x batch size x 256
+        #       2 (layers) * 2 (directions) x batch size * num pairs x 256
         #   or None
         pairs_per_example = io_embed.shape[1]
         ref_code = ref_code.cpu()
@@ -920,9 +1012,9 @@ class LGRLSeqRefineEditDecoder(nn.Module):
             # batch x code length x 512
             code_memory, code_lengths = code_memory.mem.pad(batch_first=True)
             code_mask = base.get_attn_mask(code_lengths, self._cuda)
-            code_memory = code_memory.unsqueeze(1).repeat(1, pairs_per_example,
-                                                          1, 1)
-            code_mask = code_mask.unsqueeze(1).repeat(1, pairs_per_example, 1)
+            #code_memory = code_memory.unsqueeze(1).repeat(1, pairs_per_example,
+            #                                              1, 1)
+            #code_mask = code_mask.unsqueeze(1).repeat(1, pairs_per_example, 1)
             code_memory = base.MaskedMemory(code_memory, code_mask)
         else:
             code_memory = code_memory.mem
@@ -932,7 +1024,11 @@ class LGRLSeqRefineEditDecoder(nn.Module):
     def forward(self, io_embed, code_memory, _1, _2, dec_data):
         # io_embed: batch size x num pairs x 512
         # code_memory:
-        #   PackedSequencePlus, batch size x code length x 512
+        #   SequenceMemory, containing:
+        #     mem: PackedSequencePlus,
+        #          batch size * num pairs x code length x 512
+        #     state: tuple containing two of
+        #       2 (layers) * 2 (directions) x batch size * num pairs x 256
         #   or None
         # dec_input:
         #   PackedSequencePlus, batch size x num ops x 4
@@ -954,13 +1050,13 @@ class LGRLSeqRefineEditDecoder(nn.Module):
             memory.io = memory.io[list(dec_data.input.orig_to_sort)]
             memory.code = memory.code.apply(
                     lambda t: t[list(dec_data.input.orig_to_sort)])
-                    #lambda t: t[[
-                    #    exp_i
-                    #    for i in dec_data.input.orig_to_sort
-                    #    for exp_i in range(
-                    #        i * pairs_per_example,
-                    #        i * pairs_per_example + pairs_per_example)
-                    #]])
+            #lambda t: t[[
+            #    exp_i
+            #    for i in dec_data.input.orig_to_sort
+            #    for exp_i in range(
+            #        i * pairs_per_example,
+            #        i * pairs_per_example + pairs_per_example)
+            #]])
 
             logits = []
             offset = 0
@@ -1202,22 +1298,21 @@ class LGRLSeqRefineEditDecoder(nn.Module):
         if self.use_code_state:
             new_state = []
             for s, proj in zip(ref_code_memory.state, (self.state_h_proj, self.state_c_proj)):
-                # Shape: layers (2) x directions (2) x batch x hidden size
+                # Shape: layers (2) x directions (2) x batch * pairs x hidden size
                 s = s.contiguous().view(-1, 2, *s.shape[1:])
-                # Shape: layers (2) x batch x directions (2) x hidden size
+                # Shape: layers (2) x batch * pairs x directions (2) x hidden size
                 s = s.permute(0, 2,  1, 3)
-                # Shape: layers (2) x batch x directions * hidden size
+                # Shape: layers (2) x batch * pairs x directions * hidden size
                 s = s.contiguous().view(*(s.shape[:2] + (-1,)))
                 new_s = []
                 for s_layer, proj_layer in zip(s, proj):
-                    # Input: batch x directions * hidden size (=512)
-                    # Output: batch x 256
+                    # Input: batch * pairs x directions * hidden size (=512)
+                    # Output: batch * pairs x 256
                     new_s.append(proj_layer(s_layer))
-                # Shape: 2 x batch x 256
+                # Shape: 2 x batch * pairs x 256
                 new_s = torch.stack(new_s)
-                # Shape: 2 x batch x num pairs x 256
-                new_state.append(
-                    new_s.unsqueeze(2).repeat(1, 1, pairs_per_example, 1))
+                # Shape: 2 x batch x pairs x 256
+                new_state.append(unexpand(new_s, pairs_per_example, dim=1))
             return LGRLRefineEditDecoderState(
                     source_locs,
                     finished,
@@ -1277,17 +1372,42 @@ class LGRLRefineKarel(nn.Module):
         else:
             raise ValueError(self.args.karel_refine_dec)
 
+        if self.args.karel_code_update_steps == 0:
+            self.code_updater = None
+        else:
+            if self.args.karel_code_update == 'default':
+                self.code_updater = CodeUpdater(args)
+            else:
+                raise ValueError(self.args.karel_code_update)
+
         self.encoder = LGRLTaskEncoder(args)
 
     def encode(self, input_grid, output_grid, ref_code, ref_trace_grids,
-               ref_trace_events, cag_interleave):
+               ref_trace_events, cag_interleave, code_update_info):
+        pairs_per_example = input_grid.shape[1]
+
         # batch size x num pairs x 512
         io_embed = self.encoder(input_grid, output_grid)
+
         # PackedSequencePlus, batch size x length x 512
         ref_code_memory = self.code_encoder(ref_code)
+        ref_code_memory = ref_code_memory.expand(pairs_per_example)
+
         # PackedSequencePlus, batch size x num pairs x length x  512
         ref_trace_memory = self.trace_encoder(ref_code_memory, ref_trace_grids,
                                               ref_trace_events, cag_interleave)
+
+        # Perform some number of update steps.
+        # TODO: Each update should use separate parameters?
+        if self.args.karel_code_update_steps > 0:
+            for i in range(self.args.karel_code_update_steps - 1, -1, -1):
+                ref_code_memory = self.code_updater(
+                        ref_code_memory, ref_trace_memory, code_update_info)
+                if i > 0:
+                    ref_trace_memory = self.trace_encoder(
+                        ref_code_memory, ref_trace_grids, ref_trace_events,
+                        cag_interleave)
+
         return io_embed, ref_code_memory, ref_trace_memory
 
     def decode(self, io_embed, ref_code_memory, ref_trace_memory, outputs,
