@@ -5,10 +5,8 @@ import torch
 import torch.nn as nn
 from torch.autograd import Variable
 
-import karel as karel_modules
-from .. import beam_search
 from program_synthesis.datasets.karel import karel_runtime
-
+from .. import beam_search
 
 action_to_id = {
     '<s>': 0,
@@ -204,6 +202,7 @@ class TraceDecoder(nn.Module):
         # action_embed shape: batch size (* beam size) x 256
         action_embed = self.action_embed(token)
 
+        import program_synthesis.models.modules.karel as karel_modules
         # batch size (* beam size) x (256 + 256 + 512)
         dec_input = karel_modules.maybe_concat(
                 (action_embed, grid_embed, io_embed), dim=1)
@@ -219,12 +218,15 @@ class TraceDecoder(nn.Module):
         return TraceDecoderState(fields, *new_state), logits
 
     def init_state(self, *args):
+        import program_synthesis.models.modules.karel as karel_modules
+
         return karel_modules.lstm_init(self._cuda, 2, 256, *args)
 
 
 class TracePrediction(nn.Module):
     def __init__(self, args):
         super(TracePrediction, self).__init__()
+        import program_synthesis.models.modules.karel as karel_modules
 
         self.encoder = karel_modules.LGRLTaskEncoder(args)
         self.decoder = TraceDecoder(args)

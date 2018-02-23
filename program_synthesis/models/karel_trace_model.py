@@ -4,13 +4,15 @@ import numpy as np
 import torch
 from torch.autograd import Variable
 
-from datasets import executor
-from modules import karel, karel_trace
+from program_synthesis.datasets import executor
 from program_synthesis.datasets.karel import karel_runtime
-import base
-import beam_search
-import karel_model
-import prepare_spec
+from program_synthesis.models import (
+    base,
+    beam_search,
+    karel_model,
+    prepare_spec,
+)
+from program_synthesis.models.modules import karel
 
 
 class TracePredictionModel(karel_model.BaseKarelModel):
@@ -22,7 +24,7 @@ class TracePredictionModel(karel_model.BaseKarelModel):
 
     def compute_loss(self, batch):
         (input_grids, output_grids, trace_grids, input_actions, output_actions,
-                io_embed_indices, _) = batch
+         io_embed_indices, _) = batch
 
         if self.args.cuda:
             input_grids = input_grids.cuda(async=True)
@@ -48,9 +50,9 @@ class TracePredictionModel(karel_model.BaseKarelModel):
 
         io_embed = self.model.encode(input_grids, output_grids)
         init_state = karel_trace.TraceDecoderState(
-                # batch.input_grids is always on CPU, unlike input_grids
-                batch.input_grids.data.numpy().astype(bool),
-                *self.model.decoder.init_state(input_grids.shape[0]))
+            # batch.input_grids is always on CPU, unlike input_grids
+            batch.input_grids.data.numpy().astype(bool),
+            *self.model.decoder.init_state(input_grids.shape[0]))
         memory = karel.LGRLMemory(io_embed)
 
         sequences = beam_search.beam_search(
@@ -99,7 +101,7 @@ class TracePredictionModel(karel_model.BaseKarelModel):
 TracePredictionExample = collections.namedtuple(
     'TracePredictionExample',
     ('input_grids', 'output_grids', 'trace_grids', 'input_actions',
-        'output_actions', 'io_embed_indices', 'code'))
+     'output_actions', 'io_embed_indices', 'code'))
 
 
 class TracePredictionBatchProcessor(object):
@@ -171,4 +173,4 @@ class TracePredictionBatchProcessor(object):
             if self.for_eval else None)
 
         return TracePredictionExample(input_grids, output_grids, trace_grids,
-                input_actions, output_actions, io_embed_indices, code)
+                                      input_actions, output_actions, io_embed_indices, code)
