@@ -86,6 +86,8 @@ def get_arg_parser(title, mode):
         train_group.add_argument('--karel-trace-usage', default='memory')
         train_group.add_argument('--karel-code-usage', default='memory')
 
+        train_group.add_argument('--karel-trace-grid-enc', default='presnet')
+
     elif mode == 'eval':
         eval_group = parser.add_argument_group('eval')
         eval_group.add_argument('--tag', type=str, default='')
