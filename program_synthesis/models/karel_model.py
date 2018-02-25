@@ -637,8 +637,8 @@ class KarelLGRLRefineBatchProcessor(object):
                 [2],
                 torch.LongTensor,
                 lambda ev, batch_idx, out: out.copy_(torch.LongTensor([
-                    #{'if': 0, 'ifElse': 1, 'while': 2, 'repeat': 3}[ev.type],
-                    ev.span[0], ev.success])))
+                    ev.span[0], ev.success,
+                    ])))
         action_code_indices = None
         if ref_code:
             action_code_indices = Variable(torch.LongTensor(

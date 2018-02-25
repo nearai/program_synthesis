@@ -178,9 +178,11 @@ def prepare_interleave_packed_sequences(psps, interleave_indices):
     input_indices = [[] for _ in psps]
 
     # combined_lengths: length of each sequence, in original batch order.
-    combined_lengths = np.sum(
-            [[psp.lengths[i] for i in psp.sort_to_orig] for psp in psps],
-            axis=0)
+    #combined_lengths = np.sum(
+    #        [[psp.lengths[i] for i in psp.sort_to_orig] for psp in psps],
+    #        axis=0)
+    combined_lengths = [len(idxs) for idxs in interleave_indices]
+
     orig_to_sort, sorted_lengths = zip(*sorted(
         enumerate(combined_lengths), key=operator.itemgetter(1), reverse=True))
     sort_to_orig = [
@@ -203,6 +205,7 @@ def prepare_interleave_packed_sequences(psps, interleave_indices):
                 output_indices[psp_idx].append(write_idx)
                 current_idx = read_idx[orig_batch_idx][psp_idx]
                 # Figure out what current_idx corresponds to inside the PSP.
+                assert current_idx < psps[psp_idx].lengths[j]
                 input_indices[psp_idx].append(
                         int(psps[psp_idx].raw_index(orig_batch_idx,
                             current_idx)))

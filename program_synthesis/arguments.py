@@ -86,7 +86,11 @@ def get_arg_parser(title, mode):
         train_group.add_argument('--karel-trace-usage', default='memory')
         train_group.add_argument('--karel-code-usage', default='memory')
 
+        train_group.add_argument('--karel-io-enc', default='lgrl')
+        train_group.add_argument('--karel-trace-action-enc', default='emb')
         train_group.add_argument('--karel-trace-grid-enc', default='presnet')
+        train_group.add_argument('--karel-trace-cond-enc', default='concat')
+        train_group.add_argument('--karel-code-dec', default='latepool')
 
     elif mode == 'eval':
         eval_group = parser.add_argument_group('eval')

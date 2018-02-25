@@ -15,7 +15,7 @@ def draw2d(array):
 def border_mask(array, value):
     array[0,:], array[-1,:], array[:,0], array[:,-1] = value, value, value, value
 
-def event_callback(block_name, block_span,  cond_span, cond_value,
+def event_callback_prototype(block_name, block_span,  cond_span, cond_value,
         selected_span):
     '''
     block_name: if, ifElse, while, repeat
@@ -51,7 +51,7 @@ class KarelRuntime(object):
         (0,  -1),  # west
     )
 
-    def __init__(self,  action_callback=None):
+    def __init__(self, action_callback=None, event_callback=None):
         if action_callback is None:
             self.action_callback = lambda *args: None
         else:

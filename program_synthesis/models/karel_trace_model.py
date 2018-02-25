@@ -4,15 +4,15 @@ import numpy as np
 import torch
 from torch.autograd import Variable
 
-from program_synthesis.datasets import executor
-from program_synthesis.datasets.karel import karel_runtime
+from program_synthesis.datasets import data, executor
+from program_synthesis.datasets.karel import karel_runtime, parser_for_synthesis
 from program_synthesis.models import (
     base,
     beam_search,
     karel_model,
     prepare_spec,
 )
-from program_synthesis.models.modules import karel
+from program_synthesis.models.modules import karel, karel_trace
 
 
 class TracePredictionModel(karel_model.BaseKarelModel):
@@ -173,4 +173,229 @@ class TracePredictionBatchProcessor(object):
             if self.for_eval else None)
 
         return TracePredictionExample(input_grids, output_grids, trace_grids,
-                                      input_actions, output_actions, io_embed_indices, code)
+                input_actions, output_actions, io_embed_indices, code)
+
+
+class CodeFromTracesModel(karel_model.BaseKarelModel):
+    def __init__(self, args):
+        self.args = args
+        self.vocab = data.PlaceholderVocab(
+            data.load_vocab(args.word_vocab), self.args.num_placeholders)
+        self.model = karel_trace.CodeFromTraces(
+            len(self.vocab) - self.args.num_placeholders, args)
+        self.executor = executor.get_executor(args)()
+
+        self.trace_grid_lengths = []
+        self.trace_event_lengths  = []
+        self.trace_lengths = []
+        super(CodeFromTracesModel, self).__init__(args)
+
+    def compute_loss(self, batch):
+        if self.args.cuda:
+            batch = batch.cuda_train()
+
+        io_embed, trace_memory = self.model.encode(
+                batch.input_grids,
+                batch.output_grids,
+                batch.trace_grids,
+                batch.conds,
+                batch.actions,
+                batch.interleave)
+
+        logits, labels = self.model.decode(
+                batch.batch_size,
+                batch.pairs_per_example,
+                io_embed,
+                trace_memory,
+                batch.input_code,
+                batch.output_code)
+
+        return self.criterion(
+            logits.view(-1, logits.shape[-1]), labels.contiguous().view(-1))
+
+    def debug(self, batch):
+        pass
+
+    def inference(self, batch):
+        if self.args.cuda:
+            batch = batch.cuda_infer()
+
+        io_embed, trace_memory = self.model.encode(
+                batch.input_grids,
+                batch.output_grids,
+                batch.trace_grids,
+                batch.conds,
+                batch.actions,
+                batch.interleave)
+
+        init_state = self.model.decoder.init_state(
+                batch.batch_size, batch.pairs_per_example)
+        memory = self.model.decoder.prepare_memory(
+                batch.batch_size, batch.pairs_per_example, io_embed,
+                trace_memory)
+
+        sequences = beam_search.beam_search(
+            batch.batch_size,
+            init_state,
+            memory,
+            self.model.decode_token,
+            self.args.max_beam_trees,
+            cuda=self.args.cuda,
+            max_decoder_length=self.args.max_decoder_length)
+
+        return self._try_sequences(self.vocab, sequences, batch.input_grids,
+                                   batch.output_grids, self.args.max_beam_trees)
+
+    def eval(self, batch):
+        correct = 0
+        for res, example in zip(self.inference(batch), batch.orig_examples):
+            stats = executor.evaluate_code(
+                res.code_sequence, None, example.tests, self.executor.execute)
+            if stats['correct'] == stats['total']:
+                correct += 1
+        return {'correct': correct, 'total': len(batch.orig_examples)}
+
+
+    def batch_processor(self, for_eval):
+        return CodeFromTracesBatchProcessor(self.vocab, for_eval)
+
+
+class CodeFromTracesExample(
+        collections.namedtuple('CodeFromTracesExample', (
+            'batch_size', 'pairs_per_example',
+            'input_grids', 'output_grids', 'trace_grids', 'conds',
+            'actions', 'interleave', 'input_code', 'output_code', 'orig_examples'))):
+
+    def cuda_train(self):
+        self = self.cuda_infer()
+        input_code = self.input_code.cuda(async=True)
+        output_code = self.output_code.cuda(async=True)
+        return CodeFromTracesExample(
+                self.batch_size,
+                self.pairs_per_example,
+                self.input_grids, self.output_grids, self.trace_grids,
+                self.conds, self.actions,
+                self.interleave, input_code, output_code, self.orig_examples)
+
+    def cuda_infer(self):
+        input_grids = self.input_grids.cuda(async=True)
+        output_grids = self.output_grids.cuda(async=True)
+        trace_grids = self.trace_grids.cuda(async=True)
+        conds = self.conds.cuda(async=True)
+        actions = self.actions.cuda(async=True)
+
+        return CodeFromTracesExample(
+                self.batch_size,
+                self.pairs_per_example,
+                input_grids, output_grids, trace_grids, conds, actions,
+                self.interleave, self.input_code, self.output_code,
+                self.orig_examples)
+
+
+class CodeFromTracesBatchProcessor(object):
+    def __init__(self, vocab, for_eval):
+        self.vocab = vocab
+        self.for_eval = for_eval
+        self.karel_parser = parser_for_synthesis.KarelForSynthesisParser()
+        self.karel_parser.karel.action_callback = self.action_callback
+
+        self.full_grid =  np.zeros((15, 18, 18), dtype=np.bool)
+        self.actions = None
+        self.grids = None
+        self.conds = None
+
+    def __call__(self, batch):
+        batch_size = len(batch)
+        pairs_per_example = len(batch[0].input_tests)
+
+        input_grids, output_grids, code_seqs = karel_model.encode_grids_and_outputs(
+            batch, self.vocab)
+
+        trace_grids = []
+        conds = []
+        actions = []
+        interleave = []
+        code_seqs = []
+
+        for batch_idx, item in enumerate(batch):
+            prog = self.karel_parser.parse(item.code_sequence)
+            code_seqs.append(['<s>'] + item.code_sequence + ['</s>'])
+
+            for test_idx, test in enumerate(item.input_tests):
+                self.full_grid[:] = False
+                self.full_grid.ravel()[test['input']] = True
+                self.karel_parser.karel.init_from_array(self.full_grid)
+                self.reset_tracer()
+
+                prog()
+                self.actions.append(1) # </s>
+
+                trace_grids.append(self.grids)
+                conds.append(self.conds)
+                actions.append(self.actions)
+                interleave.append([0] + [1, 0] * (len(self.grids) - 1))
+
+        trace_grids = karel_model.lists_to_packed_sequence(
+            trace_grids, (15, 18, 18), torch.FloatTensor,
+            lambda item, batch_idx, out: out.copy_(torch.from_numpy(item.astype(np.float32))))
+
+        conds = karel_model.lists_to_packed_sequence(
+            conds, (4,), torch.LongTensor,
+            lambda item, batch_idx, out: out.copy_(torch.LongTensor(item)))
+
+        actions = prepare_spec.lists_to_packed_sequence(
+            actions,
+            lambda x: x,
+            cuda=False,
+            volatile=False)
+
+        interleave = prepare_spec.prepare_interleave_packed_sequences(
+                (trace_grids, actions), interleave)
+
+        input_code = prepare_spec.lists_to_packed_sequence(
+                [seq[:-1] for seq in code_seqs],
+                self.vocab.stoi,
+                cuda=False,
+                volatile=False)
+
+        output_code = prepare_spec.lists_to_packed_sequence(
+                [seq[1:] for seq in code_seqs],
+                self.vocab.stoi,
+                cuda=False,
+                volatile=False)
+
+        orig_examples = batch if self.for_eval else None
+
+        return CodeFromTracesExample(
+                batch_size,
+                pairs_per_example,
+                input_grids,
+                output_grids,
+                trace_grids,
+                conds,
+                actions,
+                interleave,
+                input_code,
+                output_code,
+                orig_examples)
+
+    def reset_tracer(self):
+        self.actions = []
+        self.grids = []
+        self.conds = []
+        self.record_grid_state()
+
+    def action_callback(self, action_name, success, span):
+        self.actions.append(karel_trace.action_to_id[action_name])
+        self.record_grid_state()
+
+    def record_grid_state(self):
+        runtime = self.karel_parser.karel
+        grid = self.full_grid.copy()
+        cond = [
+            int(v)
+            for v in (runtime.frontIsClear(), runtime.leftIsClear(),
+                      runtime.rightIsClear(), runtime.markersPresent())
+        ]
+        self.grids.append(grid)
+        self.conds.append(cond)
