@@ -319,7 +319,7 @@ class CodeFromTracesBatchProcessor(object):
 
         for batch_idx, item in enumerate(batch):
             prog = self.karel_parser.parse(item.code_sequence)
-            code_seqs.append(['<s>'] + item.code_sequence + ['</s>'])
+            code_seqs.append(['<S>'] + item.code_sequence + ['</S>'])
 
             for test_idx, test in enumerate(item.input_tests):
                 self.full_grid[:] = False
