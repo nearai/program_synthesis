@@ -1,5 +1,63 @@
 import torch.nn as nn
 
+
+class LGRLTaskEncoder(nn.Module):
+    '''Implements the encoder from:
+
+    Leveraging Grammar and Reinforcement Learning for Neural Program Synthesis
+    https://openreview.net/forum?id=H1Xw62kRZ
+    '''
+
+    def __init__(self, args):
+        super(LGRLTaskEncoder, self).__init__()
+
+        self.input_encoder = nn.Sequential(
+            nn.Conv2d(
+                in_channels=15, out_channels=32, kernel_size=3, padding=1),
+            nn.ReLU(), )
+        self.output_encoder = nn.Sequential(
+            nn.Conv2d(
+                in_channels=15, out_channels=32, kernel_size=3, padding=1),
+            nn.ReLU(), )
+
+        self.block_1 = nn.Sequential(
+            nn.Conv2d(
+                in_channels=64, out_channels=64, kernel_size=3, padding=1),
+            nn.ReLU(),
+            nn.Conv2d(
+                in_channels=64, out_channels=64, kernel_size=3, padding=1),
+            nn.ReLU(),
+            nn.Conv2d(
+                in_channels=64, out_channels=64, kernel_size=3, padding=1),
+            nn.ReLU(), )
+        self.block_2 = nn.Sequential(
+            nn.Conv2d(
+                in_channels=64, out_channels=64, kernel_size=3, padding=1),
+            nn.ReLU(),
+            nn.Conv2d(
+                in_channels=64, out_channels=64, kernel_size=3, padding=1),
+            nn.ReLU(),
+            nn.Conv2d(
+                in_channels=64, out_channels=64, kernel_size=3, padding=1),
+            nn.ReLU(), )
+
+        self.fc = nn.Linear(64 * 18 * 18, 512)
+
+    def forward(self, input_grid, output_grid):
+        batch_dims = input_grid.shape[:-3]
+        input_grid = input_grid.contiguous().view(-1, 15, 18, 18)
+        output_grid  = output_grid.contiguous().view(-1, 15, 18, 18)
+
+        input_enc = self.input_encoder(input_grid)
+        output_enc = self.output_encoder(output_grid)
+        enc = torch.cat([input_enc, output_enc], 1)
+        enc = enc + self.block_1(enc)
+        enc = enc + self.block_2(enc)
+
+        enc = self.fc(enc.view(*(batch_dims + (-1,))))
+        return enc
+
+
 class PResNetGridEncoder(nn.Module):
 
     def __init__(self, args):

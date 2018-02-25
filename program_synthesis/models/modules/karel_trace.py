@@ -9,8 +9,8 @@ from program_synthesis.models import base
 from program_synthesis.models import beam_search
 from program_synthesis.models import prepare_spec
 from program_synthesis.models.modules import attention
-from program_synthesis.models.modules import karel as karel_modules
 from program_synthesis.models.modules import karel_common
+from program_synthesis.models.modules import utils
 from program_synthesis.datasets.karel import karel_runtime
 
 action_to_id = {
@@ -135,7 +135,7 @@ class TraceDecoder(nn.Module):
         action_embed = self.action_embed(token)
 
         # batch size (* beam size) x (256 + 256 + 512)
-        dec_input = karel_modules.maybe_concat(
+        dec_input = utils.maybe_concat(
             (action_embed, grid_embed, io_embed), dim=1)
         dec_output, new_state = self.decoder(
             # 1 x batch size (* beam size) x hidden size
@@ -149,13 +149,13 @@ class TraceDecoder(nn.Module):
         return TraceDecoderState(fields, *new_state), logits
 
     def init_state(self, *args):
-        return karel_modules.lstm_init(self._cuda, 2, 256, *args)
+        return utils.lstm_init(self._cuda, 2, 256, *args)
 
 
 class TracePrediction(nn.Module):
     def __init__(self, args):
         super(TracePrediction, self).__init__()
-        self.encoder = karel_modules.LGRLTaskEncoder(args)
+        self.encoder = karel_common.LGRLTaskEncoder(args)
         self.decoder = TraceDecoder(args)
 
     def encode(self, input_grids, output_grids):
@@ -223,8 +223,8 @@ class IndividualTraceEncoder(nn.Module):
 
         # Interleaved or together
         trace_enc_options = set(args.karel_trace_enc.split(':')[1:])
-        interleave = karel_modules.set_pop(trace_enc_options, 'interleave')
-        concat = karel_modules.set_pop(trace_enc_options, 'concat')
+        interleave = utils.set_pop(trace_enc_options, 'interleave')
+        concat = utils.set_pop(trace_enc_options, 'concat')
         assert interleave ^ concat
         assert not trace_enc_options
         self.interleave = interleave and not concat
@@ -277,14 +277,14 @@ class IndividualTraceEncoder(nn.Module):
         # Interleave them or not?
         if self.interleave:
             trace_grids = trace_grids.apply(
-                    lambda _: karel_modules.maybe_concat(
+                    lambda _: utils.maybe_concat(
                         (trace_grids.ps.data, conds.ps.data), dim=1))
 
             enc_input = prepare_spec.execute_interleave_psps(
                 (trace_grids, actions), interleave)
         else:
             enc_input = trace_grids.apply(
-                    lambda _: karel_modules.maybe_concat(
+                    lambda _: utils.maybe_concat(
                         (trace_grids.ps.data, conds.ps.data, actions.ps.data),
                         dim=1))
 
@@ -292,7 +292,7 @@ class IndividualTraceEncoder(nn.Module):
         # state: 2 (layers) * 2 (directions) x batch x hidden size (256)
         output, state = self.encoder(enc_input.ps)
 
-        return karel_modules.SequenceMemory(
+        return utils.SequenceMemory(
             enc_input.with_new_ps(output), state)
 
 
@@ -301,7 +301,7 @@ class LatePoolingCodeDecoder(nn.Module):
             collections.namedtuple('Memory', ('io', 'trace')),
             beam_search.BeamSearchMemory):
         def expand_by_beam(self, beam_size):
-            io_exp = None if self.io is None else karel_modules.expand(
+            io_exp = None if self.io is None else utils.expand(
                 self.io, beam_size)
             trace_exp = None if self.trace is None else self.trace.expand_by_beam(
                 beam_size)
@@ -345,9 +345,9 @@ class LatePoolingCodeDecoder(nn.Module):
         self._cuda = args.cuda
 
         trace_usage = args.karel_trace_usage.split(',')
-        self.use_trace_memory = karel_modules.set_pop(trace_usage, 'memory')
-        self.use_trace_state = karel_modules.set_pop(trace_usage, 'state')
-        if karel_modules.set_pop(trace_usage, 'none'):
+        self.use_trace_memory = utils.set_pop(trace_usage, 'memory')
+        self.use_trace_state = utils.set_pop(trace_usage, 'state')
+        if utils.set_pop(trace_usage, 'none'):
             self.use_trace_memory = False
             self.use_trace_state = False
         assert not trace_usage
@@ -472,7 +472,7 @@ class LatePoolingCodeDecoder(nn.Module):
         # last_token_emb: batch (* beam) x num pairs x hidden size
         pairs_per_example = state.pairs_per_example
 
-        dec_input = karel_modules.maybe_concat(
+        dec_input = utils.maybe_concat(
             (last_token_emb, memory.io, state.context), dim=2)
         # batch (* beam) * num pairs x hidden size
         dec_input = dec_input.view(-1, dec_input.shape[-1])
@@ -482,8 +482,8 @@ class LatePoolingCodeDecoder(nn.Module):
             dec_input.unsqueeze(0),
             # v before: 2 x batch (* beam) x num pairs x hidden
             # v after:  2 x batch (* beam) * num pairs x hidden
-            (karel_modules.flatten(state.h, 1),
-             karel_modules.flatten(state.c, 1)))
+            (utils.flatten(state.h, 1),
+             utils.flatten(state.c, 1)))
         new_state = (new_state[0].view_as(state.h),
                      new_state[1].view_as(state.c))
         dec_output = dec_output.squeeze(0)
@@ -492,11 +492,11 @@ class LatePoolingCodeDecoder(nn.Module):
         if memory.trace:
             new_context, _ = self.trace_attention(
                 dec_output,
-                karel_modules.flatten(memory.trace.memory, 0),
-                karel_modules.flatten(memory.trace.attn_mask, 0))
+                utils.flatten(memory.trace.memory, 0),
+                utils.flatten(memory.trace.attn_mask, 0))
 
         # batch (* beam) * num pairs x hidden
-        emb_for_logits = karel_modules.maybe_concat(
+        emb_for_logits = utils.maybe_concat(
             (new_context, dec_output), dim=1)
         # batch (* beam) x hidden
         emb_for_logits, _ = emb_for_logits.view(
@@ -519,7 +519,7 @@ class LatePoolingCodeDecoder(nn.Module):
             context = None
 
         return LatePoolingCodeDecoder.State(
-            pairs_per_example, context, *karel_modules.lstm_init(
+            pairs_per_example, context, *utils.lstm_init(
                 self._cuda, 2, 256, batch_size, pairs_per_example))
 
 
@@ -528,7 +528,7 @@ class CodeFromTraces(nn.Module):
         super(CodeFromTraces, self).__init__()
 
         if args.karel_io_enc == 'lgrl':
-            self.io_encoder = karel_modules.LGRLTaskEncoder(args)
+            self.io_encoder = utils.LGRLTaskEncoder(args)
         elif args.karel_io_enc == 'none':
             self.io_encoder = karel_common.none_fn
         else:
