@@ -12,13 +12,51 @@ from program_synthesis.models import (
     karel_model,
     prepare_spec,
 )
-from program_synthesis.models.modules import karel, karel_trace
+from program_synthesis.models.modules import karel, karel_trace, karel_common
+
+
+class KarelTracer(object):
+
+    def __init__(self, runtime):
+        self.runtime = runtime
+        self.runtime.action_callback = self.action_callback
+        self.full_grid =  np.zeros((15, 18, 18), dtype=np.bool)
+
+    def reset(self, indices=None, grid=None):
+        assert (indices is not None) ^ (grid is not None)
+        if indices is not None:
+            self.full_grid[:] = False
+            self.full_grid.ravel()[indices] = True
+        elif grid is not None:
+            self.full_grid[:] = grid
+        self.runtime.init_from_array(self.full_grid)
+
+        self.actions = []
+        self.grids = []
+        self.conds = []
+        self.record_grid_state()
+
+    def action_callback(self, action_name, success, span):
+        self.actions.append(action_name)
+        self.record_grid_state()
+
+    def record_grid_state(self):
+        runtime = self.runtime
+        grid = self.full_grid.copy()
+        cond = executor.KarelCondValues(*[
+            int(v)
+            for v in (runtime.frontIsClear(), runtime.leftIsClear(),
+                      runtime.rightIsClear(), runtime.markersPresent())
+        ])
+        self.grids.append(grid)
+        self.conds.append(cond)
 
 
 class TracePredictionModel(karel_model.BaseKarelModel):
     def __init__(self, args):
         self.model = karel_trace.TracePrediction(args)
         self.kr = karel_runtime.KarelRuntime()
+        self.tracer = KarelTracer(self.kr)
 
         super(TracePredictionModel, self).__init__(args)
 
@@ -67,6 +105,8 @@ class TracePredictionModel(karel_model.BaseKarelModel):
         sequences = [[[karel_trace.id_to_action[i] for i in seq]
                       for seq in item_sequences]
                      for item_sequences in sequences]
+        # TODO: Make InferenceResult more general so that we don't have to shove
+        # an action sequence into "code_sequence".
         return [
             base.InferenceResult(
                 code_sequence=item_sequences[0],
@@ -74,6 +114,61 @@ class TracePredictionModel(karel_model.BaseKarelModel):
                       'candidates': item_sequences})
             for item_sequences in sequences
         ]
+
+    def process_infer_results(self, batch, inference_results):
+        grid_idx = 0
+
+        input_grids = batch.input_grids.data.numpy().astype(bool)
+        output_grids = batch.output_grids.data.numpy().astype(bool)
+
+        for orig_example in batch.orig_examples:
+            for test in orig_example.input_tests:
+                result = inference_results[grid_idx]
+                candidates = result.info['candidates']
+                if self.args.max_eval_trials:
+                    candidates = candidates[:self.args.max_eval_trials]
+
+                found = False
+                for cand in candidates:
+                    self.tracer.reset(grid=input_grids[grid_idx])
+                    success = True
+                    for action in cand:
+                        success = getattr(self.kr, action)()
+                        if not success:
+                            break
+                    if success and np.all(
+                            self.tracer.full_grid == output_grids[grid_idx]):
+                        found = True
+                        break
+
+                if found:
+                    grids = self.tracer.grids
+                    actions = self.tracer.actions
+                    conds = self.tracer.conds
+                else:
+                    grids = [input_grids[grid_idx], output_grids[grid_idx]]
+                    actions = ['UNK']
+                    conds = self.tracer.conds[:1]
+
+                grids = karel_common.compress_trace(
+                        [np.where(g.ravel())[0].tolist() for g in
+                            grids])
+                test['trace'] = executor.KarelTrace(
+                    grids=grids,
+                    events=[
+                        executor.KarelEvent(
+                            timestep=t,
+                            type=name,
+                            span=None,
+                            cond_span=None,
+                            cond_value=None,
+                            success=None)
+                        for t, name in enumerate(actions)
+                    ],
+                    cond_values=conds)
+                grid_idx += 1
+
+        return [example.to_dict() for example in batch.orig_examples]
 
     def debug(self, batch):
         pass
@@ -88,9 +183,14 @@ class TracePredictionModel(karel_model.BaseKarelModel):
         for i, result in enumerate(results):
             action_seq = result.code_sequence
             self.kr.init_from_array(input_grids[i])
+            success = True
             for action in action_seq:
-                getattr(self.kr, action)()
-            correct += np.all(input_grids[i] == output_grids[i])
+                success =  getattr(self.kr, action)()
+                if not success:
+                    break
+            if success:
+                # input_grids[i] is mutated in place by self.kr.
+                correct += np.all(input_grids[i] == output_grids[i])
 
         return {'correct': correct, 'total': len(results)}
 
@@ -101,7 +201,7 @@ class TracePredictionModel(karel_model.BaseKarelModel):
 TracePredictionExample = collections.namedtuple(
     'TracePredictionExample',
     ('input_grids', 'output_grids', 'trace_grids', 'input_actions',
-     'output_actions', 'io_embed_indices', 'code'))
+     'output_actions', 'io_embed_indices', 'orig_examples'))
 
 
 class TracePredictionBatchProcessor(object):
@@ -168,12 +268,10 @@ class TracePredictionBatchProcessor(object):
             for idx in input_actions.orig_to_sort[:b]
         ])
 
-        code = (
-            [item.code_sequence for item in batch for _ in item.input_tests]
-            if self.for_eval else None)
+        orig_examples = batch if self.for_eval else None
 
         return TracePredictionExample(input_grids, output_grids, trace_grids,
-                input_actions, output_actions, io_embed_indices, code)
+                input_actions, output_actions, io_embed_indices, orig_examples)
 
 
 class CodeFromTracesModel(karel_model.BaseKarelModel):
@@ -292,52 +390,80 @@ class CodeFromTracesExample(
                 self.orig_examples)
 
 
-class CodeFromTracesBatchProcessor(object):
+class CodeFromTracesBatchProcessor(KarelTracer):
     def __init__(self, vocab, for_eval):
         self.vocab = vocab
         self.for_eval = for_eval
         self.karel_parser = parser_for_synthesis.KarelForSynthesisParser()
-        self.karel_parser.karel.action_callback = self.action_callback
-
-        self.full_grid =  np.zeros((15, 18, 18), dtype=np.bool)
-        self.actions = None
-        self.grids = None
-        self.conds = None
+        self.tracer = KarelTracer(self.karel_parser.karel)
 
     def __call__(self, batch):
         batch_size = len(batch)
         pairs_per_example = len(batch[0].input_tests)
 
-        input_grids, output_grids, code_seqs = karel_model.encode_grids_and_outputs(
-            batch, self.vocab)
+        input_grids, output_grids = karel_model.encode_io_grids(batch)
+        code_seqs = [['<S>'] + item.code_sequence + ['</S>'] for item in batch]
 
-        trace_grids = []
-        conds = []
-        actions = []
-        interleave = []
-        code_seqs = []
+        if 'trace' in batch[0].input_tests[0]:
+            # TODO: Allow a mixture of tests with and without predefined traces
+            assert all('trace' in test for item in batch for test in
+                    item.input_tests)
 
-        for batch_idx, item in enumerate(batch):
-            prog = self.karel_parser.parse(item.code_sequence)
-            code_seqs.append(['<S>'] + item.code_sequence + ['</S>'])
+            grids_lists = [
+                test['trace'].grids
+                for item in batch for test in item.input_tests
+            ]
+            trace_grids = karel_model.encode_trace_grids(grids_lists)
 
-            for test_idx, test in enumerate(item.input_tests):
-                self.full_grid[:] = False
-                self.full_grid.ravel()[test['input']] = True
-                self.karel_parser.karel.init_from_array(self.full_grid)
-                self.reset_tracer()
+            conds = [
+                test['trace'].cond_values
+                for item in batch for test in item.input_tests
+            ]
 
-                prog()
-                self.actions.append(1) # </s>
+            def make_actions(test):
+                actions_list = []
+                for ev in test['trace'].events:
+                    action_id = karel_trace.action_to_id.get(ev.type)
+                    if action_id is not None:
+                        actions_list.append(action_id)
+                actions_list.append(1)   # </s>
+                return actions_list
+            actions = [
+                make_actions(test) for item in batch
+                for test in item.input_tests
+            ]
 
-                trace_grids.append(self.grids)
-                conds.append(self.conds)
-                actions.append(self.actions)
-                interleave.append([0] + [1, 0] * (len(self.grids) - 1))
+            assert all(
+                len(g) - 1 == len(a) for g, a in zip(grids_lists, actions))
 
-        trace_grids = karel_model.lists_to_packed_sequence(
-            trace_grids, (15, 18, 18), torch.FloatTensor,
-            lambda item, batch_idx, out: out.copy_(torch.from_numpy(item.astype(np.float32))))
+            interleave = [[0] + [1, 0] * (len(grids_list) - 1)
+                          for grids_list in grids_lists]
+        else:
+            trace_grids = []
+            conds = []
+            actions = []
+            interleave = []
+
+            for batch_idx, item in enumerate(batch):
+                prog = self.karel_parser.parse(item.code_sequence)
+
+                for test_idx, test in enumerate(item.input_tests):
+                    self.tracer.reset(indices=test['input'])
+                    prog()
+                    self.tracer.actions.append(1) # </s>
+
+                    trace_grids.append(self.tracer.grids)
+                    conds.append(self.tracer.conds)
+                    actions.append([
+                        karel_trace.action_to_id[name]
+                        for name in self.tracer.actions
+                    ])
+                    interleave.append([0] + [1, 0] * (len(self.tracer.grids) -
+                                                      1))
+
+            trace_grids = karel_model.lists_to_packed_sequence(
+                trace_grids, (15, 18, 18), torch.FloatTensor,
+                lambda item, batch_idx, out: out.copy_(torch.from_numpy(item.astype(np.float32))))
 
         conds = karel_model.lists_to_packed_sequence(
             conds, (4,), torch.LongTensor,
@@ -378,24 +504,3 @@ class CodeFromTracesBatchProcessor(object):
                 input_code,
                 output_code,
                 orig_examples)
-
-    def reset_tracer(self):
-        self.actions = []
-        self.grids = []
-        self.conds = []
-        self.record_grid_state()
-
-    def action_callback(self, action_name, success, span):
-        self.actions.append(karel_trace.action_to_id[action_name])
-        self.record_grid_state()
-
-    def record_grid_state(self):
-        runtime = self.karel_parser.karel
-        grid = self.full_grid.copy()
-        cond = [
-            int(v)
-            for v in (runtime.frontIsClear(), runtime.leftIsClear(),
-                      runtime.rightIsClear(), runtime.markersPresent())
-        ]
-        self.grids.append(grid)
-        self.conds.append(cond)

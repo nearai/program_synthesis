@@ -80,6 +80,9 @@ class BaseModel(object):
     def inference(self, batch):
         raise NotImplementedError
 
+    def process_infer_results(self, batch, inference_results):
+        raise NotImplementedError
+
     def debug(self, batch):
         raise NotImplementedError
 

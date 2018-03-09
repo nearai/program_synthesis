@@ -25,7 +25,7 @@ def code_to_tokens(seq, vocab):
     return tokens
 
 
-def encode_grids_and_outputs(batch, vocab):
+def encode_io_grids(batch):
     # TODO: Don't hard-code 5 I/O examples
     input_grids, output_grids = [
         torch.zeros(len(batch), 5, 15, 18, 18) for _ in range(2)
@@ -39,9 +39,29 @@ def encode_grids_and_outputs(batch, vocab):
     input_grids, output_grids = [
         Variable(t) for t in (input_grids, output_grids)
     ]
-    code_seqs = prepare_spec.lists_padding_to_tensor(
+    return input_grids, output_grids
+
+
+def encode_padded_code_seqs(batch, vocab):
+    return  prepare_spec.lists_padding_to_tensor(
         [item.code_sequence for item in batch], vocab.stoi, False)
-    return input_grids, output_grids, code_seqs
+
+
+def encode_trace_grids(grids_lists):
+    last_grids = [set() for _ in grids_lists]
+    def fill(grid, batch_idx, out):
+        if isinstance(grid, dict):
+            last_grid = last_grids[batch_idx]
+            assert last_grid.isdisjoint(grid['plus'])
+            assert last_grid >= grid['minus']
+            last_grid.update(grid['plus'])
+            last_grid.difference_update(grid['minus'])
+        else:
+            last_grid = last_grids[batch_idx] = set(grid)
+        out.zero_()
+        out.view(-1)[list(last_grid)] = 1
+    return lists_to_packed_sequence(
+            grids_lists, (15, 18, 18), torch.FloatTensor, fill)
 
 
 def maybe_cuda(tensor, async=False):
@@ -203,8 +223,8 @@ class KarelLGRLBatchProcessor(object):
         self.for_eval = for_eval
 
     def __call__(self, batch):
-        input_grids, output_grids, code_seqs = encode_grids_and_outputs(
-            batch, self.vocab)
+        input_grids, output_grids = encode_io_grids(batch)
+        code_seqs = encode_padded_code_seqs(batch, self.vocab)
         orig_examples = batch if self.for_eval else None
         return KarelLGRLExample(input_grids, output_grids, code_seqs,
                                 orig_examples)
@@ -357,8 +377,8 @@ class KarelLGRLRefineBatchProcessor(object):
         self.for_eval = for_eval
 
     def __call__(self, batch):
-        input_grids, output_grids, code_seqs = encode_grids_and_outputs(
-            batch, self.vocab)
+        input_grids, output_grids = encode_io_grids(batch)
+        code_seqs = encode_padded_code_seqs(batch, self.vocab)
 
         if self.args.karel_code_enc == 'none':
             ref_code = None
@@ -595,22 +615,7 @@ class KarelLGRLRefineBatchProcessor(object):
             test['trace'].grids
             for item in batch for test in item.ref_example.input_tests
         ]
-
-        last_grids = [set() for _ in grids_lists]
-        def fill(grid, batch_idx, out):
-            if isinstance(grid, dict):
-                last_grid = last_grids[batch_idx]
-                assert last_grid.isdisjoint(grid['plus'])
-                assert last_grid >= grid['minus']
-                last_grid.update(grid['plus'])
-                last_grid.difference_update(grid['minus'])
-            else:
-                last_grid = last_grids[batch_idx] = set(grid)
-            out.zero_()
-            out.view(-1)[list(last_grid)] = 1
-        ref_trace_grids = lists_to_packed_sequence(grids_lists, (15, 18, 18),
-                torch.FloatTensor, fill)
-        return ref_trace_grids
+        return encode_trace_grids(grids_lists)
 
     def prepare_traces_events(self, batch, ref_code):
         # Split into action and cond events

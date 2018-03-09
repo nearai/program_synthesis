@@ -1,3 +1,4 @@
+import torch
 import torch.nn as nn
 
 
@@ -133,3 +134,19 @@ class LGRLGridEncoder(nn.Module):
 
 def none_fn(*args, **kwargs):
     return None
+
+
+def compress_trace(grids):
+    result = []
+    last_indices = set()
+    for grid in grids:
+        grid = [int(x) for x in grid]
+        indices = set(grid)
+        added = indices - last_indices
+        removed = last_indices - indices
+        if len(added) + len(removed) < len(indices):
+            result.append({'plus': sorted(added), 'minus': sorted(removed)})
+        else:
+            result.append(grid)
+        last_indices = indices
+    return result

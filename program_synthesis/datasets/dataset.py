@@ -114,7 +114,7 @@ class KarelExample(object):
         'ref_example', )
     schema = Schema(None, None)
     code_tree = []
-    _empty_trace = executor.KarelTrace([], [])
+    _empty_trace = executor.KarelTrace([], [], [])
 
     def __init__(self, idx, guid, code_sequence, input_tests, tests,
             ref_example=None):
@@ -134,7 +134,9 @@ class KarelExample(object):
                 'input': sorted(list(int(x) for x in example['in'])),
                 'output': sorted(list(int(x) for x in example['out']))
             }
-            if 'trace_grids' in example:
+            if 'trace' in example:
+                ex['trace'] = example['trace']
+            elif 'trace_grids' in example:
                 ex['trace'] = executor.KarelTrace(
                         grids=example['trace_grids'],
                         events=[])
@@ -155,6 +157,7 @@ class KarelExample(object):
             'examples': [{
                 'in': example['input'],
                 'out': example['output'],
+                'trace': example.get('trace', self._empty_trace),
                 'trace_grids': example.get('trace', self._empty_trace).grids,
             } for example in self.input_tests + self.tests],
             'code': self.code_sequence,

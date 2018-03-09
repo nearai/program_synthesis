@@ -48,7 +48,8 @@ def evaluate_code(code, arguments, tests, do_execute):
     return stats
 
 
-KarelTrace = collections.namedtuple('KarelTrace', ['grids', 'events'])
+KarelTrace = collections.namedtuple('KarelTrace', ['grids', 'events',
+    'cond_values'])
 KarelEvent = collections.namedtuple('KarelEvent', [
     'timestep',  # event happened before corresponding index in grids
     'type',  # move, turnLeft/Right, put/pickMarker, if, ifElse, repeat
@@ -56,6 +57,12 @@ KarelEvent = collections.namedtuple('KarelEvent', [
     'cond_span', # (i, j) for first, last token contained in c( c)
     'cond_value', # True/False for if/ifElse, remaining iters for repeat
     'success', # False if action failed or loop will repeat forever
+])
+KarelCondValues = collections.namedtuple('KarelCondValues', [
+    'frontIsClear',
+    'leftIsClear',
+    'rightIsClear',
+    'markersPresent',
 ])
 
 
@@ -76,7 +83,8 @@ class KarelExecutor(object):
         trace = None
         timeout = Timeout(self.action_limit)
         if record_trace:
-            trace = KarelTrace([inp], [])
+            # TODO: Record cond values
+            trace = KarelTrace(grids=[inp], events=[], cond_values=[])
             def action_callback(action_name, success, span):
                 trace.events.append(KarelEvent(
                     timestep=len(trace.grids),

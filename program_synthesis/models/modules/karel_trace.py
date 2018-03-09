@@ -14,7 +14,7 @@ from program_synthesis.models.modules import utils
 from program_synthesis.datasets.karel import karel_runtime
 
 action_to_id = {
-    '<s>': 0,
+    'UNK': 0,
     '</s>': 1,
     'move': 2,
     'turnLeft': 3,
@@ -23,7 +23,7 @@ action_to_id = {
     'pickMarker': 6,
 }
 id_to_action = {
-    0: '<s>',
+    0: 'UNK',
     1: '</s>',
     2: 'move',
     3: 'turnLeft',
