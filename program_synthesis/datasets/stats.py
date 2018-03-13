@@ -120,5 +120,5 @@ if __name__ == "__main__":
 
     import dataset
     args.batch_size = 1
-    train_dataset, _ = dataset.get_dataset(args)
+    train_dataset = dataset.get_train_dataset(args)
     report_stats(args, train_dataset)

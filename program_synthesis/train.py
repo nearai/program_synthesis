@@ -56,7 +56,8 @@ def train_start(args):
     datasets.set_vocab(args)
     m = models.get_model(args)
     m.model.train()
-    train_data, dev_data = datasets.get_dataset(args, m)
+    train_data = datasets.get_train_dataset(args, m)
+    dev_data = datasets.get_eval_dataset(args, m)
     dev_data.shuffle = True
     sampler = get_sampler(train_data, args)
     tools.save_args(args)

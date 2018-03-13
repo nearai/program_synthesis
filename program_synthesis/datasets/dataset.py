@@ -466,30 +466,24 @@ class KarelDataset(object):
 
 
 
-def get_algolisp_dataset(args, _):
-    train_data = NearDataset(
+def get_algolisp_train_dataset(args, _):
+    return  NearDataset(
         relpath('../../data/algolisp/dataset.train.jsonl'),
         args.batch_size, shuffle=True, max_size=args.dataset_max_size,
         max_code_length=args.dataset_max_code_length)
-    dev_data = NearDataset(
-        relpath('../../data/algolisp/dataset.dev.jsonl'),
-        args.batch_size, shuffle=False)
-    return train_data, dev_data
 
 
-def get_karel_dataset(args, model):
+def get_karel_train_dataset(args, model):
     suffix = args.dataset[5:]
 
     if args.karel_mutate_ref:
         mutation_dist = [float(x) for x in args.karel_mutate_n_dist.split(',')]
         train_mutator = KarelExampleMutator(mutation_dist, rng_fixed=False,
                 add_trace=args.karel_trace_enc != 'none')
-        dev_mutator = KarelExampleMutator(mutation_dist, rng_fixed=True,
-                add_trace=args.karel_trace_enc != 'none')
     else:
-        train_mutator = dev_mutator = lambda x: x
+        train_mutator = lambda x: x
 
-    train_data = torch.utils.data.DataLoader(
+    return torch.utils.data.DataLoader(
         KarelTorchDataset(
             relpath('../../data/karel/train{}.pkl'.format(suffix)),
             train_mutator),
@@ -497,15 +491,6 @@ def get_karel_dataset(args, model):
         collate_fn=model.batch_processor(for_eval=False),
         num_workers=0 if args.load_sync else 4,
         pin_memory=False)
-    dev_data = torch.utils.data.DataLoader(
-        KarelTorchDataset(
-            relpath('../../data/karel/val{}.pkl'.format(suffix)),
-            dev_mutator),
-        args.batch_size,
-        collate_fn=model.batch_processor(for_eval=True),
-        num_workers=0 if args.load_sync else 2,
-        pin_memory=False)
-    return train_data, dev_data
 
 
 def get_algolisp_eval_dataset(args, _):
@@ -561,11 +546,11 @@ def set_vocab(args):
         raise ValueError("Unknown dataset %s" % args.dataset)
 
 
-def get_dataset(args, model):
+def get_train_dataset(args, model):
     if args.dataset == 'algolisp':
-        return get_algolisp_dataset(args, model)
+        return get_algolisp_train_dataset(args, model)
     elif args.dataset.startswith('karel'):
-        return get_karel_dataset(args, model)
+        return get_karel_train_dataset(args, model)
     else:
         raise ValueError("Unknown dataset %s" % args.dataset)
 

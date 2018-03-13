@@ -22,7 +22,7 @@ def infer(args):
     if args.eval_final:
         eval_dataset = datasets.get_eval_final_dataset(args, m)
     elif args.eval_train:
-        eval_dataset, _ = datasets.get_dataset(args, m)
+        eval_dataset = datasets.get_train_dataset(args, m)
     else:
         eval_dataset = datasets.get_eval_dataset(args, m)
     m.model.eval()
@@ -30,16 +30,18 @@ def infer(args):
     f = open(args.infer_output, 'w')
     index_f = open(args.infer_output + '.index', 'w')
     infer_counters = collections.Counter()
+    num_outputs = 0
     for batch in tqdm.tqdm(eval_dataset):
         infer_results = m.inference(batch)
         infer_outputs = m.process_infer_results(batch, infer_results,
                 infer_counters)
         for output in infer_outputs:
-            for example in output['examples'][:5]:
-                assert len(example['trace'].grids) >= 2
             offset = f.tell()
             pickle.dump(output, f, pickle.HIGHEST_PROTOCOL)
             index_f.write(struct.pack('<Q', offset))
+            num_outputs += 1
+            if args.infer_limit and num_outputs >= args.infer_limit:
+                return
         print(infer_counters)
 
 
