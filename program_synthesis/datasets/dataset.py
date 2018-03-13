@@ -466,19 +466,19 @@ class KarelDataset(object):
 
 
 
-def get_algolisp_train_dataset(args, _):
+def get_algolisp_train_dataset(args, model, for_eval=False):
     return  NearDataset(
         relpath('../../data/algolisp/dataset.train.jsonl'),
         args.batch_size, shuffle=True, max_size=args.dataset_max_size,
         max_code_length=args.dataset_max_code_length)
 
 
-def get_karel_train_dataset(args, model):
+def get_karel_train_dataset(args, model, for_eval=False):
     suffix = args.dataset[5:]
 
     if args.karel_mutate_ref:
         mutation_dist = [float(x) for x in args.karel_mutate_n_dist.split(',')]
-        train_mutator = KarelExampleMutator(mutation_dist, rng_fixed=False,
+        train_mutator = KarelExampleMutator(mutation_dist, rng_fixed=for_eval,
                 add_trace=args.karel_trace_enc != 'none')
     else:
         train_mutator = lambda x: x
@@ -488,7 +488,7 @@ def get_karel_train_dataset(args, model):
             relpath('../../data/karel/train{}.pkl'.format(suffix)),
             train_mutator),
         args.batch_size,
-        collate_fn=model.batch_processor(for_eval=False),
+        collate_fn=model.batch_processor(for_eval=for_eval),
         num_workers=0 if args.load_sync else 4,
         pin_memory=False)
 
@@ -546,11 +546,11 @@ def set_vocab(args):
         raise ValueError("Unknown dataset %s" % args.dataset)
 
 
-def get_train_dataset(args, model):
+def get_train_dataset(args, model, for_eval):
     if args.dataset == 'algolisp':
-        return get_algolisp_train_dataset(args, model)
+        return get_algolisp_train_dataset(args, model, for_eval)
     elif args.dataset.startswith('karel'):
-        return get_karel_train_dataset(args, model)
+        return get_karel_train_dataset(args, model, for_eval)
     else:
         raise ValueError("Unknown dataset %s" % args.dataset)
 

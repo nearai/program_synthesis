@@ -25,7 +25,7 @@ def evaluate(args):
     if args.eval_final:
         eval_dataset = datasets.get_eval_final_dataset(args, m)
     elif args.eval_train:
-        eval_dataset = datasets.get_train_dataset(args, m)
+        eval_dataset = datasets.get_train_dataset(args, m, for_eval=True)
     else:
         eval_dataset = datasets.get_eval_dataset(args, m)
     if m.last_step == 0:
