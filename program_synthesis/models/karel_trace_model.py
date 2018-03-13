@@ -1,4 +1,5 @@
 import collections
+import copy
 
 import numpy as np
 import torch
@@ -17,10 +18,11 @@ from program_synthesis.models.modules import karel, karel_trace, karel_common
 
 class KarelTracer(object):
 
-    def __init__(self, runtime):
+    def __init__(self, runtime, keep_failures=True):
         self.runtime = runtime
         self.runtime.action_callback = self.action_callback
         self.full_grid =  np.zeros((15, 18, 18), dtype=np.bool)
+        self.keep_failures = keep_failures
 
     def reset(self, indices=None, grid=None):
         assert (indices is not None) ^ (grid is not None)
@@ -37,8 +39,9 @@ class KarelTracer(object):
         self.record_grid_state()
 
     def action_callback(self, action_name, success, span):
-        self.actions.append(action_name)
-        self.record_grid_state()
+        if success or self.keep_failures:
+            self.actions.append(action_name)
+            self.record_grid_state()
 
     def record_grid_state(self):
         runtime = self.runtime
@@ -56,7 +59,11 @@ class TracePredictionModel(karel_model.BaseKarelModel):
     def __init__(self, args):
         self.model = karel_trace.TracePrediction(args)
         self.kr = karel_runtime.KarelRuntime()
-        self.tracer = KarelTracer(self.kr)
+        self.tracer = KarelTracer(self.kr, keep_failures=False)
+        self.eval_kr = karel_runtime.KarelRuntime()
+
+        self.all_infer = 0
+        self.correct_infer = 0
 
         super(TracePredictionModel, self).__init__(args)
 
@@ -115,13 +122,17 @@ class TracePredictionModel(karel_model.BaseKarelModel):
             for item_sequences in sequences
         ]
 
-    def process_infer_results(self, batch, inference_results):
+    def process_infer_results(self, batch, inference_results,
+            counters=collections.Counter()):
         grid_idx = 0
 
         input_grids = batch.input_grids.data.numpy().astype(bool)
         output_grids = batch.output_grids.data.numpy().astype(bool)
 
+        output = []
         for orig_example in batch.orig_examples:
+            orig_example = copy.deepcopy(orig_example)
+            output.append(orig_example)
             for test in orig_example.input_tests:
                 result = inference_results[grid_idx]
                 candidates = result.info['candidates']
@@ -135,24 +146,28 @@ class TracePredictionModel(karel_model.BaseKarelModel):
                     for action in cand:
                         success = getattr(self.kr, action)()
                         if not success:
-                            break
-                    if success and np.all(
+                            counters['failure-' + action] += 1
+                    if  np.all(
                             self.tracer.full_grid == output_grids[grid_idx]):
                         found = True
                         break
 
+                counters['total'] += 1
                 if found:
                     grids = self.tracer.grids
                     actions = self.tracer.actions
                     conds = self.tracer.conds
+                    counters['correct'] += 1
                 else:
                     grids = [input_grids[grid_idx], output_grids[grid_idx]]
                     actions = ['UNK']
-                    conds = self.tracer.conds[:1]
+                    # TODO fix conds
+                    conds = [self.tracer.conds[0], self.tracer.conds[-1]]
 
                 grids = karel_common.compress_trace(
                         [np.where(g.ravel())[0].tolist() for g in
                             grids])
+                assert len(grids) >= 2
                 test['trace'] = executor.KarelTrace(
                     grids=grids,
                     events=[
@@ -168,7 +183,7 @@ class TracePredictionModel(karel_model.BaseKarelModel):
                     cond_values=conds)
                 grid_idx += 1
 
-        return [example.to_dict() for example in batch.orig_examples]
+        return [example.to_dict() for example in output]
 
     def debug(self, batch):
         pass
@@ -182,14 +197,12 @@ class TracePredictionModel(karel_model.BaseKarelModel):
 
         for i, result in enumerate(results):
             action_seq = result.code_sequence
-            self.kr.init_from_array(input_grids[i])
+            self.eval_kr.init_from_array(input_grids[i])
             success = True
             for action in action_seq:
-                success =  getattr(self.kr, action)()
-                if not success:
-                    break
+                getattr(self.eval_kr, action)()
             if success:
-                # input_grids[i] is mutated in place by self.kr.
+                # input_grids[i] is mutated in place by self.eval_kr.
                 correct += np.all(input_grids[i] == output_grids[i])
 
         return {'correct': correct, 'total': len(results)}
@@ -434,7 +447,7 @@ class CodeFromTracesBatchProcessor(KarelTracer):
             ]
 
             assert all(
-                len(g) - 1 == len(a) for g, a in zip(grids_lists, actions))
+                len(g) == len(a) for g, a in zip(grids_lists, actions))
 
             interleave = [[0] + [1, 0] * (len(grids_list) - 1)
                           for grids_list in grids_lists]

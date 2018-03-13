@@ -196,6 +196,7 @@ class KarelRuntime(object):
         self.hero_dir %= 4
         self.world[self.hero_dir][tuple(self.hero_pos)] = True
         self.action_callback('turnLeft', True, metadata)
+        return True
 
     def turn_right(self, metadata=None):
         '''Turn right'''
@@ -204,6 +205,7 @@ class KarelRuntime(object):
         self.hero_dir %= 4
         self.world[self.hero_dir][tuple(self.hero_pos)] = True
         self.action_callback('turnRight', True, metadata)
+        return True
 
     def pick_marker(self, metadata=None):
         '''Pick marker'''

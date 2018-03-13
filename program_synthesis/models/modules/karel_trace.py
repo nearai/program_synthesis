@@ -528,7 +528,7 @@ class CodeFromTraces(nn.Module):
         super(CodeFromTraces, self).__init__()
 
         if args.karel_io_enc == 'lgrl':
-            self.io_encoder = utils.LGRLTaskEncoder(args)
+            self.io_encoder = karel_common.LGRLTaskEncoder(args)
         elif args.karel_io_enc == 'none':
             self.io_encoder = karel_common.none_fn
         else:

@@ -1,4 +1,5 @@
 import argparse
+import collections
 from six.moves import cPickle as pickle
 import struct
 
@@ -28,13 +29,18 @@ def infer(args):
 
     f = open(args.infer_output, 'w')
     index_f = open(args.infer_output + '.index', 'w')
+    infer_counters = collections.Counter()
     for batch in tqdm.tqdm(eval_dataset):
         infer_results = m.inference(batch)
-        infer_outputs = m.process_infer_results(batch, infer_results)
+        infer_outputs = m.process_infer_results(batch, infer_results,
+                infer_counters)
         for output in infer_outputs:
+            for example in output['examples'][:5]:
+                assert len(example['trace'].grids) >= 2
             offset = f.tell()
             pickle.dump(output, f, pickle.HIGHEST_PROTOCOL)
             index_f.write(struct.pack('<Q', offset))
+        print(infer_counters)
 
 
 if __name__ == "__main__":
