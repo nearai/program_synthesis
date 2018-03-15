@@ -93,7 +93,7 @@ def get_arg_parser(title, mode):
         train_group.add_argument('--karel-trace-cond-enc', default='concat')
         train_group.add_argument('--karel-code-dec', default='latepool')
 
-        train_group.add_argument('--karel-train-shuf', default=False, type=bool)
+        train_group.add_argument('--karel-train-shuf', default=False, action='store_true')
 
     elif mode == 'eval':
         eval_group = parser.add_argument_group('eval')

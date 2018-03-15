@@ -78,9 +78,9 @@ class PResNetTaskEncoder(nn.Module):
                     in_channels=64, out_channels=64, kernel_size=3, padding=1))
             for _ in range(args.karel_io_conv_blocks)
         ])
-        self.grid_fc = nn.Linear(64 * 18 * 18, 256)
+        self.grid_fc = nn.Linear(64 * 18 * 18, 512)
 
-    def forward(self, inptu_grid, output_grid):
+    def forward(self, input_grid, output_grid):
         batch_dims = input_grid.shape[:-3]
         input_grid = input_grid.contiguous().view(-1, 15, 18, 18)
         output_grid  = output_grid.contiguous().view(-1, 15, 18, 18)
