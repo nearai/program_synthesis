@@ -175,7 +175,8 @@ class KarelForSynthesisParser(Parser):
         stmt = p[4]
 
         if self.build_tree:
-            prog = {'type': 'run', 'body':  stmt}
+            span = (p.lexpos(1), p.lexpos(5))
+            prog = {'type': 'run', 'body':  stmt, 'span': span}
         else:
             prog = stmt
 
@@ -217,7 +218,7 @@ class KarelForSynthesisParser(Parser):
         self.cond_block_spans.append(span)
 
         if self.build_tree:
-            if_ = {'type': 'if', 'cond': cond, 'body': stmt}
+            if_ = {'type': 'if', 'cond': cond, 'body': stmt, 'span': span}
         else:
             cond_fn, cond_span = cond
             def if_():
@@ -244,6 +245,7 @@ class KarelForSynthesisParser(Parser):
                 'cond': cond,
                 'ifBody': stmt1,
                 'elseBody': stmt2,
+                'span': span,
             }
         else:
             cond_fn, cond_span = cond
@@ -273,6 +275,7 @@ class KarelForSynthesisParser(Parser):
                 'type': 'while',
                 'cond': cond,
                 'body': stmt,
+                'span': span,
             }
         else:
             cond_fn, cond_span = cond
@@ -296,6 +299,7 @@ class KarelForSynthesisParser(Parser):
                 'type': 'repeat',
                 'times': cste,
                 'body': stmt,
+                'span': span,
             }
         else:
             limit = cste()
@@ -320,13 +324,14 @@ class KarelForSynthesisParser(Parser):
             p[0] = p[1]
             return
 
+        span = (p.lexpos(1), p.lexpos(4))
         if self.build_tree:
             fn = {
                 'type': 'not',
                 'cond': p[3],
+                'span': span,
             }
         else:
-            span = (p.lexpos(1), p.lexpos(4))
             cond_without_not, _ = p[3]
             fn = (lambda: not cond_without_not(), span)
 
@@ -340,12 +345,13 @@ class KarelForSynthesisParser(Parser):
                             | NO_MARKERS_PRESENT
         '''
         cond_without_not = p[1]
+        span = (p.lexpos(1), p.lexpos(1))
         if self.build_tree:
             cond = {
                 'type': cond_without_not,
+                'span': span,
             }
         else:
-            span = (p.lexpos(1), p.lexpos(1))
             cond = (getattr(self.karel, cond_without_not), span)
         p[0] = cond
 
@@ -361,7 +367,7 @@ class KarelForSynthesisParser(Parser):
         self.action_spans.append(span)
 
         if self.build_tree:
-            action = {'type': action_name}
+            action = {'type': action_name, 'span': span}
         else:
             action = functools.partial(
                     getattr(self.karel, action_name),
@@ -372,13 +378,13 @@ class KarelForSynthesisParser(Parser):
         '''cste : INT
         '''
         value = p[1]
+        span = (p.lexpos(1), p.lexpos(1))
         if self.build_tree:
             fn = {
                 'type': 'count',
                 'value': value,
             }
         else:
-            span = (p.lexpos(1), p.lexpos(1))
             value = int(value)
             def fn():
                 return value
