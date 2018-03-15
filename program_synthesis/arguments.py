@@ -87,6 +87,7 @@ def get_arg_parser(title, mode):
         train_group.add_argument('--karel-code-usage', default='memory')
 
         train_group.add_argument('--karel-io-enc', default='lgrl')
+        train_group.add_argument('--karel-io-conv-blocks', default=2, type=int)
         train_group.add_argument('--karel-trace-action-enc', default='emb')
         train_group.add_argument('--karel-trace-grid-enc', default='presnet')
         train_group.add_argument('--karel-trace-cond-enc', default='concat')

@@ -59,6 +59,40 @@ class LGRLTaskEncoder(nn.Module):
         return enc
 
 
+class PResNetTaskEncoder(nn.Module):
+
+    def __init__(self, args):
+        super(PResNetTaskEncoder, self).__init__()
+
+        self.initial_conv = nn.Conv2d(
+            in_channels=30, out_channels=64, kernel_size=3, padding=1, groups=2)
+        self.blocks = nn.ModuleList([
+            nn.Sequential(
+                nn.BatchNorm2d(64),
+                nn.ReLU(),
+                nn.Conv2d(
+                    in_channels=64, out_channels=64, kernel_size=3, padding=1),
+                nn.BatchNorm2d(64),
+                nn.ReLU(),
+                nn.Conv2d(
+                    in_channels=64, out_channels=64, kernel_size=3, padding=1))
+            for _ in range(args.karel_io_conv_blocks)
+        ])
+        self.grid_fc = nn.Linear(64 * 18 * 18, 256)
+
+    def forward(self, inptu_grid, output_grid):
+        batch_dims = input_grid.shape[:-3]
+        input_grid = input_grid.contiguous().view(-1, 15, 18, 18)
+        output_grid  = output_grid.contiguous().view(-1, 15, 18, 18)
+        grid = torch.cat([input_grid, output_grid], dim=1)
+
+        enc = self.initial_conv(grid)
+        for block in self.blocks:
+            enc = enc + block(enc)
+        enc = self.grid_fc(enc.view(*(batch_dims + (-1,))))
+        return enc
+
+
 class PResNetGridEncoder(nn.Module):
 
     def __init__(self, args):

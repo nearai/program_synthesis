@@ -1207,7 +1207,12 @@ class LGRLKarel(nn.Module):
         super(LGRLKarel, self).__init__()
         self.args = args
 
-        self.encoder = karel_common.LGRLTaskEncoder(args)
+        if self.args.karel_io_enc == 'lgrl':
+            self.encoder = karel_common.LGRLTaskEncoder(args)
+        elif self.args.karel_io_enc == 'presnet':
+            self.encoder = karel_common.PResNetTaskEncoder(args)
+        else:
+            raise ValueError(self.args.karel_io_enc)
         self.decoder = LGRLSeqDecoder(vocab_size, args)
 
     def encode(self, input_grid, output_grid):
@@ -1256,7 +1261,12 @@ class LGRLRefineKarel(nn.Module):
             else:
                 raise ValueError(self.args.karel_code_update)
 
-        self.encoder = karel_common.LGRLTaskEncoder(args)
+        if self.args.karel_io_enc == 'lgrl':
+            self.encoder = karel_common.LGRLTaskEncoder(args)
+        elif self.args.karel_io_enc == 'presnet':
+            self.encoder = karel_common.PResNetTaskEncoder(args)
+        else:
+            raise ValueError(self.args.karel_io_enc)
 
     def encode(self, input_grid, output_grid, ref_code, ref_trace_grids,
                ref_trace_events, cag_interleave, code_update_info):
