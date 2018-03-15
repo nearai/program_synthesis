@@ -171,14 +171,21 @@ class KarelForSynthesisParser(Parser):
     #########
 
     def p_prog(self, p):
-        '''prog : DEF RUN M_LBRACE stmt M_RBRACE'''
-        stmt = p[4]
-
-        if self.build_tree:
-            span = (p.lexpos(1), p.lexpos(5))
-            prog = {'type': 'run', 'body':  stmt, 'span': span}
+        '''prog : DEF RUN M_LBRACE stmt M_RBRACE
+            | DEF RUN M_LBRACE M_RBRACE'''
+        if len(p) == 5: # Empty program
+            if self.build_tree:
+                span = (p.lexpos(1), p.lexpos(4))
+                prog = {'type': 'run', 'body': [], 'span': span}
+            else:
+                prog = lambda: None
         else:
-            prog = stmt
+            stmt = p[4]
+            if self.build_tree:
+                span = (p.lexpos(1), p.lexpos(5))
+                prog = {'type': 'run', 'body':  stmt, 'span': span}
+            else:
+                prog = stmt
 
         p[0] = prog
 
