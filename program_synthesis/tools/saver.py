@@ -163,7 +163,7 @@ def print_params(dct, indent=0):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Checkpoint Viewer')
     parser.add_argument('--model_dir', type=str, default='')
-    args, _ = parser.parse_known_args(sys.argv)
+    args = parser.parse_args()
 
     path = os.path.join(args.model_dir, 'checkpoint')
     print("Loading model from %s" % path)
