@@ -483,7 +483,8 @@ def get_karel_train_dataset(args, model, for_eval=False):
         args.batch_size,
         collate_fn=model.batch_processor(for_eval=for_eval),
         num_workers=0 if args.load_sync else 4,
-        pin_memory=False)
+        pin_memory=False,
+        shuffle=args.karel_train_shuf and not for_eval)
 
 
 def get_algolisp_eval_dataset(args, _):
