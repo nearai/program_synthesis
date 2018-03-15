@@ -21,7 +21,7 @@ from . import data
 from . import executor
 from . import stats
 from .karel.mutation import KarelExampleMutator
-
+from program_synthesis.datasets import indexed_file
 
 Schema = collections.namedtuple("Schema", ["args", "return_type"])
 
@@ -408,14 +408,7 @@ class KarelTorchDataset(torch.utils.data.Dataset):
         self.mutator = mutator
 
         self.file = None
-        self.index = []
-        with open(self.filename + '.index') as index_file:
-            while True:
-                offset = index_file.read(8)
-                if not offset:
-                    break
-                offset, = struct.unpack('<Q', offset)
-                self.index.append(offset)
+        self.index = indexed_file.read_index(self.filename + '.index')
 
     def __len__(self):
         return len(self.index)
