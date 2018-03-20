@@ -300,6 +300,7 @@ class KarelForSynthesisParser(Parser):
         '''repeat : REPEAT cste R_LBRACE stmt R_RBRACE
         '''
         cste, stmt = p[2], p[4]
+        span = (p.lexpos(1), p.lexpos(5))
 
         if self.build_tree:
             repeat = {
@@ -310,7 +311,6 @@ class KarelForSynthesisParser(Parser):
             }
         else:
             limit = cste()
-            span = (p.lexpos(1), p.lexpos(5))
             true_span = (p.lexpos(3), p.lexpos(5))
             false_span = (p.lexpos(5), p.lexpos(5))
 

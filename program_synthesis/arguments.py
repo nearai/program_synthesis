@@ -140,6 +140,7 @@ def backport_default_args(args):
         "karel_trace_usage": "memory",
         "karel_code_usage": "memory",
         "karel_refine_dec": "default",
+        "karel_io_enc": "lgrl",
     }
     for key, value in backport.items():
         if not hasattr(args, key):
