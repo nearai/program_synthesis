@@ -185,7 +185,7 @@ class KarelLGRLModel(BaseKarelModel):
         res, = self.inference(batch)
         print("Out:  %s" % ' '.join(res.code_sequence))
 
-    def inference(self, input_output_grids):
+    def inference(self, input_output_grids, filtered=True):
         input_grids, output_grids, _1, _2 = input_output_grids
         if self.args.cuda:
             input_grids = input_grids.cuda(async=True)
@@ -205,8 +205,13 @@ class KarelLGRLModel(BaseKarelModel):
             cuda=self.args.cuda,
             max_decoder_length=self.args.max_decoder_length)
 
-        return self._try_sequences(self.vocab, sequences, input_grids,
-                                   output_grids, self.args.max_beam_trees)
+        if filtered:
+            return self._try_sequences(self.vocab, sequences, input_grids,
+                                       output_grids, self.args.max_beam_trees)
+        else:
+            return [[[self.vocab.itos(idx) for idx in beam] for beam in beams]
+                    for beams in sequences]
+
 
     def batch_processor(self, for_eval):
         return KarelLGRLBatchProcessor(self.vocab, for_eval)
@@ -288,7 +293,7 @@ class KarelLGRLRefineModel(BaseKarelModel):
         code = code_to_tokens(batch.code_seqs.data[0, 1:], self.vocab)
         print("Code: %s" % ' '.join(code))
 
-    def inference(self, batch):
+    def inference(self, batch, filtered=True):
         (input_grids, output_grids, code_seqs, dec_data, ref_code,
          ref_trace_grids, ref_trace_events, cag_interleave, code_update_info,
          orig_examples) = batch
@@ -321,8 +326,12 @@ class KarelLGRLRefineModel(BaseKarelModel):
 
         sequences = self.model.decoder.postprocess_output(sequences, memory)
 
-        return self._try_sequences(self.vocab, sequences, input_grids,
-                                   output_grids, self.args.max_beam_trees)
+        if filtered:
+            return self._try_sequences(self.vocab, sequences, input_grids,
+                                       output_grids, self.args.max_beam_trees)
+        else:
+            return [[[self.vocab.itos(idx) for idx in beam] for beam in beams]
+                    for beams in sequences]
 
     def batch_processor(self, for_eval):
         return KarelLGRLRefineBatchProcessor(self.args, self.vocab, for_eval)
