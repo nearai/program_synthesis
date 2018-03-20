@@ -141,7 +141,7 @@ def save_args(args):
 
 def restore_args(args):
     if not os.path.exists(args.model_dir):
-        raise Exception('{} does not exist'.format(args.model_dir)
+        raise Exception('{} does not exist'.format(args.model_dir))
     with open(os.path.join(args.model_dir, 'args.json')) as f:
         new_args = json.loads(f.read())
     for arg in new_args:
