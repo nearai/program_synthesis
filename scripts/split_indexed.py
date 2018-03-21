@@ -14,7 +14,7 @@ if __name__ == '__main__':
 
     root, ext = os.path.splitext(args.input)
 
-    index = i
+    index = []
     with open(args.input + '.index') as index_file:
         while True:
             offset = index_file.read(8)
@@ -33,7 +33,7 @@ if __name__ == '__main__':
     index_offset = 0
     for i, piece_num_elems in tqdm.tqdm(enumerate(pieces_num_elems)):
         piece_name  = '{}-{:03d}-of-{:03d}{}'.format(
-                args.input, i, args.num_pieces, ext)
+                root, i, args.num_pieces, ext)
 
         piece_start = index[index_offset]
         piece_end = index[index_offset + piece_num_elems]
