@@ -85,6 +85,7 @@ def get_arg_parser(title, mode):
         train_group.add_argument('--karel-refine-dec', default='default')
         train_group.add_argument('--karel-trace-usage', default='memory')
         train_group.add_argument('--karel-code-usage', default='memory')
+        train_group.add_argument('--karel-trace-inc-val', action='store_true')
 
         train_group.add_argument('--karel-io-enc', default='lgrl')
         train_group.add_argument('--karel-io-conv-blocks', default=2, type=int)
@@ -141,6 +142,7 @@ def backport_default_args(args):
         "karel_code_usage": "memory",
         "karel_refine_dec": "default",
         "karel_io_enc": "lgrl",
+        "karel_trace_inc_val": True,
     }
     for key, value in backport.items():
         if not hasattr(args, key):

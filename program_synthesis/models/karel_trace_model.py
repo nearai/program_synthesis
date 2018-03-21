@@ -208,7 +208,7 @@ class TracePredictionModel(karel_model.BaseKarelModel):
         return {'correct': correct, 'total': len(results)}
 
     def batch_processor(self, for_eval):
-        return TracePredictionBatchProcessor(for_eval)
+        return TracePredictionBatchProcessor(self.args, for_eval)
 
 
 TracePredictionExample = collections.namedtuple(
@@ -219,15 +219,18 @@ TracePredictionExample = collections.namedtuple(
 
 class TracePredictionBatchProcessor(object):
 
-    def __init__(self, for_eval):
+    def __init__(self, args, for_eval):
+        self.args = args
         self.for_eval = for_eval
         self.executor = executor.KarelExecutor()
 
     def __call__(self, batch):
         input_grids, output_grids = [
             torch.zeros(
-                sum(len(item.input_tests) for item in batch), 15, 18, 18)
-            for _ in range(2)
+                sum(
+                    len(item.input_tests) + len(item.tests)
+                    if self.args.karel_trace_inc_val else 0
+                    for item in batch), 15, 18, 18) for _ in range(2)
         ]
         trace_grids = [[] for _ in range(input_grids.shape[0])]
         # 0 for <s>
@@ -239,7 +242,8 @@ class TracePredictionBatchProcessor(object):
         idx = 0
         for item in batch:
             code = item.code_sequence
-            for test in item.input_tests:
+            for test in (item.input_tests + item.tests
+                         if self.args.karel_trace_inc_val else []):
                 input_grids[idx].view(-1)[test['input']] = 1
                 output_grids[idx].view(-1)[test['output']] = 1
                 result, trace = self.executor.execute(
