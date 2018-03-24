@@ -134,7 +134,8 @@ class TracePredictionModel(karel_model.BaseKarelModel):
         for orig_example in batch.orig_examples:
             orig_example = copy.deepcopy(orig_example)
             output.append(orig_example)
-            for test in orig_example.input_tests:
+            for test in (orig_example.input_tests + orig_example.tests
+                         if self.args.karel_trace_inc_val else []):
                 result = inference_results[grid_idx]
                 candidates = result.info['candidates']
                 if self.args.max_eval_trials:

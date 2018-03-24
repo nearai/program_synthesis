@@ -31,7 +31,8 @@ def infer(args):
     index_f = open(args.infer_output + '.index', 'w')
     infer_counters = collections.Counter()
     num_outputs = 0
-    for batch in tqdm.tqdm(eval_dataset):
+    iterator = tqdm.tqdm(eval_dataset)
+    for batch in iterator:
         infer_results = m.inference(batch)
         infer_outputs = m.process_infer_results(batch, infer_results,
                 infer_counters)
@@ -42,7 +43,8 @@ def infer(args):
             num_outputs += 1
             if args.infer_limit and num_outputs >= args.infer_limit:
                 return
-        print(infer_counters)
+
+        iterator.set_postfix(**infer_counters)
 
 
 if __name__ == "__main__":

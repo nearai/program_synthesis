@@ -85,7 +85,6 @@ def get_arg_parser(title, mode):
         train_group.add_argument('--karel-refine-dec', default='default')
         train_group.add_argument('--karel-trace-usage', default='memory')
         train_group.add_argument('--karel-code-usage', default='memory')
-        train_group.add_argument('--karel-trace-inc-val', action='store_true')
 
         train_group.add_argument('--karel-io-enc', default='lgrl')
         train_group.add_argument('--karel-io-conv-blocks', default=2, type=int)
@@ -118,6 +117,7 @@ def get_arg_parser(title, mode):
     infer_group.add_argument('--search-bfs', action='store_true', default=True)
     infer_group.add_argument('--karel-mutate-ref', action='store_true')
     infer_group.add_argument('--karel-mutate-n-dist')
+    infer_group.add_argument('--karel-trace-inc-val', action='store_true')
 
     runtime_group = parser.add_argument_group('runtime')
     runtime_group.add_argument(
