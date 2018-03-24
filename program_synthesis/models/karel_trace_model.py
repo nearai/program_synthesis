@@ -68,20 +68,21 @@ class TracePredictionModel(karel_model.BaseKarelModel):
         super(TracePredictionModel, self).__init__(args)
 
     def compute_loss(self, batch):
-        (input_grids, output_grids, trace_grids, input_actions, output_actions,
-         io_embed_indices, _) = batch
+        (input_grids, output_grids, trace_grids, conds, input_actions,
+         output_actions, io_embed_indices, _) = batch
 
         if self.args.cuda:
             input_grids = input_grids.cuda(async=True)
             output_grids = output_grids.cuda(async=True)
             trace_grids = trace_grids.cuda(async=True)
+            conds = conds.cuda(async=True)
             input_actions = input_actions.cuda(async=True)
             output_actions = output_actions.cuda(async=True)
             io_embed_indices = io_embed_indices.cuda(async=True)
 
         io_embed = self.model.encode(input_grids, output_grids)
         logits, labels = self.model.decode(
-            io_embed, trace_grids, input_actions,
+            io_embed, trace_grids,  conds, input_actions,
             output_actions, io_embed_indices)
         return self.criterion(
             logits.view(-1, logits.shape[-1]), labels.contiguous().view(-1))
@@ -213,7 +214,7 @@ class TracePredictionModel(karel_model.BaseKarelModel):
 
 TracePredictionExample = collections.namedtuple(
     'TracePredictionExample',
-    ('input_grids', 'output_grids', 'trace_grids', 'input_actions',
+    ('input_grids', 'output_grids', 'trace_grids', 'conds', 'input_actions',
      'output_actions', 'io_embed_indices', 'orig_examples'))
 
 
@@ -222,7 +223,8 @@ class TracePredictionBatchProcessor(object):
     def __init__(self, args, for_eval):
         self.args = args
         self.for_eval = for_eval
-        self.executor = executor.KarelExecutor()
+        self.karel_parser = parser_for_synthesis.KarelForSynthesisParser()
+        self.tracer = KarelTracer(self.karel_parser.karel)
 
     def __call__(self, batch):
         input_grids, output_grids = [
@@ -232,35 +234,34 @@ class TracePredictionBatchProcessor(object):
                     if self.args.karel_trace_inc_val else 0
                     for item in batch), 15, 18, 18) for _ in range(2)
         ]
-        trace_grids = [[] for _ in range(input_grids.shape[0])]
-        # 0 for <s>
-        actions = [[0] for _ in range(input_grids.shape[0])]
+
+        trace_grids = []
+        conds = []
+        actions = []
 
         # grids: starting grid, after action 1, after action 2
         # input actions: <s>, action 1, action 2
         # output actions: action 1, action 2, </s>
         idx = 0
         for item in batch:
-            code = item.code_sequence
+            prog = self.karel_parser.parse(item.code_sequence)
             for test in (item.input_tests + item.tests
                          if self.args.karel_trace_inc_val else []):
                 input_grids[idx].view(-1)[test['input']] = 1
                 output_grids[idx].view(-1)[test['output']] = 1
-                result, trace = self.executor.execute(
-                    code, None, test['input'], record_trace=True)
-                # TODO: Eliminate need to use ravel
-                for grid in trace.grids:
-                    field = np.zeros((15, 18, 18), dtype=np.bool)
-                    field.ravel()[grid] = 1
-                    trace_grids[idx].append(field)
-                for event in trace.events:
-                    action_id = karel_trace.action_to_id.get(event.type, -1)
-                    if action_id == -1:
-                        continue
-                    actions[idx].append(action_id)
-                # 1: </s>
-                actions[idx].append(1)
-                assert len(trace_grids[idx]) == len(actions[idx]) - 1
+
+                self.tracer.reset(indices=test['input'])
+                self.tracer.actions.append('UNK') # means <s>
+                prog()
+                self.tracer.actions.append('</s>')  # </s>
+
+                trace_grids.append(self.tracer.grids)
+                conds.append(self.tracer.conds)
+                actions.append([
+                    karel_trace.action_to_id[name]
+                    for name in self.tracer.actions
+                ])
+                assert len(trace_grids[-1]) == len(actions[-1]) - 1
                 idx += 1
 
         input_grids, output_grids = [
@@ -269,6 +270,9 @@ class TracePredictionBatchProcessor(object):
         trace_grids = karel_model.lists_to_packed_sequence(
             trace_grids, (15, 18, 18), torch.FloatTensor,
             lambda item, batch_idx, out: out.copy_(torch.from_numpy(item.astype(np.float32))))
+        conds = karel_model.lists_to_packed_sequence(
+            conds, (4,), torch.LongTensor,
+            lambda item, batch_idx, out: out.copy_(torch.LongTensor(item)))
         input_actions = prepare_spec.lists_to_packed_sequence(
             [lst[:-1] for lst in actions],
             lambda x: x,
@@ -288,7 +292,8 @@ class TracePredictionBatchProcessor(object):
         orig_examples = batch if self.for_eval else None
 
         return TracePredictionExample(input_grids, output_grids, trace_grids,
-                input_actions, output_actions, io_embed_indices, orig_examples)
+                                      conds, input_actions, output_actions,
+                                      io_embed_indices, orig_examples)
 
 
 class CodeFromTracesModel(karel_model.BaseKarelModel):

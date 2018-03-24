@@ -67,12 +67,29 @@ class TraceDecoder(nn.Module):
         elif args.karel_trace_grid_enc == 'presnet':
             self.grid_encoder = karel_common.PResNetGridEncoder(args)
         elif args.karel_trace_grid_enc == 'none':
-            self.grid_encoder = None
+            self.grid_encoder = karel_common.none_fn
         else:
             raise ValueError(args.karel_trace_grid_enc)
 
+        # Conditionals:
+        #  front/left/rightIsClear, markersPresent
+        if args.karel_trace_cond_enc == 'concat':
+            self.cond_embed = MultiEmbedding([2] * 4, [256 / 4] * 4, 'cat')
+        elif args.karel_trace_cond_enc == 'sum':
+            self.cond_embed = MultiEmbedding([2] * 4, [256] * 4, 'sum')
+        elif args.karel_trace_cond_enc == 'none':
+            self.cond_embed = karel_common.none_fn
+        else:
+            raise ValueError(args.karel_trace_cond_enc)
+
+        enc_input_size = 256 + 512
+        if self.grid_encoder is not karel_common.none_fn:
+            enc_input_size += 256
+        if self.cond_embed is not karel_common.none_fn:
+            enc_input_size += 256
+
         self.decoder = nn.LSTM(
-            input_size=256 + (256 if self.grid_encoder else 0) + 512,
+            input_size=enc_input_size,
             hidden_size=256,
             num_layers=2)
 
@@ -82,11 +99,13 @@ class TraceDecoder(nn.Module):
         self.action_embed = nn.Embedding(num_actions, 256)
         self.out = nn.Linear(256, num_actions)
 
-    def forward(self, io_embed, trace_grids, input_actions, output_actions,
-                io_embed_indices):
+    def forward(self, io_embed, trace_grids, conds, input_actions,
+                output_actions, io_embed_indices):
         # io_embed: batch size x 512
         # trace_grids: PackedSequencePlus
         #   batch size x trace length x 15 x 18 x 18
+        # conds: PackedSequencePlus
+        #   batch size x trace length x 4
         # input_actions: PackedSequencePlus
         #   batch size x trace length
         # output_actions: PackedSequencePlus
@@ -96,15 +115,14 @@ class TraceDecoder(nn.Module):
         # PackedSequencePlus, batch size x sequence length x 256
         input_actions = input_actions.apply(self.action_embed)
 
-        if self.grid_encoder:
-            # PackedSequencePlus, batch size x sequence length x 256
-            trace_grids = trace_grids.apply(self.grid_encoder)
-            dec_input = input_actions.apply(
-                    lambda d: torch.cat((d, trace_grids.ps.data,
-                        io_embed[io_embed_indices]), dim=1))
-        else:
-            dec_input = input_actions.apply(
-                lambda d: torch.cat((d, io_embed[io_embed_indices]), dim=1))
+        # 256 or none
+        trace_grids = trace_grids.apply(self.grid_encoder)
+        # 256 or none
+        conds = conds.apply(self.cond_embed)
+
+        dec_input = input_actions.apply(
+            lambda d: utils.maybe_concat((d, trace_grids.ps.data, conds.ps.data,
+                io_embed[io_embed_indices]), dim=1))
 
         dec_output, state = self.decoder(dec_input.ps)
 
@@ -115,28 +133,37 @@ class TraceDecoder(nn.Module):
         io_embed = memory.value
 
         # Advance the grids with the last action
-        if self.grid_encoder:
+        if (self.grid_encoder is not karel_common.none_fn
+                or self.cond_embed is not karel_common.none_fn):
             kr = karel_runtime.KarelRuntime()
             fields = state.field.copy()
+            conds = []
             for field, action_id in zip(fields, token.data.cpu()):
-                if action_id < 2:  # Ignore <s>, </s>
-                    continue
                 kr.init_from_array(field)
-                getattr(kr, id_to_action[action_id])()
+                if action_id >= 2:  # Ignore <s>, </s>
+                    getattr(kr, id_to_action[action_id])()
+                conds.append([
+                    int(v) for v in (kr.frontIsClear(), kr.leftIsClear(),
+                                     kr.rightIsClear(), kr.markersPresent())
+                ])
             fields_t = Variable(torch.from_numpy(fields.astype(np.float32)))
+            conds_t = Variable(torch.LongTensor(conds))
             if self._cuda:
                 fields_t = fields_t.cuda()
+                conds_t = conds_t.cuda()
             grid_embed = self.grid_encoder(fields_t)
+            cond_embed = self.cond_embed(conds_t)
         else:
             fields = state.field
             grid_embed = None
+            cond_embed = None
 
         # action_embed shape: batch size (* beam size) x 256
         action_embed = self.action_embed(token)
 
         # batch size (* beam size) x (256 + 256 + 512)
         dec_input = utils.maybe_concat(
-            (action_embed, grid_embed, io_embed), dim=1)
+            (action_embed, grid_embed, cond_embed, io_embed), dim=1)
         dec_output, new_state = self.decoder(
             # 1 x batch size (* beam size) x hidden size
             dec_input.unsqueeze(0),
