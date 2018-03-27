@@ -200,12 +200,10 @@ class TracePredictionModel(karel_model.BaseKarelModel):
         for i, result in enumerate(results):
             action_seq = result.code_sequence
             self.eval_kr.init_from_array(input_grids[i])
-            success = True
             for action in action_seq:
                 getattr(self.eval_kr, action)()
-            if success:
-                # input_grids[i] is mutated in place by self.eval_kr.
-                correct += np.all(input_grids[i] == output_grids[i])
+            # input_grids[i] is mutated in place by self.eval_kr.
+            correct += np.all(input_grids[i] == output_grids[i])
 
         return {'correct': correct, 'total': len(results)}
 
