@@ -1,27 +1,24 @@
+import copy
 import unittest
 
-import mutation
+import numpy as np
 
-def compute_edit_ops(source_str, target_str):
-    return list(mutation.compute_edit_ops(source_str, target_str, chr))
+from program_synthesis.datasets.karel import mutation
+from program_synthesis.datasets.karel import parser_for_synthesis
 
 
 class MutationTest(unittest.TestCase):
-    def test_edit_simple(self):
-        self.assertEqual(
-                compute_edit_ops('Levenshtein', 'Lenvinsten'),
-                [(0, 'keep', None),
-                    (1, 'keep', None),
-                    (2, 'insert', 'n'),
-                    (2, 'keep', None),
-                    (3, 'replace', 'i'),
-                    (4, 'keep', None),
-                    (5, 'keep', None),
-                    (6, 'delete', None),
-                    (7, 'keep', None),
-                    (8, 'keep', None),
-                    (9, 'delete', None),
-                    (10, 'keep', None)])
+    def setUp(self):
+        self.tree = parser_for_synthesis.KarelForSynthesisParser(
+            build_tree=True).parse((
+                'DEF run m( REPEAT R=5 r( turnLeft IFELSE c( '
+                'markersPresent c) i( turnRight i) ELSE e( move e) r) '
+                'pickMarker m)').split())
 
+    def testMutateOnce(self):
+        rng = np.random.RandomState(9876)
+        for i in range(100):
+            mutation.mutate_n(self.tree, 1, rng=rng)
 
-
+if __name__ == '__main__':
+    unittest.main()
