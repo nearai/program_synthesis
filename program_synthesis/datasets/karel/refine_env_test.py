@@ -1,7 +1,10 @@
 import unittest
 
+import numpy as np
+
 from program_synthesis.datasets.karel import mutation
 from program_synthesis.datasets.karel import refine_env
+from program_synthesis.datasets.karel import parser_for_synthesis
 from program_synthesis.datasets import executor as executor_mod
 
 
@@ -32,15 +35,15 @@ class RefineEnvTest(unittest.TestCase):
 
         # DEF run m( pickMarker move m)
         obs, reward, done, info = env.step((mutation.ADD_ACTION, (4, 'move')))
-        self.assertEqual(obs['code'], ('DEF', 'run', 'm(', 'pickMarker', 'move',
-            'm)'))
+        self.assertEqual(obs['code'], ('DEF', 'run', 'm(', 'pickMarker',
+                                       'move', 'm)'))
         self._test_step(obs, reward, done, False)
 
         # DEF run m( pickMarker move pickMarker m)
         obs, reward, done, info = env.step((mutation.ADD_ACTION,
                                             (5, 'pickMarker')))
-        self.assertEqual(obs['code'], ('DEF', 'run', 'm(', 'pickMarker', 'move',
-            'pickMarker', 'm)'))
+        self.assertEqual(obs['code'], ('DEF', 'run', 'm(', 'pickMarker',
+                                       'move', 'pickMarker', 'm)'))
         self._test_step(obs, reward, done, True)
 
     def testSimpleRemoveAction(self):
@@ -380,6 +383,94 @@ class RefineEnvTest(unittest.TestCase):
                 2291, 3030, 3584
             ]
         }]
+
+
+class ComputeAddOpsTest(unittest.TestCase):
+    parser = parser_for_synthesis.KarelForSynthesisParser(build_tree=True)
+
+    def linearize_to_tokens(self, code):
+        return tuple(refine_env.ComputeAddOps.idx_to_token[i]
+                     for i in refine_env.ComputeAddOps.linearize(
+                         self.parser.parse(code)))
+
+    def testLinearizeSimple(self):
+        self.assertEqual(
+            self.linearize_to_tokens('DEF run m( move putMarker m)'),
+            ('move', 'putMarker'))
+
+        self.assertEqual(
+            self.linearize_to_tokens(
+                'DEF run m( move '
+                'IF c( not c( frontIsClear c) c) i( putMarker i) '
+                'turnLeft m)'),
+            ('move', ('if', ('not', 'frontIsClear')), 'putMarker',
+             ('endIf', ('not', 'frontIsClear')), 'turnLeft'))
+
+        self.assertEqual(
+            self.linearize_to_tokens(
+                'DEF run m( pickMarker '
+                'IFELSE c( noMarkersPresent c) i( putMarker i) '
+                'ELSE e( turnRight e) move m)'),
+            ('pickMarker', ('ifElse', 'noMarkersPresent'), 'putMarker',
+             ('else', 'noMarkersPresent'), 'turnRight', (
+                 'endIfElse', 'noMarkersPresent'), 'move'))
+
+        self.assertEqual(
+            self.linearize_to_tokens(
+                'DEF run m( '
+                'WHILE c( leftIsClear c) w( putMarker w) m)'),
+            (('while', 'leftIsClear'), 'putMarker',
+             ('endWhile', 'leftIsClear')))
+
+
+class SubseqTest(unittest.TestCase):
+    def testSubseqInsertionsManual(self):
+        self.assertEqual(
+            refine_env.subseq_insertions('a', 'a'), [set(), set()])
+
+        self.assertEqual(
+            refine_env.subseq_insertions('aa', 'aa'), [set(), set(), set()])
+
+        self.assertEqual(
+            refine_env.subseq_insertions('ab', 'ab'), [set(), set(), set()])
+
+        self.assertEqual(
+            refine_env.subseq_insertions('a', 'ab'), [set(), {'b'}])
+
+        self.assertEqual(
+            refine_env.subseq_insertions('aa', 'aaabbbaaa'),
+            [{'a', 'b'}, {'a', 'b'}, {'a', 'b'}])
+
+        self.assertEqual(
+            refine_env.subseq_insertions('aab', 'aaabbbccc'),
+            [{'a'}, {'a'}, {'a', 'b'}, {'b', 'c'}])
+
+        self.assertEqual(
+            refine_env.subseq_insertions('aabc', 'aaabbbccc'),
+            [{'a'}, {'a'}, {'a', 'b'}, {'b', 'c'}, {'c'}])
+
+    def testSubseqInsertionsRandom(self):
+        rng = np.random.RandomState(12345)
+        for vocab_size in range(2, 6):
+            b = rng.randint(vocab_size, size=10)
+            for subseq_len in 2, 3, 8, 9:
+                for _ in range(10):
+                    a = b[np.sort(
+                        rng.choice(
+                            10, size=subseq_len, replace=False))]
+                    insert_sets, left_bound, right_bound = refine_env.subseq_insertions(
+                        a, b, debug=True)
+                    for i, insert_set in enumerate(
+                            refine_env.subseq_insertions(a, b)):
+                        for insert in insert_set:
+                            a_prime = np.concatenate((a[:i], [insert], a[i:]))
+                            self.assertTrue(
+                                refine_env.is_subseq(a_prime, b),
+                                msg='a: {}, b: {}, a\': {}, loc: {}, '
+                                'insert_set: {}, insert: {}, '
+                                'left_bound: {}, right_bound {}'.format(
+                                    a, b, a_prime, i, insert_set, insert,
+                                    left_bound, right_bound))
 
 
 if __name__ == '__main__':

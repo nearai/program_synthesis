@@ -1,3 +1,5 @@
+import collections
+
 import gym
 
 from program_synthesis.datasets import executor as executor_mod
@@ -212,7 +214,8 @@ class KarelRefineEnv(gym.Env):
         elif action_type == mutation.WRAP_IFELSE:
             cond_id, if_start, else_start, end = args
 
-            body_elems, if_start_i = self.action_space.pre_insert_locs[if_start]
+            body_elems, if_start_i = self.action_space.pre_insert_locs[
+                if_start]
             _, else_start_i = self.action_space.post_insert_locs[else_start]
             _, end_i = self.action_space.post_insert_locs[end]
 
@@ -275,3 +278,142 @@ class KarelRefineEnv(gym.Env):
             'traces': traces,
             'desired_outputs': [test['output'] for test in self.input_tests],
         }, all_correct
+
+
+class ComputeAddOps(object):
+    # Possible edit operations:
+    # - ADD_ACTION
+    # - WRAP_BLOCK
+    # - WRAP_IFELSE
+
+    conds = [
+        'frontIsClear', 'leftIsClear', 'rightIsClear', 'markersPresent',
+        'noMarkersPresent'
+    ]
+    conds.extend(('not', v) for v in conds[:3])
+    tokens = (mutation.ACTION_NAMES + tuple(
+        item
+        for sublist in ([(('if', cond), ('endIf', cond), ('ifElse', cond), (
+            'else', cond), ('endIfElse', cond), ('while', cond
+                                                 ), ('endWhile', cond))
+                         for cond in conds] + [(('repeat', i), ('endRepeat', i)
+                                                ) for i in range(2, 11)])
+        for item in sublist))
+
+    token_to_idx = {token: i for i, token in enumerate(tokens)}
+    idx_to_token = {i: token for token, i in token_to_idx.items()}
+
+    @classmethod
+    def linearize(cls, node):
+        if isinstance(node, list):
+            return tuple(
+                token for item in node for token in cls.linearize(item))
+
+        node_type = node['type']
+        if node_type == 'run':
+            return cls.linearize(node['body'])
+        elif node_type == 'if':
+            cond = cls.linearize_cond(node['cond'])
+            return ((cls.token_to_idx['if', cond],
+                     ) + cls.linearize(node['body']) +
+                    (cls.token_to_idx['endIf', cond], ))
+        elif node_type == 'ifElse':
+            cond = cls.linearize_cond(node['cond'])
+            return ((cls.token_to_idx['ifElse', cond],
+                     ) + cls.linearize(node['ifBody']) +
+                    (cls.token_to_idx['else', cond],
+                     ) + cls.linearize(node['elseBody']) +
+                    (cls.token_to_idx['endIfElse', cond], ))
+        elif node_type == 'while':
+            cond = cls.linearize_cond(node['cond'])
+            return ((cls.token_to_idx['while', cond],
+                     ) + cls.linearize(node['body']) +
+                    (cls.token_to_idx['endWhile', cond], ))
+        elif node_type == 'repeat':
+            return ((cls.token_to_idx['repeat', node['times']['value']],
+                     ) + cls.linearize(node['body']) +
+                    (cls.token_to_idx['endRepeat', node['times']['value']], ))
+        else:
+            return (cls.token_to_idx[node_type], )
+
+    @classmethod
+    def linearize_cond(cls, node):
+        if node['type'] == 'not':
+            return ('not', node['cond']['type'])
+        else:
+            return node['type']
+
+    def __init__(self, goal_tree):
+        self.linearized_goal = self.linearize(goal_tree)
+        self.goal_actions = None
+
+    def run(self, current_code):
+        raise NotImplementedError
+
+
+def is_subseq(a, b):
+    b_it = iter(b)
+    return all(a_elem in b_it for a_elem in a)
+
+
+def subseq_insertions(a, b, debug=False):
+    # "not a" doesn't work on NumPy arrays
+    if len(a) == 0:
+        return [set(b)]
+
+    b_idx = 0
+    left_bound = []
+    for a_elem in a:
+        while a_elem != b[b_idx]:
+            b_idx += 1
+        left_bound.append(b_idx)
+        b_idx += 1
+
+    b_idx = len(b) - 1
+    right_bound = []
+    for a_elem in reversed(a):
+        while a_elem != b[b_idx]:
+            b_idx -= 1
+        right_bound.append(b_idx)
+        b_idx -= 1
+    right_bound = right_bound[::-1]
+
+    min_left_bound = min(left_bound)
+    b_index = collections.defaultdict(list)
+    for i, b_elem in enumerate(b[min_left_bound:max(right_bound) + 1]):
+        b_index[b_elem].append(i + min_left_bound)
+
+    result = [set()]
+    # Before a[0]
+    for b_idx in b_index[a[0]]:
+        # For all occurrences of a[0]...
+        if b_idx < left_bound[0]:
+            continue
+        elif b_idx > right_bound[0]:
+            break
+        # Above: skip if not left_bound[0] <= b_idx <= right_bound[0]
+        if b_idx > 0:
+            result[0].add(b[b_idx - 1])
+
+    # After a[0], ..., a[-1]
+    for i in range(len(a)):
+        insert = set()
+        for b_idx in b_index[a[i]]:
+            # For all occurrences of a[i]...
+            if b_idx < left_bound[i]:
+                continue
+            elif b_idx > right_bound[i]:
+                break
+            # Above: skip if not left_bound[i] <= b_idx <= right_bound[i]
+
+            # Insert the element to the right of b[b_idx]
+            # if it's eligible for insertion
+            if b_idx + 1 < len(b) and (
+                    i + 1 == len(a) or
+                    left_bound[i + 1] != right_bound[i + 1]):
+                insert.add(b[b_idx + 1])
+        result.append(insert)
+
+    if debug:
+        return result, left_bound, right_bound
+    return result
