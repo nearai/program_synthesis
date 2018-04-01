@@ -335,7 +335,7 @@ class CodeFromTracesModel(karel_model.BaseKarelModel):
     def debug(self, batch):
         pass
 
-    def inference(self, batch):
+    def inference(self, batch, filtered=True):
         if self.args.cuda:
             batch = batch.cuda_infer()
 
@@ -362,8 +362,13 @@ class CodeFromTracesModel(karel_model.BaseKarelModel):
             cuda=self.args.cuda,
             max_decoder_length=self.args.max_decoder_length)
 
-        return self._try_sequences(self.vocab, sequences, batch.input_grids,
-                                   batch.output_grids, self.args.max_beam_trees)
+        if filtered:
+            return self._try_sequences(self.vocab, sequences,
+                                       batch.input_grids, batch.output_grids,
+                                       self.args.max_beam_trees)
+        else:
+            return [[[self.vocab.itos(idx) for idx in beam] for beam in beams]
+                    for beams in sequences]
 
     def eval(self, batch):
         correct = 0
