@@ -126,7 +126,7 @@ class MutationActionSpace(gym.Space):
                 return False
             start_body, start_i = self.pre_insert_locs[start]
             end_body, end_i = self.post_insert_locs[end]
-            return start_body is end_body and start_i < end_i
+            return start_body is end_body and start_i <= end_i
 
         elif action_type == mutation.WRAP_IFELSE:
             cond_id, if_start, else_start, end = args
@@ -144,7 +144,7 @@ class MutationActionSpace(gym.Space):
             else_start_body, else_start_i = self.post_insert_locs[else_start]
             end_body, end_i = self.post_insert_locs[end]
             return (if_start_body is else_start_body is end_body and
-                    if_start_i < else_start_i < end_i)
+                    if_start_i <= else_start_i <= end_i)
 
         elif action_type == mutation.REPLACE_COND:
             # Not yet implemented

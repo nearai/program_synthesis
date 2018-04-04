@@ -171,21 +171,13 @@ class KarelForSynthesisParser(Parser):
     #########
 
     def p_prog(self, p):
-        '''prog : DEF RUN M_LBRACE stmt M_RBRACE
-            | DEF RUN M_LBRACE M_RBRACE'''
-        if len(p) == 5: # Empty program
-            if self.build_tree:
-                span = (p.lexpos(1), p.lexpos(4))
-                prog = {'type': 'run', 'body': [], 'span': span}
-            else:
-                prog = lambda: None
+        '''prog : DEF RUN M_LBRACE stmt_or_empty M_RBRACE'''
+        stmt = p[4]
+        if self.build_tree:
+            span = (p.lexpos(1), p.lexpos(5))
+            prog = {'type': 'run', 'body':  stmt, 'span': span}
         else:
-            stmt = p[4]
-            if self.build_tree:
-                span = (p.lexpos(1), p.lexpos(5))
-                prog = {'type': 'run', 'body':  stmt, 'span': span}
-            else:
-                prog = stmt
+            prog = stmt
 
         p[0] = prog
 
@@ -201,6 +193,18 @@ class KarelForSynthesisParser(Parser):
         if self.build_tree and not isinstance(p[0], list):
             p[0] = [p[0]]
 
+    def p_stmt_or_empty(self, p):
+        '''stmt_or_empty : stmt
+                         | empty
+        '''
+        if p[1] is None:
+            if  self.build_tree:
+                p[0] = []
+            else:
+                p[0] = lambda: None
+        else:
+            p[0] = p[1]
+
     def p_stmt_stmt(self, p):
         '''stmt_stmt : stmt stmt
         '''
@@ -215,7 +219,7 @@ class KarelForSynthesisParser(Parser):
         p[0] = stmt_stmt
 
     def p_if(self, p):
-        '''if : IF C_LBRACE cond C_RBRACE I_LBRACE stmt I_RBRACE
+        '''if : IF C_LBRACE cond C_RBRACE I_LBRACE stmt_or_empty I_RBRACE
         '''
         cond, stmt = p[3], p[6]
         span = (p.lexpos(1), p.lexpos(7))
@@ -237,7 +241,7 @@ class KarelForSynthesisParser(Parser):
         p[0] = if_
 
     def p_ifelse(self, p):
-        '''ifelse : IFELSE C_LBRACE cond C_RBRACE I_LBRACE stmt I_RBRACE ELSE E_LBRACE stmt E_RBRACE
+        '''ifelse : IFELSE C_LBRACE cond C_RBRACE I_LBRACE stmt_or_empty I_RBRACE ELSE E_LBRACE stmt_or_empty E_RBRACE
         '''
         cond, stmt1, stmt2 = p[3], p[6], p[10]
         span = (p.lexpos(1), p.lexpos(11))
@@ -268,7 +272,7 @@ class KarelForSynthesisParser(Parser):
         p[0] = ifelse
 
     def p_while(self, p):
-        '''while : WHILE C_LBRACE cond C_RBRACE W_LBRACE stmt W_RBRACE
+        '''while : WHILE C_LBRACE cond C_RBRACE W_LBRACE stmt_or_empty W_RBRACE
         '''
         cond, stmt = p[3], p[6]
         span = (p.lexpos(1), p.lexpos(7))
@@ -297,7 +301,7 @@ class KarelForSynthesisParser(Parser):
         p[0] = while_
 
     def p_repeat(self, p):
-        '''repeat : REPEAT cste R_LBRACE stmt R_RBRACE
+        '''repeat : REPEAT cste R_LBRACE stmt_or_empty R_RBRACE
         '''
         cste, stmt = p[2], p[4]
         span = (p.lexpos(1), p.lexpos(5))
@@ -397,6 +401,10 @@ class KarelForSynthesisParser(Parser):
                 return value
             fn.span = span
         p[0] = fn
+
+    def p_empty(self, p):
+        '''empty :'''
+        pass
 
     def p_error(self, p):
         if p:
