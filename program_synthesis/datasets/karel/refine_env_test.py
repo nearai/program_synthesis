@@ -1,3 +1,4 @@
+import collections
 import unittest
 
 import numpy as np
@@ -386,42 +387,116 @@ class RefineEnvTest(unittest.TestCase):
 
 
 class ComputeAddOpsTest(unittest.TestCase):
+
     parser = parser_for_synthesis.KarelForSynthesisParser(build_tree=True)
 
     def linearize_to_tokens(self, code):
+        tokens, orig_spans = refine_env.ComputeAddOps.linearize(self.parser.parse(code))
         return tuple(refine_env.ComputeAddOps.idx_to_token[i]
-                     for i in refine_env.ComputeAddOps.linearize(
-                         self.parser.parse(code)))
+                     for i in tokens), orig_spans
 
     def testLinearizeSimple(self):
         self.assertEqual(
-            self.linearize_to_tokens('DEF run m( move putMarker m)'),
-            ('move', 'putMarker'))
+            self.linearize_to_tokens('DEF run m( move putMarker m)'), (
+                ('move', 'putMarker'), ((3, 3), (4, 4))))
 
         self.assertEqual(
             self.linearize_to_tokens(
                 'DEF run m( move '
                 'IF c( not c( frontIsClear c) c) i( putMarker i) '
-                'turnLeft m)'),
-            ('move', ('if', ('not', 'frontIsClear')), 'putMarker',
-             ('endIf', ('not', 'frontIsClear')), 'turnLeft'))
+                'turnLeft m)'), (
+                    ('move', ('if', ('not', 'frontIsClear')), 'putMarker',
+                     ('end-if', ('not', 'frontIsClear')), 'turnLeft'), (
+                         (3, 3), (4, 11), (12, 12), (13, 13), (14, 14))))
+
+        self.assertEqual(
+            self.linearize_to_tokens(
+                'DEF run m( move '
+                'REPEAT R=5 r( putMarker r) '
+                'turnLeft m)'), (
+                    ('move', ('repeat', 5), 'putMarker',
+                     ('end-repeat', 5), 'turnLeft'), (
+                         (3, 3), (4, 6), (7, 7), (8, 8), (9, 9))))
 
         self.assertEqual(
             self.linearize_to_tokens(
                 'DEF run m( pickMarker '
                 'IFELSE c( noMarkersPresent c) i( putMarker i) '
                 'ELSE e( turnRight e) move m)'),
-            ('pickMarker', ('ifElse', 'noMarkersPresent'), 'putMarker',
-             ('else', 'noMarkersPresent'), 'turnRight', (
-                 'endIfElse', 'noMarkersPresent'), 'move'))
+            (('pickMarker', ('ifElse', 'noMarkersPresent'), 'putMarker',
+              ('else', 'noMarkersPresent'), 'turnRight', (
+                  'end-ifElse', 'noMarkersPresent'), 'move'),
+             ((3, 3), (4, 8), (9, 9), (10, 12), (13, 13), (14, 14), (15, 15))))
 
         self.assertEqual(
             self.linearize_to_tokens(
                 'DEF run m( '
-                'WHILE c( leftIsClear c) w( putMarker w) m)'),
-            (('while', 'leftIsClear'), 'putMarker',
-             ('endWhile', 'leftIsClear')))
+                'WHILE c( leftIsClear c) w( putMarker w) m)'), (
+                    (('while', 'leftIsClear'), 'putMarker',
+                     ('end-while', 'leftIsClear')), ((3, 7), (8, 8), (9, 9))))
 
+    def _goal_reached_systematic(self, goal):
+        ops = refine_env.ComputeAddOps(self.parser.parse(goal))
+        queue = collections.deque([('DEF', 'run', 'm(', 'm)')])
+        closed = set()
+        goal_reached = False
+
+        while queue:
+            current = queue.popleft()
+            self.assertTrue(refine_env.is_subseq(current, goal))
+            closed.add(current)
+
+            actions = ops.run(code=current)
+            for action in actions:
+                mutation_space = refine_env.MutationActionSpace(code=current)
+                self.assertTrue(mutation_space.contains(action))
+                mutation_space.apply(action)
+                new_code = parser_for_synthesis.tree_to_tokens(
+                        mutation_space.tree)
+
+                self.assertTrue(refine_env.is_subseq(current, new_code))
+                if new_code not in closed:
+                    queue.append(new_code)
+
+            # TODO: Check that every other action leads to a non-subsequence
+
+            if not actions:
+                self.assertEqual(current, goal)
+                goal_reached = True
+
+        self.assertTrue(goal_reached)
+
+    def testRunShort(self):
+        programs = [
+                tuple(p.split()) for p in
+                ('''DEF run m( m)''',
+                '''DEF run m( move turnLeft m)''',
+                '''DEF run m( move move move move move m)''',
+                '''DEF run m(
+                IF c( markersPresent c) i(
+                    move
+                    turnLeft
+                i)
+                IF c( leftIsClear c) i(
+                    move
+                    turnLeft
+                i)
+            m)''',
+                '''DEF run m(
+                REPEAT R=5 r(
+                    move
+                    IFELSE c( markersPresent c) i(
+                        move
+                        move
+                    i) ELSE e(
+                        move
+                    e)
+                r)
+                move
+            m)''')
+        ]
+        for goal in programs:
+            self._goal_reached_systematic(goal)
 
 class SubseqTest(unittest.TestCase):
     def testSubseqInsertionsManual(self):
@@ -438,6 +513,10 @@ class SubseqTest(unittest.TestCase):
             refine_env.subseq_insertions('a', 'ab'), [set(), {'b'}])
 
         self.assertEqual(
+            refine_env.subseq_insertions('abb', 'xabyxaby'),
+            [{'x'}, set(), {'a', 'x', 'y'},  {'y'}])
+
+        self.assertEqual(
             refine_env.subseq_insertions('aa', 'aaabbbaaa'),
             [{'a', 'b'}, {'a', 'b'}, {'a', 'b'}])
 
@@ -452,6 +531,7 @@ class SubseqTest(unittest.TestCase):
     def testSubseqInsertionsRandom(self):
         rng = np.random.RandomState(12345)
         for vocab_size in range(2, 6):
+            vocab = set(range(vocab_size))
             b = rng.randint(vocab_size, size=10)
             for subseq_len in 2, 3, 8, 9:
                 for _ in range(10):
@@ -471,6 +551,18 @@ class SubseqTest(unittest.TestCase):
                                 'left_bound: {}, right_bound {}'.format(
                                     a, b, a_prime, i, insert_set, insert,
                                     left_bound, right_bound))
+                        for not_insert in vocab - insert_set:
+                            a_prime = np.concatenate(
+                                    (a[:i], [not_insert], a[i:]))
+                            self.assertFalse(
+                                refine_env.is_subseq(a_prime, b),
+                                msg='a: {}, b: {}, a\': {}, loc: {}, '
+                                'insert_set: {}, insert: {}, '
+                                'left_bound: {}, right_bound {}'.format(
+                                    a, b, a_prime, i, insert_set, insert,
+                                    left_bound, right_bound))
+
+
 
 
 if __name__ == '__main__':

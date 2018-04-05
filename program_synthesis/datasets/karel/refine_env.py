@@ -14,10 +14,12 @@ class MutationActionSpace(gym.Space):
         assert (tree is None) ^ (code is None)
         if tree:
             self.tree = tree
-            self.code = parser_for_synthesis.tree_to_tokens(tree)
+            #self.code = parser_for_synthesis.tree_to_tokens(tree)
         else:
             self.tree = self.parser.parse(code)
-            self.code = code
+            #self.code = code
+
+        self.is_tree_pristine = True
 
         self.tree_index = tree_index = mutation.TreeIndex(self.tree)
 
@@ -30,6 +32,9 @@ class MutationActionSpace(gym.Space):
         #           v    v                                      v
         # DEF run m( move IF c( markersPresent c) i( turnLeft i) m)
         #            0    1                                      2
+        #           v    v    v
+        # DEF run m( move move m)
+        #            0    1    2
         self.post_insert_locs = {}
         for body in tree_index.all_bodies:
             for i in range(len(body.elems)):
@@ -43,11 +48,23 @@ class MutationActionSpace(gym.Space):
                 self.post_insert_locs[body.elems[-1]['span'][1] + 1] = (
                     body.elems, len(body.elems))
             else:
-                assert body.type == 'run'
-                self.pre_insert_locs[body.node['span'][1] - 1] = (body.elems,
-                                                                  0)
-                self.post_insert_locs[body.node['span'][1]] = (body.elems,
-                                                               len(body.elems))
+                if body.type in ('run', 'if', 'while', 'repeat'):
+                    self.pre_insert_locs[body.node['span'][1] - 1] = (
+                        body.elems, 0)
+                    self.post_insert_locs[body.node['span'][1]] = (
+                        body.elems, len(body.elems))
+                elif body.type == 'ifElse-if':
+                    self.pre_insert_locs[body.node['ifSpan'][0]] = (body.elems,
+                                                                    0)
+                    self.post_insert_locs[body.node['ifSpan'][1]] = (
+                        body.elems, len(body.elems))
+                elif body.type == 'ifElse-else':
+                    self.pre_insert_locs[body.node['elseSpan'][0]] = (
+                        body.elems, 0)
+                    self.post_insert_locs[body.node['elseSpan'][1]] = (
+                        body.elems, len(body.elems))
+                else:
+                    raise ValueError(body.type)
 
         # ADD_ACTION
         #self.add_action_locs = self.pre_insert_locs
@@ -155,31 +172,24 @@ class MutationActionSpace(gym.Space):
         else:
             return False
 
+    def apply(self, action):
+        assert self.is_tree_pristine
 
-class KarelRefineEnv(gym.Env):
-    executor = executor_mod.KarelExecutor()
-
-    def __init__(self, input_tests):
-        self.input_tests = input_tests
-        self.reset()
-
-    # Overridden methods
-    def step(self, action):
         action_type, args = action
 
         if action_type == mutation.ADD_ACTION:
             location, karel_action = args
-            body_elems, i = self.action_space.add_action_locs[location]
+            body_elems, i = self.add_action_locs[location]
             body_elems.insert(i, mutation.ACTIONS_DICT[karel_action])
 
         elif action_type == mutation.REMOVE_ACTION:
             location, = args
-            body_elems, i = self.action_space.remove_action_locs[location]
+            body_elems, i = self.remove_action_locs[location]
             del body_elems[i]
 
         elif action_type == mutation.REPLACE_ACTION:
             location, karel_action = args
-            body_elems, i = self.action_space.replace_action_locs[location]
+            body_elems, i = self.replace_action_locs[location]
             body_elems[i] = mutation.ACTIONS_DICT[karel_action]
 
         elif action_type == mutation.UNWRAP_BLOCK:
@@ -193,8 +203,8 @@ class KarelRefineEnv(gym.Env):
 
         elif action_type == mutation.WRAP_BLOCK:
             block_type, cond_id, start, end = args
-            body_elems, start_i = self.action_space.pre_insert_locs[start]
-            _, end_i = self.action_space.post_insert_locs[end]
+            body_elems, start_i = self.pre_insert_locs[start]
+            _, end_i = self.post_insert_locs[end]
 
             subseq = body_elems[start_i:end_i]
             del body_elems[start_i:end_i]
@@ -214,14 +224,13 @@ class KarelRefineEnv(gym.Env):
         elif action_type == mutation.WRAP_IFELSE:
             cond_id, if_start, else_start, end = args
 
-            body_elems, if_start_i = self.action_space.pre_insert_locs[
-                if_start]
-            _, else_start_i = self.action_space.post_insert_locs[else_start]
-            _, end_i = self.action_space.post_insert_locs[end]
+            body_elems, if_start_i = self.pre_insert_locs[if_start]
+            _, else_start_i = self.post_insert_locs[else_start]
+            _, end_i = self.post_insert_locs[end]
 
             if_body = body_elems[if_start_i:else_start_i]
             else_body = body_elems[else_start_i:end_i]
-            del body_elems[if_start_i:end]
+            del body_elems[if_start_i:end_i]
             new_block = {
                 'type': 'ifElse',
                 'cond': mutation.CONDS[cond_id],
@@ -237,6 +246,20 @@ class KarelRefineEnv(gym.Env):
         #    return False
         else:
             raise ValueError(action_type)
+
+        self.is_tree_pristine = False
+
+
+class KarelRefineEnv(gym.Env):
+    executor = executor_mod.KarelExecutor()
+
+    def __init__(self, input_tests):
+        self.input_tests = input_tests
+        self.reset()
+
+    # Overridden methods
+    def step(self, action):
+        self.action_space.apply(action)
 
         # Turn tree into tokens
         self.code = parser_for_synthesis.tree_to_tokens(self.tree)
@@ -255,11 +278,14 @@ class KarelRefineEnv(gym.Env):
         return observation, reward, done, info
 
     def reset(self):
-        self.code = ['DEF', 'run', 'm(', 'm)']
-        self.action_space = MutationActionSpace(code=self.code)
-        self.tree = self.action_space.tree
+        self.reset_with(('DEF', 'run', 'm(', 'm)'))
         obs, _ = self.compute_obs()
         return obs
+
+    def reset_with(self, code):
+        self.code = code
+        self.action_space = MutationActionSpace(code=code)
+        self.tree = self.action_space.tree
 
     def compute_obs(self):
         outputs, traces = [], []
@@ -280,11 +306,15 @@ class KarelRefineEnv(gym.Env):
         }, all_correct
 
 
+def linearize_cond(node):
+    if node['type'] == 'not':
+        return ('not', node['cond']['type']), 4
+    else:
+        return node['type'], 1
+
+
 class ComputeAddOps(object):
-    # Possible edit operations:
-    # - ADD_ACTION
-    # - WRAP_BLOCK
-    # - WRAP_IFELSE
+    parser = parser_for_synthesis.KarelForSynthesisParser(build_tree=True)
 
     conds = [
         'frontIsClear', 'leftIsClear', 'rightIsClear', 'markersPresent',
@@ -293,62 +323,204 @@ class ComputeAddOps(object):
     conds.extend(('not', v) for v in conds[:3])
     tokens = (mutation.ACTION_NAMES + tuple(
         item
-        for sublist in ([(('if', cond), ('endIf', cond), ('ifElse', cond), (
-            'else', cond), ('endIfElse', cond), ('while', cond
-                                                 ), ('endWhile', cond))
-                         for cond in conds] + [(('repeat', i), ('endRepeat', i)
-                                                ) for i in range(2, 11)])
+        for sublist in ([(('if', cond), ('end-if', cond), ('ifElse', cond), (
+            'else', cond), ('end-ifElse', cond), ('while', cond
+                                                  ), ('end-while', cond))
+                         for cond in conds] + [(('repeat', i), ('end-repeat', i
+                                                                ))
+                                               for i in range(2, 11)])
         for item in sublist))
 
     token_to_idx = {token: i for i, token in enumerate(tokens)}
     idx_to_token = {i: token for token, i in token_to_idx.items()}
 
+    action_ids = set()
+    for t in mutation.ACTION_NAMES:
+        action_ids.add(token_to_idx[t])
+    cond_to_id = {
+        linearize_cond(c)[0]: i
+        for i, c in enumerate(mutation.CONDS)
+    }
+    repeat_count_to_id = {
+        r['value']: i
+        for i, r in enumerate(mutation.REPEAT_COUNTS)
+    }
+
     @classmethod
-    def linearize(cls, node):
+    def linearize(cls, node, offset=0):
         if isinstance(node, list):
-            return tuple(
-                token for item in node for token in cls.linearize(item))
+            tokens = []
+            orig_spans = []
+            for item in node:
+                new_tokens, new_spans = cls.linearize(item, offset)
+                tokens += new_tokens
+                orig_spans += new_spans
+                offset = new_spans[-1][1] + 1
+            return tuple(tokens), tuple(orig_spans)
 
         node_type = node['type']
         if node_type == 'run':
-            return cls.linearize(node['body'])
-        elif node_type == 'if':
-            cond = cls.linearize_cond(node['cond'])
-            return ((cls.token_to_idx['if', cond],
-                     ) + cls.linearize(node['body']) +
-                    (cls.token_to_idx['endIf', cond], ))
-        elif node_type == 'ifElse':
-            cond = cls.linearize_cond(node['cond'])
-            return ((cls.token_to_idx['ifElse', cond],
-                     ) + cls.linearize(node['ifBody']) +
-                    (cls.token_to_idx['else', cond],
-                     ) + cls.linearize(node['elseBody']) +
-                    (cls.token_to_idx['endIfElse', cond], ))
-        elif node_type == 'while':
-            cond = cls.linearize_cond(node['cond'])
-            return ((cls.token_to_idx['while', cond],
-                     ) + cls.linearize(node['body']) +
-                    (cls.token_to_idx['endWhile', cond], ))
-        elif node_type == 'repeat':
-            return ((cls.token_to_idx['repeat', node['times']['value']],
-                     ) + cls.linearize(node['body']) +
-                    (cls.token_to_idx['endRepeat', node['times']['value']], ))
-        else:
-            return (cls.token_to_idx[node_type], )
+            return cls.linearize(node['body'], offset + 3)
 
-    @classmethod
-    def linearize_cond(cls, node):
-        if node['type'] == 'not':
-            return ('not', node['cond']['type'])
+        elif node_type == 'ifElse':
+            cond, cond_length = linearize_cond(node['cond'])
+            if_body_tokens, if_body_spans = cls.linearize(
+                node['ifBody'],
+                # +4: tokens in IFELSE c( c) i(
+                offset + cond_length + 4)
+            begin_span = (offset, offset + cond_length + 3)
+            if if_body_spans:
+                mid_span_left = if_body_spans[-1][1] + 1
+            else:
+                mid_span_left = begin_span[1] + 1
+            # +2: from i) ELSE i(
+            mid_span = (mid_span_left, mid_span_left + 2)
+            else_body_tokens, else_body_spans = cls.linearize(node['elseBody'],
+                                                              mid_span[1] + 1)
+            if else_body_spans:
+                end_index = else_body_spans[-1][1] + 1
+            else:
+                end_index = mid_span[1] + 1
+            end_span = (end_index, end_index)
+
+            tokens = ((cls.token_to_idx['ifElse', cond], ) + if_body_tokens +
+                      (cls.token_to_idx['else', cond], ) + else_body_tokens +
+                      (cls.token_to_idx['end-ifElse', cond], ))
+            orig_spans = (begin_span, ) + if_body_spans + (
+                mid_span, ) + else_body_spans + (end_span, )
+            return tokens, orig_spans
+
+        elif node_type in ('if', 'while', 'repeat'):
+            if node_type == 'repeat':
+                cond = node['times']['value']
+                # +3: tokens in REPEAT R=? w(
+                body_offset = offset + 3
+            else:
+                cond, cond_length = linearize_cond(node['cond'])
+                # +4: tokens in IF c( c) i(
+                #               WHILE c( c) w(
+                body_offset = offset + cond_length + 4
+
+            body_tokens, body_spans = cls.linearize(node['body'], body_offset)
+            begin_span = (offset, body_offset - 1)
+            # i), w), r)
+            if body_spans:
+                end_index = body_spans[-1][1] + 1
+            else:
+                # IF c( ... c) i( i)
+                #                 ^
+                #            body_offset
+                end_index = body_offset
+            end_span = (end_index, end_index)
+
+            tokens = (cls.token_to_idx[node_type, cond], ) + body_tokens + (
+                cls.token_to_idx['end-' + node_type, cond], )
+            orig_spans = (begin_span, ) + body_spans + (end_span, )
+            return tokens, orig_spans
+
         else:
-            return node['type']
+            return (cls.token_to_idx[node_type], ), ((offset, offset), )
 
     def __init__(self, goal_tree):
-        self.linearized_goal = self.linearize(goal_tree)
-        self.goal_actions = None
+        self.goal, self.goal_spans = self.linearize(goal_tree)
 
-    def run(self, current_code):
-        raise NotImplementedError
+    def run(self, tree=None, code=None):
+        assert (tree is None) ^ (code is None)
+        if tree is None:
+            tree = self.parser.parse(code)
+        linearized, spans = self.linearize(tree)
+
+        # Example:
+        #       move move
+        # pos: 0    1    2
+        # span: 3,3  4,4
+        def pos_to_pre_insert_loc(pos):
+            if not spans:
+                #         v
+                # DEF run m( m)
+                # 0   1   2  3
+                return 2
+            if pos == 0:
+                return spans[pos][0] - 1
+            else:
+                return spans[pos - 1][1]
+
+        def pos_to_post_insert_loc(pos):
+            if not spans:
+                #            v
+                # DEF run m( m)
+                # 0   1   2  3
+                return 3
+            if pos == len(spans):
+                return spans[pos - 1][1] + 1
+            else:
+                return spans[pos][0]
+
+        result = []
+        insertions = subseq_insertions(linearized, self.goal)
+        for pos, items in enumerate(insertions):
+            for item in items:
+                if item in self.action_ids:
+                    result.append((mutation.ADD_ACTION, (
+                        pos_to_post_insert_loc(pos), self.idx_to_token[item])))
+                    continue
+
+                # Must be if, ifElse, while, or repeat
+                # or the end- counterparts
+                token_type, cond = self.idx_to_token[item]
+                if token_type[:4] in ('end-', 'else'):
+                    continue
+
+                # Try starting the block here
+                block_started = linearized[:pos] + (item, ) + linearized[pos:]
+                if token_type == 'ifElse':
+                    else_token = self.token_to_idx['else', cond]
+                    end_token = self.token_to_idx['end-ifElse', cond]
+                    cond_id = self.cond_to_id[cond]
+
+                    else_insertions = subseq_insertions(block_started,
+                                                        self.goal)
+                    for else_pos in range(pos + 1, len(block_started) + 1):
+                        if else_token not in else_insertions[else_pos]:
+                            continue
+                        else_inserted = (
+                            block_started[:else_pos] +
+                            (else_token, ) + block_started[else_pos:])
+                        end_insertions = subseq_insertions(else_inserted,
+                                                           self.goal)
+                        for end_pos in range(else_pos + 1,
+                                             len(else_inserted) + 1):
+                            if end_token in end_insertions[end_pos]:
+                                result.append((
+                                    mutation.WRAP_IFELSE,
+                                    (
+                                        cond_id,
+                                        # ifElse
+                                        pos_to_pre_insert_loc(pos),
+                                        # else
+                                        pos_to_post_insert_loc(else_pos - 1),
+                                        # end
+                                        pos_to_post_insert_loc(end_pos - 2))))
+                else:
+                    end_token = self.token_to_idx['end-' + token_type, cond]
+                    end_insertions = subseq_insertions(block_started,
+                                                       self.goal)
+                    cond_id = (self.repeat_count_to_id[cond]
+                               if token_type == 'repeat' else
+                               self.cond_to_id[cond])
+                    for end_pos in range(pos + 1, len(block_started) + 1):
+                        if end_token in end_insertions[end_pos]:
+                            result.append((
+                                mutation.WRAP_BLOCK,
+                                (
+                                    token_type,
+                                    cond_id,
+                                    # start
+                                    pos_to_pre_insert_loc(pos),
+                                    # end
+                                    pos_to_post_insert_loc(end_pos - 1))))
+
+        return result
 
 
 def is_subseq(a, b):
@@ -357,6 +529,8 @@ def is_subseq(a, b):
 
 
 def subseq_insertions(a, b, debug=False):
+    # `a` is the subsequence, `b` is the longer sequence.
+
     # "not a" doesn't work on NumPy arrays
     if len(a) == 0:
         return [set(b)]
@@ -385,33 +559,11 @@ def subseq_insertions(a, b, debug=False):
 
     result = [set()]
     # Before a[0]
-    for b_idx in b_index[a[0]]:
-        # For all occurrences of a[0]...
-        if b_idx < left_bound[0]:
-            continue
-        elif b_idx > right_bound[0]:
-            break
-        # Above: skip if not left_bound[0] <= b_idx <= right_bound[0]
-        if b_idx > 0:
-            result[0].add(b[b_idx - 1])
-
+    result[0].update(b[0:right_bound[0]])
     # After a[0], ..., a[-1]
     for i in range(len(a)):
-        insert = set()
-        for b_idx in b_index[a[i]]:
-            # For all occurrences of a[i]...
-            if b_idx < left_bound[i]:
-                continue
-            elif b_idx > right_bound[i]:
-                break
-            # Above: skip if not left_bound[i] <= b_idx <= right_bound[i]
-
-            # Insert the element to the right of b[b_idx]
-            # if it's eligible for insertion
-            if b_idx + 1 < len(b) and (
-                    i + 1 == len(a) or
-                    left_bound[i + 1] != right_bound[i + 1]):
-                insert.add(b[b_idx + 1])
+        insert = set(b[left_bound[i] + 1:right_bound[i + 1]
+                       if i + 1 < len(a) else None])
         result.append(insert)
 
     if debug:

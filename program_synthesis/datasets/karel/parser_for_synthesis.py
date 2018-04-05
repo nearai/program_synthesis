@@ -257,6 +257,8 @@ class KarelForSynthesisParser(Parser):
                 'ifBody': stmt1,
                 'elseBody': stmt2,
                 'span': span,
+                'ifSpan': true_span,
+                'elseSpan': false_span,
             }
         else:
             cond_fn, cond_span = cond
