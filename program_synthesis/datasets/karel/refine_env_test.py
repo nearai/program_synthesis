@@ -443,26 +443,43 @@ class ComputeAddOpsTest(unittest.TestCase):
 
         while queue:
             current = queue.popleft()
-            self.assertTrue(refine_env.is_subseq(current, goal))
             closed.add(current)
 
-            actions = ops.run(code=current)
+            current_tree = self.parser.parse(current)
+            current_linearized, _ = ops.linearize(current_tree)
+            self.assertTrue(refine_env.is_subseq(current_linearized, ops.goal))
+
+            actions = set(ops.run(code=current))
+            bad_actions = set(
+                a
+                for a in refine_env.MutationActionSpace(code=current)
+                .enumerate_additive_actions() if a not in actions)
             for action in actions:
                 mutation_space = refine_env.MutationActionSpace(code=current)
                 self.assertTrue(mutation_space.contains(action))
                 mutation_space.apply(action)
                 new_code = parser_for_synthesis.tree_to_tokens(
-                        mutation_space.tree)
-
-                self.assertTrue(refine_env.is_subseq(current, new_code))
+                    mutation_space.tree)
+                new_code_linearized, _ = ops.linearize(mutation_space.tree)
                 if new_code not in closed:
                     queue.append(new_code)
 
-            # TODO: Check that every other action leads to a non-subsequence
+                self.assertTrue(
+                    refine_env.is_subseq(current_linearized,
+                                         new_code_linearized))
 
             if not actions:
                 self.assertEqual(current, goal)
                 goal_reached = True
+                continue
+
+            # Check that every other action is invalid
+            for bad_action in bad_actions:
+                mutation_space = refine_env.MutationActionSpace(code=current)
+                mutation_space.apply(bad_action)
+                new_code_linearized, _ = ops.linearize(mutation_space.tree)
+                self.assertFalse(
+                    refine_env.is_subseq(new_code_linearized, ops.goal))
 
         self.assertTrue(goal_reached)
 
@@ -494,6 +511,19 @@ class ComputeAddOpsTest(unittest.TestCase):
                 r)
                 move
             m)''')
+        ]
+        # Doesn't work:
+        broken_programs = [
+                '''DEF run m(
+                IF c( markersPresent c) i(
+                    move
+                    turnLeft
+                i)
+                IF c( markersPresent c) i(
+                    move
+                    turnLeft
+                i)
+            m)''',
         ]
         for goal in programs:
             self._goal_reached_systematic(goal)
@@ -561,8 +591,6 @@ class SubseqTest(unittest.TestCase):
                                 'left_bound: {}, right_bound {}'.format(
                                     a, b, a_prime, i, insert_set, insert,
                                     left_bound, right_bound))
-
-
 
 
 if __name__ == '__main__':

@@ -249,6 +249,27 @@ class MutationActionSpace(gym.Space):
 
         self.is_tree_pristine = False
 
+    def enumerate_additive_actions(self):
+        for location in self.add_action_locs:
+            for karel_action in mutation.ACTION_NAMES:
+                yield mutation.ADD_ACTION, (location, karel_action)
+
+        for loc1, (body1, i1) in self.pre_insert_locs.iteritems():
+            for loc2, (body2, i2) in self.post_insert_locs.iteritems():
+                if body2 is not body1 or i2 < i1:
+                    continue
+
+                for r in range(len(mutation.REPEAT_COUNTS)):
+                    yield mutation.WRAP_BLOCK, ('repeat', r, loc1, loc2)
+
+                for cond_id in range(len(mutation.CONDS)):
+                    yield mutation.WRAP_BLOCK, ('if', cond_id, loc1, loc2)
+                    yield mutation.WRAP_BLOCK, ('while', cond_id, loc1, loc2)
+                    for loc3, (body3, i3) in self.post_insert_locs.iteritems():
+                        if body3 is not body2 or i3 < i2:
+                            continue
+                        yield mutation.WRAP_IFELSE, (cond_id, loc1, loc2, loc3)
+
 
 class KarelRefineEnv(gym.Env):
     executor = executor_mod.KarelExecutor()
