@@ -446,29 +446,26 @@ class ComputeAddOpsTest(unittest.TestCase):
             current, prev = queue.popleft()
             closed.add(current)
 
-            current_tree = self.parser.parse(current)
-            current_linearized, _ = ops.linearize(current_tree)
-            self.assertTrue(refine_env.is_subseq(current_linearized, ops.goal))
+            current_atree = refine_env.AnnotatedTree(code=current)
+            self.assertTrue(
+                refine_env.is_subseq(current_atree.linearized[0], ops.goal))
 
-            actions = set(ops.run(tree=current_tree))
+            actions = set(ops.run(atree=current_atree))
             #bad_actions = set(
             #    a
             #    for a in refine_env.MutationActionSpace(code=current)
             #    .enumerate_additive_actions() if a not in actions)
             for action in actions:
                 mutation_space = refine_env.MutationActionSpace(
-                    tree=copy.deepcopy(current_tree))
+                    atree=copy.deepcopy(current_atree))
                 self.assertTrue(mutation_space.contains(action))
                 mutation_space.apply(action)
-                new_code = parser_for_synthesis.tree_to_tokens(
-                    mutation_space.tree)
-                new_code_linearized, _ = ops.linearize(mutation_space.tree)
+                new_code = mutation_space.atree.code
                 if new_code not in closed:
                     queue.append((new_code, current))
-
                 self.assertTrue(
-                    refine_env.is_subseq(current_linearized,
-                                         new_code_linearized))
+                    refine_env.is_subseq(current_atree.linearized[0],
+                                         mutation_space.atree.linearized[0]))
 
             if not actions:
                 self.assertEqual(current, goal)
@@ -488,8 +485,9 @@ class ComputeAddOpsTest(unittest.TestCase):
 
     def testRunShort(self):
         programs = [
-                tuple(p.split()) for p in
-                ('''DEF run m( m)''',
+            tuple(p.split())
+            for p in (
+                '''DEF run m( m)''',
                 '''DEF run m( move turnLeft m)''',
                 '''DEF run m( move move move move move m)''',
                 '''DEF run m(
@@ -503,30 +501,51 @@ class ComputeAddOpsTest(unittest.TestCase):
                 i)
             m)''',
                 '''DEF run m(
+                IF c( markersPresent c) i(
+                    move
+                    turnLeft
+                i)
+                IF c( markersPresent c) i(
+                    move
+                    turnLeft
+                i)
+            m)''',
+                '''DEF run m(
+                IF c( leftIsClear c) i(
+                    IF c( leftIsClear c) i(
+                        move
+                    i)
+                i)
+            m)''', )
+        ]
+        for goal in programs:
+            self._goal_reached_systematic(goal)
+
+    @unittest.skip
+    def testRunLong(self):
+        programs = [
+                tuple(p.split()) for p in
+                ('''DEF run m(
                 REPEAT R=5 r(
                     move
                     IFELSE c( markersPresent c) i(
                         move
-                        move
                     i) ELSE e(
+                        move
+                        IFELSE c( markersPresent c) i(
+                            move
+                        i) ELSE e(
+                            move
+                        e)
                         move
                     e)
                 r)
                 move
-            m)''',
-                '''DEF run m(
-                IF c( markersPresent c) i(
-                    move
-                    turnLeft
-                i)
-                IF c( markersPresent c) i(
-                    move
-                    turnLeft
-                i)
             m)''',)
         ]
         for goal in programs:
             self._goal_reached_systematic(goal)
+
 
 class SubseqTest(unittest.TestCase):
     def testSubseqInsertionsManual(self):

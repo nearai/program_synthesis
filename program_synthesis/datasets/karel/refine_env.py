@@ -1,5 +1,6 @@
 import collections
 
+from cached_property import cached_property
 import gym
 import numpy as np
 
@@ -8,101 +9,153 @@ from program_synthesis.datasets.karel import mutation
 from program_synthesis.datasets.karel import parser_for_synthesis
 
 
-class MutationActionSpace(gym.Space):
+class AnnotatedTree(object):
     parser = parser_for_synthesis.KarelForSynthesisParser(build_tree=True)
 
     def __init__(self, tree=None, code=None):
         assert (tree is None) ^ (code is None)
         if tree:
             self.tree = tree
-            #self.code = parser_for_synthesis.tree_to_tokens(tree)
         else:
             self.tree = self.parser.parse(code)
-            #self.code = code
 
-        self.is_tree_pristine = True
+    def notify_mutation(self):
+        self.__dict__.pop('code', None)
+        self.__dict__.pop('index', None)
+        self.__dict__.pop('pre_insert_locs', None)
+        self.__dict__.pop('post_insert_locs', None)
+        self.__dict__.pop('remove_action_locs', None)
+        self.__dict__.pop('replace_action_locs', None)
+        self.__dict__.pop('unwrap_block_locs', None)
+        self.__dict__.pop('linearized', None)
 
-        self.tree_index = tree_index = mutation.TreeIndex(self.tree)
+        # Tree -> code -> tree so that self.tree has correct spans
+        self.tree = self.parser.parse(self.code)
 
-        # points to token before insert point
-        #           v    v                                      v
-        # DEF run m( move IF c( markersPresent c) i( turnLeft i) m)
-        #         0  1                                        2
-        self.pre_insert_locs = {}
-        # points to token after insert point
-        #           v    v                                      v
-        # DEF run m( move IF c( markersPresent c) i( turnLeft i) m)
-        #            0    1                                      2
-        #           v    v    v
-        # DEF run m( move move m)
-        #            0    1    2
-        self.post_insert_locs = {}
-        for body in tree_index.all_bodies:
+    @cached_property
+    def code(self):
+        return parser_for_synthesis.tree_to_tokens(self.tree)
+
+    @cached_property
+    def index(self):
+        return mutation.TreeIndex(self.tree)
+
+    # points to token before insert point
+    #           v    v                                      v
+    # DEF run m( move IF c( markersPresent c) i( turnLeft i) m)
+    #         0  1                                        2
+    @cached_property
+    def pre_insert_locs(self):
+        index = self.index
+        pre_insert_locs = {}
+
+        for body in index.all_bodies:
             for i in range(len(body.elems)):
-                self.pre_insert_locs[body.elems[i]['span'][1]] = (body.elems,
-                                                                  i + 1)
-                self.post_insert_locs[body.elems[i]['span'][0]] = (body.elems,
-                                                                   i)
+                pre_insert_locs[body.elems[i]['span'][1]] = (body.elems, i + 1)
             if body.elems:
-                self.pre_insert_locs[body.elems[0]['span'][0] - 1] = (
-                    body.elems, 0)
-                self.post_insert_locs[body.elems[-1]['span'][1] + 1] = (
+                pre_insert_locs[body.elems[0]['span'][0] - 1] = (body.elems, 0)
+            else:
+                if body.type in ('run', 'if', 'while', 'repeat'):
+                    pre_insert_locs[body.node['span'][1] - 1] = (body.elems, 0)
+                elif body.type == 'ifElse-if':
+                    pre_insert_locs[body.node['ifSpan'][0]] = (body.elems, 0)
+                elif body.type == 'ifElse-else':
+                    pre_insert_locs[body.node['elseSpan'][0]] = (body.elems, 0)
+                else:
+                    raise ValueError(body.type)
+
+        return pre_insert_locs
+
+    # points to token after insert point
+    #           v    v                                      v
+    # DEF run m( move IF c( markersPresent c) i( turnLeft i) m)
+    #            0    1                                      2
+    #           v    v    v
+    # DEF run m( move move m)
+    #            0    1    2
+    @cached_property
+    def post_insert_locs(self):
+        index = self.index
+        post_insert_locs = {}
+
+        for body in index.all_bodies:
+            for i in range(len(body.elems)):
+                post_insert_locs[body.elems[i]['span'][0]] = (body.elems, i)
+            if body.elems:
+                post_insert_locs[body.elems[-1]['span'][1] + 1] = (
                     body.elems, len(body.elems))
             else:
                 if body.type in ('run', 'if', 'while', 'repeat'):
-                    self.pre_insert_locs[body.node['span'][1] - 1] = (
-                        body.elems, 0)
-                    self.post_insert_locs[body.node['span'][1]] = (
-                        body.elems, len(body.elems))
+                    post_insert_locs[body.node['span'][1]] = (body.elems,
+                                                              len(body.elems))
                 elif body.type == 'ifElse-if':
-                    self.pre_insert_locs[body.node['ifSpan'][0]] = (body.elems,
-                                                                    0)
-                    self.post_insert_locs[body.node['ifSpan'][1]] = (
+                    post_insert_locs[body.node['ifSpan'][1]] = (
                         body.elems, len(body.elems))
                 elif body.type == 'ifElse-else':
-                    self.pre_insert_locs[body.node['elseSpan'][0]] = (
-                        body.elems, 0)
-                    self.post_insert_locs[body.node['elseSpan'][1]] = (
+                    post_insert_locs[body.node['elseSpan'][1]] = (
                         body.elems, len(body.elems))
                 else:
                     raise ValueError(body.type)
 
-        # ADD_ACTION
-        #self.add_action_locs = self.pre_insert_locs
-        self.add_action_locs = self.post_insert_locs
+        return post_insert_locs
 
-        # REMOVE_ACTION
-        self.remove_action_locs = {
-            body_elems[i]['span'][0]: (body.elems, i)
-            for body_elems, i in tree_index.remove_locs
+    # ADD_ACTION
+    @property
+    def add_action_locs(self):
+        #return self.pre_insert_locs
+        return self.post_insert_locs
+
+    # REMOVE_ACTION
+    @cached_property
+    def remove_action_locs(self):
+        return {
+            body_elems[i]['span'][0]: (body_elems, i)
+            for body_elems, i in self.index.remove_locs
         }
 
-        # REPLACE_ACTION
-        self.replace_action_locs = {
-            body_elems[i]['span'][0]: (body.elems, i)
-            for body_elems, i in tree_index.action_locs
+    # REPLACE_ACTION
+    @cached_property
+    def replace_action_locs(self):
+        return {
+            body_elems[i]['span'][0]: (body_elems, i)
+            for body_elems, i in self.index.action_locs
         }
 
-        # UNWRAP_BLOCK
-        self.unwrap_block_locs = {
-            body_elems[i]['span'][0]: (body.elems, i)
-            for body_elems, i in tree_index.unwrappables
+    # UNWRAP_BLOCK
+    @cached_property
+    def unwrap_block_locs(self):
+        return {
+            body_elems[i]['span'][0]: (body_elems, i)
+            for body_elems, i in self.index.unwrappables
         }
 
-        # WRAP_BLOCK
-        # block start: pre_insert_locs
-        # block end: post_insert_locs
+    # WRAP_BLOCK
+    # block start: pre_insert_locs
+    # block end: post_insert_locs
 
-        # WRAP_IFELSE
-        # if block start: pre_insert_locs
-        # if block end/else block start: post_insert_locs
-        # else block end: post_insert_locs
+    # WRAP_IFELSE
+    # if block start: pre_insert_locs
+    # if block end/else block start: post_insert_locs
+    # else block end: post_insert_locs
 
-        # REPLACE_COND
-        # Not yet implemented
+    # REPLACE_COND
+    # Not yet implemented
 
-        # SWITCH_IF_WHILE
-        # Not yet implemented
+    # SWITCH_IF_WHILE
+    # Not yet implemented
+
+    @cached_property
+    def linearized(self):
+        return ComputeAddOps.linearize(self.tree)
+
+
+class MutationActionSpace(gym.Space):
+    def __init__(self, tree=None, code=None, atree=None):
+        if atree is None:
+            self.atree = AnnotatedTree(tree, code)
+        else:
+            self.atree = atree
+        self.is_tree_pristine = True
 
     def sample(self):
         raise NotImplementedError
@@ -112,21 +165,21 @@ class MutationActionSpace(gym.Space):
 
         if action_type == mutation.ADD_ACTION:
             location, karel_action = args
-            return (location in self.add_action_locs and
+            return (location in self.atree.add_action_locs and
                     karel_action in mutation.ACTION_NAMES)
 
         elif action_type == mutation.REMOVE_ACTION:
             location, = args
-            return location in self.remove_action_locs
+            return location in self.atree.remove_action_locs
 
         elif action_type == mutation.REPLACE_ACTION:
             location, karel_action = args
-            return (location in self.replace_action_locs and
+            return (location in self.atree.replace_action_locs and
                     karel_action in mutation.ACTION_NAMES)
 
         elif action_type == mutation.UNWRAP_BLOCK:
             location, = args
-            return location in self.unwrap_block_locs
+            return location in self.atree.unwrap_block_locs
 
         elif action_type == mutation.WRAP_BLOCK:
             block_type, cond_id, start, end = args
@@ -138,12 +191,12 @@ class MutationActionSpace(gym.Space):
             if not (0 <= cond_id < len(mutation.CONDS)):
                 return False
 
-            start_valid = start in self.pre_insert_locs
-            end_valid = end in self.post_insert_locs
+            start_valid = start in self.atree.pre_insert_locs
+            end_valid = end in self.atree.post_insert_locs
             if not (start_valid and end_valid):
                 return False
-            start_body, start_i = self.pre_insert_locs[start]
-            end_body, end_i = self.post_insert_locs[end]
+            start_body, start_i = self.atree.pre_insert_locs[start]
+            end_body, end_i = self.atree.post_insert_locs[end]
             return start_body is end_body and start_i <= end_i
 
         elif action_type == mutation.WRAP_IFELSE:
@@ -151,16 +204,17 @@ class MutationActionSpace(gym.Space):
             if not (0 <= cond_id < len(mutation.CONDS)):
                 return False
 
-            if_start_valid = if_start in self.pre_insert_locs
-            else_start_valid = else_start in self.post_insert_locs
-            end_valid = end in self.post_insert_locs
+            if_start_valid = if_start in self.atree.pre_insert_locs
+            else_start_valid = else_start in self.atree.post_insert_locs
+            end_valid = end in self.atree.post_insert_locs
 
             if not (if_start_valid and else_start_valid and end_valid):
                 return False
 
-            if_start_body, if_start_i = self.pre_insert_locs[if_start]
-            else_start_body, else_start_i = self.post_insert_locs[else_start]
-            end_body, end_i = self.post_insert_locs[end]
+            if_start_body, if_start_i = self.atree.pre_insert_locs[if_start]
+            else_start_body, else_start_i = self.atree.post_insert_locs[
+                else_start]
+            end_body, end_i = self.atree.post_insert_locs[end]
             return (if_start_body is else_start_body is end_body and
                     if_start_i <= else_start_i <= end_i)
 
@@ -180,22 +234,22 @@ class MutationActionSpace(gym.Space):
 
         if action_type == mutation.ADD_ACTION:
             location, karel_action = args
-            body_elems, i = self.add_action_locs[location]
+            body_elems, i = self.atree.add_action_locs[location]
             body_elems.insert(i, mutation.ACTIONS_DICT[karel_action])
 
         elif action_type == mutation.REMOVE_ACTION:
             location, = args
-            body_elems, i = self.remove_action_locs[location]
+            body_elems, i = self.atree.remove_action_locs[location]
             del body_elems[i]
 
         elif action_type == mutation.REPLACE_ACTION:
             location, karel_action = args
-            body_elems, i = self.replace_action_locs[location]
+            body_elems, i = self.atree.replace_action_locs[location]
             body_elems[i] = mutation.ACTIONS_DICT[karel_action]
 
         elif action_type == mutation.UNWRAP_BLOCK:
             location, = args
-            body_elems, i = self.unwrap_block_locs[location]
+            body_elems, i = self.atree.unwrap_block_locs[location]
             block = body_elems[i]
             del body_elems[i]
             body_elems[i:i] = block.get('body', [])
@@ -204,8 +258,8 @@ class MutationActionSpace(gym.Space):
 
         elif action_type == mutation.WRAP_BLOCK:
             block_type, cond_id, start, end = args
-            body_elems, start_i = self.pre_insert_locs[start]
-            _, end_i = self.post_insert_locs[end]
+            body_elems, start_i = self.atree.pre_insert_locs[start]
+            _, end_i = self.atree.post_insert_locs[end]
 
             subseq = body_elems[start_i:end_i]
             del body_elems[start_i:end_i]
@@ -225,9 +279,9 @@ class MutationActionSpace(gym.Space):
         elif action_type == mutation.WRAP_IFELSE:
             cond_id, if_start, else_start, end = args
 
-            body_elems, if_start_i = self.pre_insert_locs[if_start]
-            _, else_start_i = self.post_insert_locs[else_start]
-            _, end_i = self.post_insert_locs[end]
+            body_elems, if_start_i = self.atree.pre_insert_locs[if_start]
+            _, else_start_i = self.atree.post_insert_locs[else_start]
+            _, end_i = self.atree.post_insert_locs[end]
 
             if_body = body_elems[if_start_i:else_start_i]
             else_body = body_elems[else_start_i:end_i]
@@ -248,15 +302,15 @@ class MutationActionSpace(gym.Space):
         else:
             raise ValueError(action_type)
 
-        self.is_tree_pristine = False
+        self.atree.notify_mutation()
 
     def enumerate_additive_actions(self):
         for location in self.add_action_locs:
             for karel_action in mutation.ACTION_NAMES:
                 yield mutation.ADD_ACTION, (location, karel_action)
 
-        for loc1, (body1, i1) in self.pre_insert_locs.iteritems():
-            for loc2, (body2, i2) in self.post_insert_locs.iteritems():
+        for loc1, (body1, i1) in self.atree.pre_insert_locs.iteritems():
+            for loc2, (body2, i2) in self.atree.post_insert_locs.iteritems():
                 if body2 is not body1 or i2 < i1:
                     continue
 
@@ -266,7 +320,8 @@ class MutationActionSpace(gym.Space):
                 for cond_id in range(len(mutation.CONDS)):
                     yield mutation.WRAP_BLOCK, ('if', cond_id, loc1, loc2)
                     yield mutation.WRAP_BLOCK, ('while', cond_id, loc1, loc2)
-                    for loc3, (body3, i3) in self.post_insert_locs.iteritems():
+                    for loc3, (body3,
+                               i3) in self.atree.post_insert_locs.iteritems():
                         if body3 is not body2 or i3 < i2:
                             continue
                         yield mutation.WRAP_IFELSE, (cond_id, loc1, loc2, loc3)
@@ -283,16 +338,6 @@ class KarelRefineEnv(gym.Env):
     def step(self, action):
         self.action_space.apply(action)
 
-        # Turn tree into tokens
-        self.code = parser_for_synthesis.tree_to_tokens(self.tree)
-
-        # Update action space, which will also reparse tokens to get tree
-        # containing span information
-        self.action_space = MutationActionSpace(code=self.code)
-
-        # Update tree
-        self.tree = self.action_space.tree
-
         # Run new program on I/O grids to get observation
         observation, done = self.compute_obs()
         reward = float(done)
@@ -305,22 +350,21 @@ class KarelRefineEnv(gym.Env):
         return obs
 
     def reset_with(self, code):
-        self.code = code
         self.action_space = MutationActionSpace(code=code)
-        self.tree = self.action_space.tree
+        self.atree = self.action_space.atree
 
     def compute_obs(self):
         outputs, traces = [], []
         all_correct = True
         for test in self.input_tests:
             result, trace = self.executor.execute(
-                self.code, None, test['input'], record_trace=True)
+                self.atree.code, None, test['input'], record_trace=True)
             outputs.append(result)
             traces.append(trace)
             if result != test['output']:
                 all_correct = False
         return {
-            'code': tuple(self.code),
+            'code': tuple(self.atree.code),
             'inputs': [test['input'] for test in self.input_tests],
             'outputs': outputs,
             'traces': traces,
@@ -336,8 +380,6 @@ def linearize_cond(node):
 
 
 class ComputeAddOps(object):
-    parser = parser_for_synthesis.KarelForSynthesisParser(build_tree=True)
-
     conds = [
         'frontIsClear', 'leftIsClear', 'rightIsClear', 'markersPresent',
         'noMarkersPresent'
@@ -444,14 +486,13 @@ class ComputeAddOps(object):
             return (cls.token_to_idx[node_type], ), ((offset, offset), )
 
     def __init__(self, goal_tree):
+        self.goal_atree = AnnotatedTree(tree=goal_tree)
         self.goal, _ = self.linearize(goal_tree)
 
-    @classmethod
-    def run(cls, tree=None, code=None):
-        assert (tree is None) ^ (code is None)
-        if tree is None:
-            tree = self.parser.parse(code)
-        linearized, spans = self.linearize(tree)
+    def run(self, tree=None, code=None, atree=None):
+        if atree is None:
+            atree = AnnotatedTree(tree, code)
+        linearized, spans = atree.linearized
 
         # Example:
         #       move move
@@ -502,7 +543,8 @@ class ComputeAddOps(object):
                     continue
 
                 # Try starting the block here
-                block_started = linearized[:pos] + (item, ) + linearized[pos:]
+                block_started = insert(linearized, item, pos)
+                start_loc = pos_to_pre_insert_loc(pos)
                 if token_type == 'ifElse':
                     else_token = self.token_to_idx['else', cond]
                     end_token = self.token_to_idx['end-ifElse', cond]
@@ -513,29 +555,38 @@ class ComputeAddOps(object):
                     for else_pos in range(pos + 1, len(block_started) + 1):
                         if else_token not in else_insertions[else_pos]:
                             continue
+                        else_loc = pos_to_post_insert_loc(else_pos - 1)
+                        if (atree.pre_insert_locs[start_loc][0] is not
+                                atree.post_insert_locs[else_loc][0]):
+                            continue
                         else_inserted = insert(block_started, else_token,
                                                else_pos)
                         end_insertions = subseq_insertions(else_inserted,
                                                            self.goal)
                         for end_pos in range(else_pos + 1,
                                              len(else_inserted) + 1):
-                            if end_token in end_insertions[end_pos]:
-                                end_inserted = insert(else_inserted, end_token,
-                                                      end_pos)
-                                if not subseq_valid_remainder_exists(
-                                        end_inserted, self.goal,
-                                        CheckBlockCrossings()):
-                                    continue
-                                result.append((
-                                    mutation.WRAP_IFELSE,
-                                    (
-                                        cond_id,
-                                        # ifElse
-                                        pos_to_pre_insert_loc(pos),
-                                        # else
-                                        pos_to_post_insert_loc(else_pos - 1),
-                                        # end
-                                        pos_to_post_insert_loc(end_pos - 2))))
+                            if end_token not in end_insertions[end_pos]:
+                                continue
+                            end_loc = pos_to_post_insert_loc(end_pos - 2)
+                            if (atree.post_insert_locs[else_loc][0] is not
+                                    atree.post_insert_locs[end_loc][0]):
+                                continue
+                            end_inserted = insert(else_inserted, end_token,
+                                                  end_pos)
+                            if not subseq_valid_remainder_exists(
+                                    end_inserted, self.goal,
+                                    CheckBlockCrossings()):
+                                continue
+                            result.append((
+                                mutation.WRAP_IFELSE,
+                                (
+                                    cond_id,
+                                    # ifElse
+                                    start_loc,
+                                    # else
+                                    else_loc,
+                                    # end
+                                    end_loc)))
                 else:
                     end_token = self.token_to_idx['end-' + token_type, cond]
                     end_insertions = subseq_insertions(block_started,
@@ -544,22 +595,27 @@ class ComputeAddOps(object):
                                if token_type == 'repeat' else
                                self.cond_to_id[cond])
                     for end_pos in range(pos + 1, len(block_started) + 1):
-                        if end_token in end_insertions[end_pos]:
-                            end_inserted = insert(block_started, end_token,
-                                                  end_pos)
-                            if not subseq_valid_remainder_exists(
-                                    end_inserted, self.goal,
-                                    CheckBlockCrossings()):
-                                continue
-                            result.append((
-                                mutation.WRAP_BLOCK,
-                                (
-                                    token_type,
-                                    cond_id,
-                                    # start
-                                    pos_to_pre_insert_loc(pos),
-                                    # end
-                                    pos_to_post_insert_loc(end_pos - 1))))
+                        if end_token not in end_insertions[end_pos]:
+                            continue
+                        end_loc = pos_to_post_insert_loc(end_pos - 1)
+                        if (atree.pre_insert_locs[start_loc][0] is not
+                                atree.post_insert_locs[end_loc][0]):
+                            continue
+                        end_inserted = insert(block_started, end_token,
+                                              end_pos)
+                        if not subseq_valid_remainder_exists(
+                                end_inserted, self.goal,
+                                CheckBlockCrossings()):
+                            continue
+                        result.append((
+                            mutation.WRAP_BLOCK,
+                            (
+                                token_type,
+                                cond_id,
+                                # start
+                                start_loc,
+                                # end
+                                end_loc)))
 
         return result
 
