@@ -1,6 +1,7 @@
 import collections
 
 import gym
+import numpy as np
 
 from program_synthesis.datasets import executor as executor_mod
 from program_synthesis.datasets.karel import mutation
@@ -443,9 +444,10 @@ class ComputeAddOps(object):
             return (cls.token_to_idx[node_type], ), ((offset, offset), )
 
     def __init__(self, goal_tree):
-        self.goal, self.goal_spans = self.linearize(goal_tree)
+        self.goal, _ = self.linearize(goal_tree)
 
-    def run(self, tree=None, code=None):
+    @classmethod
+    def run(cls, tree=None, code=None):
         assert (tree is None) ^ (code is None)
         if tree is None:
             tree = self.parser.parse(code)
@@ -477,11 +479,18 @@ class ComputeAddOps(object):
             else:
                 return spans[pos][0]
 
+        def insert(seq, item, pos):
+            return seq[:pos] + (item, ) + seq[pos:]
+
         result = []
         insertions = subseq_insertions(linearized, self.goal)
         for pos, items in enumerate(insertions):
             for item in items:
                 if item in self.action_ids:
+                    if not subseq_valid_remainder_exists(
+                            insert(linearized, item, pos), self.goal,
+                            CheckBlockCrossings()):
+                        continue
                     result.append((mutation.ADD_ACTION, (
                         pos_to_post_insert_loc(pos), self.idx_to_token[item])))
                     continue
@@ -504,14 +513,19 @@ class ComputeAddOps(object):
                     for else_pos in range(pos + 1, len(block_started) + 1):
                         if else_token not in else_insertions[else_pos]:
                             continue
-                        else_inserted = (
-                            block_started[:else_pos] +
-                            (else_token, ) + block_started[else_pos:])
+                        else_inserted = insert(block_started, else_token,
+                                               else_pos)
                         end_insertions = subseq_insertions(else_inserted,
                                                            self.goal)
                         for end_pos in range(else_pos + 1,
                                              len(else_inserted) + 1):
                             if end_token in end_insertions[end_pos]:
+                                end_inserted = insert(else_inserted, end_token,
+                                                      end_pos)
+                                if not subseq_valid_remainder_exists(
+                                        end_inserted, self.goal,
+                                        CheckBlockCrossings()):
+                                    continue
                                 result.append((
                                     mutation.WRAP_IFELSE,
                                     (
@@ -531,6 +545,12 @@ class ComputeAddOps(object):
                                self.cond_to_id[cond])
                     for end_pos in range(pos + 1, len(block_started) + 1):
                         if end_token in end_insertions[end_pos]:
+                            end_inserted = insert(block_started, end_token,
+                                                  end_pos)
+                            if not subseq_valid_remainder_exists(
+                                    end_inserted, self.goal,
+                                    CheckBlockCrossings()):
+                                continue
                             result.append((
                                 mutation.WRAP_BLOCK,
                                 (
@@ -542,6 +562,63 @@ class ComputeAddOps(object):
                                     pos_to_post_insert_loc(end_pos - 1))))
 
         return result
+
+
+class CheckBlockCrossings(object):
+    # if/end-if, while/end-while, repeat/end-repeat
+    all_pairs = [(ComputeAddOps.token_to_idx[block_type, cond],
+                  ComputeAddOps.token_to_idx['end-' + block_type, cond])
+                 for cond in ComputeAddOps.conds
+                 for block_type in ('if', 'while')]
+    all_pairs += [(ComputeAddOps.token_to_idx['repeat', i],
+                   ComputeAddOps.token_to_idx['end-repeat', i])
+                  for i in range(2, 11)]
+    pair_tokens = {}
+    for i, (a, b) in enumerate(all_pairs):
+        pair_tokens[a] = (i, 1)
+        pair_tokens[b] = (i, -1)
+
+    # ifElse, else, end-ifElse
+    all_triples = [(ComputeAddOps.token_to_idx['ifElse', cond],
+                    ComputeAddOps.token_to_idx['else', cond],
+                    ComputeAddOps.token_to_idx['end-ifElse', cond])
+                   for cond in ComputeAddOps.conds]
+    triple_tokens = {}
+    for i, (a, b, c) in enumerate(all_triples):
+        triple_tokens[a] = (i, np.array([1, 0, 0], dtype=int))
+        triple_tokens[b] = (i, np.array([-1, 1, 0], dtype=int))
+        triple_tokens[c] = (i, np.array([0, -1, 0], dtype=int))
+
+    def __init__(self, pair_counts=None, triple_counts=None):
+        if pair_counts is None:
+            pair_counts = np.zeros(len(self.all_pairs), dtype=int)
+            triple_counts = np.zeros((len(self.all_triples), 3), dtype=int)
+
+        self.pair_counts = pair_counts
+        self.triple_counts = triple_counts
+
+    def __call__(self, seq):
+        pair_counts = self.pair_counts
+        triple_counts = self.triple_counts
+        for token in seq:
+            r = self.pair_tokens.get(token)
+            if r is not None:
+                token_count_idx, inc = r
+                if pair_counts is self.pair_counts:
+                    pair_counts = self.pair_counts.copy()
+                pair_counts[token_count_idx] += inc
+                if np.any(pair_counts < 0):
+                    return None
+            r = self.triple_tokens.get(token)
+            if r is not None:
+                token_count_idx, inc = r
+                if triple_counts is self.triple_counts:
+                    triple_counts = self.triple_counts.copy()
+                triple_counts[token_count_idx] += inc
+                if np.any(triple_counts < 0):
+                    return None
+
+        return CheckBlockCrossings(pair_counts, triple_counts)
 
 
 def is_subseq(a, b):
@@ -556,6 +633,23 @@ def subseq_insertions(a, b, debug=False):
     if len(a) == 0:
         return [set(b)]
 
+    left_bound, right_bound = subseq_bounds(a, b)
+
+    result = [set()]
+    # Before a[0]
+    result[0].update(b[0:right_bound[0]])
+    # After a[0], ..., a[-1]
+    for i in range(len(a)):
+        insert = set(b[left_bound[i] + 1:right_bound[i + 1]
+                       if i + 1 < len(a) else None])
+        result.append(insert)
+
+    if debug:
+        return result, left_bound, right_bound
+    return result
+
+
+def subseq_bounds(a, b):
     b_idx = 0
     left_bound = []
     for a_elem in a:
@@ -573,20 +667,29 @@ def subseq_insertions(a, b, debug=False):
         b_idx -= 1
     right_bound = right_bound[::-1]
 
-    min_left_bound = min(left_bound)
-    b_index = collections.defaultdict(list)
-    for i, b_elem in enumerate(b[min_left_bound:max(right_bound) + 1]):
-        b_index[b_elem].append(i + min_left_bound)
+    return left_bound, right_bound
 
-    result = [set()]
-    # Before a[0]
-    result[0].update(b[0:right_bound[0]])
-    # After a[0], ..., a[-1]
-    for i in range(len(a)):
-        insert = set(b[left_bound[i] + 1:right_bound[i + 1]
-                       if i + 1 < len(a) else None])
-        result.append(insert)
 
-    if debug:
-        return result, left_bound, right_bound
-    return result
+def subseq_valid_remainder_exists(a, b, checker):
+    # `a` is the subsequence, `b` is the longer sequence.
+    if not a:
+        return bool(checker(b))
+
+    left_bound, right_bound = subseq_bounds(a, b)
+
+    valid_exists = False
+    for i in range(left_bound[0], right_bound[0] + 1):
+        if a[0] != b[i]:
+            continue
+
+        # Try placing a[0] in b[i]
+        new_checker = checker(b[:i])
+        if new_checker is None:
+            # The current prefix of b is not valid.
+            continue
+
+        if subseq_valid_remainder_exists(a[1:], b[i + 1:], new_checker):
+            valid_exists = True
+            break
+
+    return valid_exists
