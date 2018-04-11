@@ -8,14 +8,11 @@ import json
 
 import torch
 
-# Add current directory to sys PATH.
-sys.path.append(os.path.join(os.path.dirname(os.path.abspath(__file__)), '.'))
-
-import arguments
-import datasets
-import models
-import tools
-from tools import timer
+from program_synthesis import arguments
+from program_synthesis import datasets
+from program_synthesis import models
+from program_synthesis import tools
+from program_synthesis.tools import timer
 
 
 def loop_iterable(x):

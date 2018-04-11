@@ -6,13 +6,12 @@ import numpy as np
 import torch
 import tqdm
 
-from tools import evaluation
-from datasets import executor
-import datasets
-import tools
-
-import models
-import arguments
+from program_synthesis import arguments
+from program_synthesis import datasets
+from program_synthesis import models
+from program_synthesis import tools
+from program_synthesis.datasets import executor
+from program_synthesis.tools import evaluation
 
 
 class EmptyArgs(object):

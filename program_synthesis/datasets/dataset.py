@@ -17,11 +17,11 @@ else:
 import numpy as np
 import torch.utils.data
 
-from . import data
-from . import executor
-from . import stats
-from .karel.mutation import KarelExampleMutator
+from program_synthesis.datasets import data
+from program_synthesis.datasets import executor
 from program_synthesis.datasets import indexed_file
+from program_synthesis.datasets import stats
+from program_synthesis.datasets.karel.mutation import KarelExampleMutator
 
 Schema = collections.namedtuple("Schema", ["args", "return_type"])
 

@@ -5,15 +5,17 @@ import numpy as np
 import torch
 from torch.autograd import Variable
 
-from program_synthesis.datasets import data, executor
-from program_synthesis.datasets.karel import karel_runtime, parser_for_synthesis
-from program_synthesis.models import (
-    base,
-    beam_search,
-    karel_model,
-    prepare_spec,
-)
-from program_synthesis.models.modules import karel, karel_trace, karel_common
+from program_synthesis.datasets import data
+from program_synthesis.datasets import executor
+from program_synthesis.datasets.karel import karel_runtime
+from program_synthesis.datasets.karel import parser_for_synthesis
+from program_synthesis.models import base
+from program_synthesis.models import beam_search
+from program_synthesis.models import karel_model
+from program_synthesis.models import prepare_spec
+from program_synthesis.models.modules import karel
+from program_synthesis.models.modules import karel_common
+from program_synthesis.models.modules import karel_trace
 
 
 class KarelTracer(object):

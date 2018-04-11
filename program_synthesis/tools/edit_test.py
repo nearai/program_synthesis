@@ -1,6 +1,6 @@
 import unittest
 
-import edit
+from program_synthesis.tools import edit
 
 
 class EditTest(unittest.TestCase):

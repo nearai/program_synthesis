@@ -6,9 +6,9 @@ import time
 import traceback
 import random
 
-from datasets import dataset
-from datasets import executor
-from datasets import stats
+from program_synthesis.datasets import dataset
+from program_synthesis.datasets import executor
+from program_synthesis.datasets import stats
 
 
 def _accuracy(stats):

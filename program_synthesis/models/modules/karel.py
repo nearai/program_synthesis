@@ -6,13 +6,13 @@ import torch.nn.functional as F
 from torch.autograd import Variable
 import numpy as np
 
+from program_synthesis.datasets import data
 from program_synthesis.models import base
 from program_synthesis.models import beam_search
 from program_synthesis.models import prepare_spec
 from program_synthesis.models.modules import karel_common
 from program_synthesis.models.modules import utils
-from program_synthesis.datasets import data
-from .attention import SimpleSDPAttention
+from program_synthesis.models.modules.attention import SimpleSDPAttention
 
 
 class LGRLDecoderState(

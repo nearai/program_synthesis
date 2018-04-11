@@ -8,12 +8,15 @@ import torch
 from torch import nn
 from torch.autograd import Variable
 
-from .base import BaseCodeModel, InferenceResult
-from program_synthesis.datasets import data, dataset, executor
+from program_synthesis.datasets import data
+from program_synthesis.datasets import dataset
+from program_synthesis.datasets import executor
+from program_synthesis.models import beam_search
+from program_synthesis.models import prepare_spec
+from program_synthesis.models.base import BaseCodeModel
+from program_synthesis.models.base import InferenceResult
+from program_synthesis.models.modules import karel
 from program_synthesis.tools import edit
-from . import beam_search
-from . import prepare_spec
-from .modules import karel
 
 
 def code_to_tokens(seq, vocab):

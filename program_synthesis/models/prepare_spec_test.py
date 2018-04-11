@@ -1,6 +1,6 @@
 import unittest
 
-import prepare_spec
+from program_synthesis.models import prepare_spec
 
 class PackedSequenceTest(unittest.TestCase):
 

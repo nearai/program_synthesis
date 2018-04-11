@@ -1,11 +1,12 @@
 import unittest
 import sys
-sys.path.insert(0, '.')
 
 import numpy as np
 
-from models import karel_model
-from datasets import data, dataset, executor
+from program_synthesis.models import karel_model
+from program_synthesis.datasets import data
+from program_synthesis.datasets import dataset
+from program_synthesis.datasets import executor
 
 
 def make_karel_example(code_sequence, input_value, ref_example=None):

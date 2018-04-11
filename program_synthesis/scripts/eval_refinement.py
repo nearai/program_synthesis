@@ -8,14 +8,11 @@ import os
 import re
 import sys
 
-sys.path.insert(0, '../')
-
-from datasets import executor
-from datasets.karel.karel_runtime import KarelRuntime
-
-from models import karel_model
-from tools import restore_args
-from datasets import dataset
+from program_synthesis.datasets import dataset
+from program_synthesis.datasets import executor
+from program_synthesis.datasets.karel.karel_runtime import KarelRuntime
+from program_synthesis.models import karel_model
+from program_synthesis.tools import restore_args
 
 BASE_DIR = ""
 

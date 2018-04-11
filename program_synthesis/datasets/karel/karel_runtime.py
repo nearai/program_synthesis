@@ -7,7 +7,8 @@ import numpy as np
 from collections import Counter
 
 #from .hero import Hero
-from .utils import Tcolors, get_rng
+from program_synthesis.datasets.karel.utils import Tcolors
+from program_synthesis.datasets.karel.utils import get_rng
 
 def draw2d(array):
     print("\n".join(["".join(["#" if val > 0 else "." for val in row]) for row in array]))

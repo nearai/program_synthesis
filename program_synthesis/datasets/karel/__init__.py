@@ -1,5 +1,10 @@
-from .parser_for_synthesis import KarelForSynthesisParser
-from .utils import str2bool, makedirs, pprint, beautify, TimeoutError, KarelSyntaxError
+from program_synthesis.datasets.karel.parser_for_synthesis import KarelForSynthesisParser
+from program_synthesis.datasets.karel.utils import  KarelSyntaxError
+from program_synthesis.datasets.karel.utils import  TimeoutError
+from program_synthesis.datasets.karel.utils import  beautify
+from program_synthesis.datasets.karel.utils import  makedirs
+from program_synthesis.datasets.karel.utils import  pprint
+from program_synthesis.datasets.karel.utils import str2bool
 
 from datetime import datetime
 

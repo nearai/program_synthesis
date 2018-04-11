@@ -3,8 +3,9 @@ import functools
 
 import ply.lex
 
-from .parser_base import parser_prompt, Parser
-from .utils import KarelSyntaxError
+from program_synthesis.datasets.karel.parser_base import parser_prompt
+from program_synthesis.datasets.karel.parser_base import Parser
+from program_synthesis.datasets.karel.utils import KarelSyntaxError
 
 
 def make_token(type, value=None):

@@ -7,9 +7,7 @@ import sys
 import numpy as np
 import tqdm
 
-sys.path.insert(0, '../../datasets')
-
-from karel.parser_for_synthesis import KarelForSynthesisParser, tree_to_tokens
+from program_synthesis.datasets.karel.parser_for_synthesis import KarelForSynthesisParser, tree_to_tokens
 
 
 def str_to_arr(s):

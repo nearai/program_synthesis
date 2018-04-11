@@ -1,5 +1,7 @@
-from .karel_model import KarelLGRLModel, KarelLGRLRefineModel
-from .karel_trace_model import TracePredictionModel, CodeFromTracesModel
+from program_synthesis.models.karel_model import KarelLGRLModel
+from program_synthesis.models.karel_model import  KarelLGRLRefineModel
+from program_synthesis.models.karel_trace_model import TracePredictionModel
+from program_synthesis.models.karel_trace_model import  CodeFromTracesModel
 
 
 def get_model(args):

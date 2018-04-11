@@ -5,13 +5,13 @@ import torch
 import torch.nn as nn
 from torch.autograd import Variable
 
+from program_synthesis.datasets.karel import karel_runtime
 from program_synthesis.models import base
 from program_synthesis.models import beam_search
 from program_synthesis.models import prepare_spec
 from program_synthesis.models.modules import attention
 from program_synthesis.models.modules import karel_common
 from program_synthesis.models.modules import utils
-from program_synthesis.datasets.karel import karel_runtime
 
 action_to_id = {
     'UNK': 0,

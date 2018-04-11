@@ -13,7 +13,8 @@ import torch.nn.functional as F
 
 from pytorch_tools import torchfold
 
-from program_synthesis.datasets import data, executor
+from program_synthesis.datasets import data
+from program_synthesis.datasets import executor
 from program_synthesis.tools import saver
 
 

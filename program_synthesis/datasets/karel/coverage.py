@@ -1,5 +1,5 @@
-import parser_for_synthesis
-from .. import executor
+from program_synthesis.datasets import executor
+from program_synthesis.datasets.karel import parser_for_synthesis
 
 branch_types = {'if', 'ifElse', 'while'}
 stmt_types = {'move', 'turnLeft', 'turnRight', 'putMarker', 'pickMarker'}
