@@ -1,8 +1,10 @@
 import copy
 import collections
 import unittest
+import os
 
 import numpy as np
+import pytest
 
 from program_synthesis.datasets.karel import mutation
 from program_synthesis.datasets.karel import refine_env
@@ -387,7 +389,7 @@ class RefineEnvTest(unittest.TestCase):
         }]
 
 
-class ComputeAddOpsTest(unittest.TestCase):
+class TestComputeAddOps(object):
 
     parser = parser_for_synthesis.KarelForSynthesisParser(build_tree=True)
 
@@ -396,45 +398,27 @@ class ComputeAddOpsTest(unittest.TestCase):
         return tuple(refine_env.ComputeAddOps.idx_to_token[i]
                      for i in tokens), orig_spans
 
-    def testLinearizeSimple(self):
-        self.assertEqual(
-            self.linearize_to_tokens('DEF run m( move putMarker m)'), (
-                ('move', 'putMarker'), ((3, 3), (4, 4))))
-
-        self.assertEqual(
-            self.linearize_to_tokens(
-                'DEF run m( move '
-                'IF c( not c( frontIsClear c) c) i( putMarker i) '
-                'turnLeft m)'), (
-                    ('move', ('if', ('not', 'frontIsClear')), 'putMarker',
-                     ('end-if', ('not', 'frontIsClear')), 'turnLeft'), (
-                         (3, 3), (4, 11), (12, 12), (13, 13), (14, 14))))
-
-        self.assertEqual(
-            self.linearize_to_tokens(
-                'DEF run m( move '
-                'REPEAT R=5 r( putMarker r) '
-                'turnLeft m)'), (
-                    ('move', ('repeat', 5), 'putMarker',
-                     ('end-repeat', 5), 'turnLeft'), (
-                         (3, 3), (4, 6), (7, 7), (8, 8), (9, 9))))
-
-        self.assertEqual(
-            self.linearize_to_tokens(
-                'DEF run m( pickMarker '
-                'IFELSE c( noMarkersPresent c) i( putMarker i) '
-                'ELSE e( turnRight e) move m)'),
-            (('pickMarker', ('ifElse', 'noMarkersPresent'), 'putMarker',
-              ('else', 'noMarkersPresent'), 'turnRight', (
-                  'end-ifElse', 'noMarkersPresent'), 'move'),
-             ((3, 3), (4, 8), (9, 9), (10, 12), (13, 13), (14, 14), (15, 15))))
-
-        self.assertEqual(
-            self.linearize_to_tokens(
-                'DEF run m( '
-                'WHILE c( leftIsClear c) w( putMarker w) m)'), (
-                    (('while', 'leftIsClear'), 'putMarker',
-                     ('end-while', 'leftIsClear')), ((3, 7), (8, 8), (9, 9))))
+    @pytest.mark.parametrize('tokens,linearized', [
+        ('DEF run m( move putMarker m)', (('move', 'putMarker'), ((3, 3),
+                                                                  (4, 4)))),
+        ('DEF run m( move '
+         'IF c( not c( frontIsClear c) c) i( putMarker i) '
+         'turnLeft m)', (('move', ('if', ('not', 'frontIsClear')), 'putMarker',
+                          ('end-if', ('not', 'frontIsClear')), 'turnLeft'), (
+                              (3, 3), (4, 11), (12, 12), (13, 13), (14, 14)))),
+        ('DEF run m( move REPEAT R=5 r( putMarker r) turnLeft m)',
+         (('move', ('repeat', 5), 'putMarker', ('end-repeat', 5), 'turnLeft'),
+          ((3, 3), (4, 6), (7, 7), (8, 8), (9, 9)))),
+        ('DEF run m( pickMarker '
+         'IFELSE c( noMarkersPresent c) i( putMarker i) '
+         'ELSE e( turnRight e) move m)',
+         (('pickMarker', ('ifElse', 'noMarkersPresent'), 'putMarker',
+           ('else', 'noMarkersPresent'), 'turnRight', (
+               'end-ifElse', 'noMarkersPresent'), 'move'),
+          ((3, 3), (4, 8), (9, 9), (10, 12), (13, 13), (14, 14), (15, 15)))),
+    ])
+    def testLinearizeSimple(self, tokens, linearized):
+        assert  self.linearize_to_tokens(tokens) == linearized
 
     def _goal_reached_systematic(self, goal):
         ops = refine_env.ComputeAddOps(self.parser.parse(goal))
@@ -447,8 +431,7 @@ class ComputeAddOpsTest(unittest.TestCase):
             closed.add(current)
 
             current_atree = refine_env.AnnotatedTree(code=current)
-            self.assertTrue(
-                refine_env.is_subseq(current_atree.linearized[0], ops.goal))
+            assert refine_env.is_subseq(current_atree.linearized[0], ops.goal)
 
             actions = set(ops.run(atree=current_atree))
             #bad_actions = set(
@@ -458,17 +441,16 @@ class ComputeAddOpsTest(unittest.TestCase):
             for action in actions:
                 mutation_space = refine_env.MutationActionSpace(
                     atree=copy.deepcopy(current_atree))
-                self.assertTrue(mutation_space.contains(action))
+                assert mutation_space.contains(action)
                 mutation_space.apply(action)
                 new_code = mutation_space.atree.code
                 if new_code not in closed:
                     queue.append((new_code, current))
-                self.assertTrue(
-                    refine_env.is_subseq(current_atree.linearized[0],
-                                         mutation_space.atree.linearized[0]))
+                assert refine_env.is_subseq(current_atree.linearized[0],
+                                         mutation_space.atree.linearized[0])
 
             if not actions:
-                self.assertEqual(current, goal)
+                assert current == goal
                 goal_reached = True
                 continue
 
@@ -481,15 +463,15 @@ class ComputeAddOpsTest(unittest.TestCase):
             #    self.assertFalse(
             #        refine_env.is_subseq(new_code_linearized, ops.goal))
 
-        self.assertTrue(goal_reached)
+        assert goal_reached
 
-    def testRunShort(self):
-        programs = [
-            tuple(p.split())
-            for p in (
+    @pytest.mark.parametrize('code', [
                 '''DEF run m( m)''',
                 '''DEF run m( move turnLeft m)''',
                 '''DEF run m( move move move move move m)''',
+                '''DEF run m( 
+                REPEAT R=10 r( putMarker move r)
+                putMarker turnLeft m)''',
                 '''DEF run m(
                 IF c( markersPresent c) i(
                     move
@@ -516,12 +498,31 @@ class ComputeAddOpsTest(unittest.TestCase):
                         move
                     i)
                 i)
-            m)''', )
-        ]
-        for goal in programs:
-            self._goal_reached_systematic(goal)
+            m)''',
+                '''DEF run m(
+                IF c( leftIsClear c) i(
+                    turnLeft
+                    IF c( leftIsClear c) i(
+                        turnLeft
+                    i)
+                    turnLeft
+                i)
+            m)''',
+            ])
+    def testRunShort(self, code):
+        self._goal_reached_systematic(tuple(code.split()))
 
-    @unittest.skip
+    @pytest.mark.timeout(20)
+    @pytest.mark.parametrize(
+        'code',
+        open(
+            os.path.join(
+                os.path.dirname(os.path.abspath(__file__)), 'testdata',
+                'short_val_code.txt')).readlines()[:300])
+    def testRunValCode(self, code):
+        self._goal_reached_systematic(tuple(code.split()))
+
+    @pytest.mark.skip
     def testRunLong(self):
         programs = [
                 tuple(p.split()) for p in
@@ -610,7 +611,3 @@ class SubseqTest(unittest.TestCase):
                                 'left_bound: {}, right_bound {}'.format(
                                     a, b, a_prime, i, insert_set, insert,
                                     left_bound, right_bound))
-
-
-if __name__ == '__main__':
-    unittest.main()

@@ -20,6 +20,9 @@ setup(
         'ply==3.8',
         'pylru==1.0.9',
         'pyparsing==2.2.0',
+        'pytest~=3.5',
+        'pytest-timeout~=1.2',
+        'pytest-xtest~=1.22',
         'python-Levenshtein==0.12.0',
         'prompt_toolkit==1.0.15',
         'tensorflow==1.5.0'

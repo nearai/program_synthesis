@@ -185,11 +185,12 @@ class MutationActionSpace(gym.Space):
             block_type, cond_id, start, end = args
             if block_type not in ('if', 'while', 'repeat'):
                 return False
-            if block_type == 'repeat' and not (
-                    0 <= cond_id < len(mutation.REPEAT_COUNTS)):
-                return False
-            if not (0 <= cond_id < len(mutation.CONDS)):
-                return False
+            if block_type == 'repeat':
+                if not 0 <= cond_id < len(mutation.REPEAT_COUNTS):
+                    return False
+            else:
+                if not 0 <= cond_id < len(mutation.CONDS):
+                    return False
 
             start_valid = start in self.atree.pre_insert_locs
             end_valid = end in self.atree.post_insert_locs
@@ -487,7 +488,7 @@ class ComputeAddOps(object):
 
     def __init__(self, goal_tree):
         self.goal_atree = AnnotatedTree(tree=goal_tree)
-        self.goal, _ = self.linearize(goal_tree)
+        self.goal, _ = self.goal_atree.linearized
 
     def run(self, tree=None, code=None, atree=None):
         if atree is None:
@@ -530,7 +531,7 @@ class ComputeAddOps(object):
                 if item in self.action_ids:
                     if not subseq_valid_remainder_exists(
                             insert(linearized, item, pos), self.goal,
-                            CheckBlockCrossings()):
+                            CheckBlocksWellFormed()):
                         continue
                     result.append((mutation.ADD_ACTION, (
                         pos_to_post_insert_loc(pos), self.idx_to_token[item])))
@@ -575,7 +576,7 @@ class ComputeAddOps(object):
                                                   end_pos)
                             if not subseq_valid_remainder_exists(
                                     end_inserted, self.goal,
-                                    CheckBlockCrossings()):
+                                    CheckBlocksWellFormed()):
                                 continue
                             result.append((
                                 mutation.WRAP_IFELSE,
@@ -605,7 +606,7 @@ class ComputeAddOps(object):
                                               end_pos)
                         if not subseq_valid_remainder_exists(
                                 end_inserted, self.goal,
-                                CheckBlockCrossings()):
+                                CheckBlocksWellFormed()):
                             continue
                         result.append((
                             mutation.WRAP_BLOCK,
@@ -620,7 +621,7 @@ class ComputeAddOps(object):
         return result
 
 
-class CheckBlockCrossings(object):
+class CheckBlocksWellFormed(object):
     # if/end-if, while/end-while, repeat/end-repeat
     all_pairs = [(ComputeAddOps.token_to_idx[block_type, cond],
                   ComputeAddOps.token_to_idx['end-' + block_type, cond])
@@ -629,57 +630,116 @@ class CheckBlockCrossings(object):
     all_pairs += [(ComputeAddOps.token_to_idx['repeat', i],
                    ComputeAddOps.token_to_idx['end-repeat', i])
                   for i in range(2, 11)]
-    pair_tokens = {}
-    for i, (a, b) in enumerate(all_pairs):
-        pair_tokens[a] = (i, 1)
-        pair_tokens[b] = (i, -1)
 
     # ifElse, else, end-ifElse
     all_triples = [(ComputeAddOps.token_to_idx['ifElse', cond],
                     ComputeAddOps.token_to_idx['else', cond],
                     ComputeAddOps.token_to_idx['end-ifElse', cond])
                    for cond in ComputeAddOps.conds]
-    triple_tokens = {}
-    for i, (a, b, c) in enumerate(all_triples):
-        triple_tokens[a] = (i, np.array([1, 0, 0], dtype=int))
-        triple_tokens[b] = (i, np.array([-1, 1, 0], dtype=int))
-        triple_tokens[c] = (i, np.array([0, -1, 0], dtype=int))
 
-    def __init__(self, pair_counts=None, triple_counts=None):
-        if pair_counts is None:
-            pair_counts = np.zeros(len(self.all_pairs), dtype=int)
-            triple_counts = np.zeros((len(self.all_triples), 3), dtype=int)
+    block_delimiters = {}
+    for a, b in all_pairs:
+        # (what to expect from top of stack after popping,
+        #  what to push onto stack)
+        block_delimiters[a] = (None, a)
+        block_delimiters[b] = (a, None)
+    for a, b, c in all_triples:
+        block_delimiters[a] = (None, a)
+        block_delimiters[b] = (a, b)
+        block_delimiters[c] = (b, None)
 
-        self.pair_counts = pair_counts
-        self.triple_counts = triple_counts
+    __slots__ = ('stack', 'remainder_stack', 'index')
 
-    def __call__(self, seq):
-        pair_counts = self.pair_counts
-        triple_counts = self.triple_counts
-        for token in seq:
-            r = self.pair_tokens.get(token)
-            if r is not None:
-                token_count_idx, inc = r
-                if pair_counts is self.pair_counts:
-                    pair_counts = self.pair_counts.copy()
-                pair_counts[token_count_idx] += inc
-                if np.any(pair_counts < 0):
-                    return None
-            r = self.triple_tokens.get(token)
-            if r is not None:
-                token_count_idx, inc = r
-                if triple_counts is self.triple_counts:
-                    triple_counts = self.triple_counts.copy()
-                triple_counts[token_count_idx] += inc
-                if np.any(triple_counts < 0):
-                    return None
+    def __init__(self, stack=None, remainder_stack=None, index=None):
+        if stack is None:
+            stack = []
+            remainder_stack = []
+            index = 0
+        self.stack = stack
+        self.remainder_stack = remainder_stack
+        self.index = index
 
-        return CheckBlockCrossings(pair_counts, triple_counts)
+    def __call__(self, superseq_prefix, subseq_tokens):
+        stack = self.stack
+        remainder_stack = self.remainder_stack
+
+        # Update stack with tokens from superseq_prefix
+        for token in superseq_prefix:
+            stack_actions = self.block_delimiters.get(token)
+            if stack_actions is not None:
+                stack_pop, stack_push = stack_actions
+                if stack_pop is not None:
+                    if not self.stack:
+                        # Encountering end-if before if, etc.
+                        return None
+                    if stack is self.stack: stack = list(self.stack)
+                    stack_top, _  = stack.pop()
+                    if stack_top != stack_pop:
+                        # Encountering if then end-while, etc
+                        return None
+                if stack_push is not None:
+                    if stack is self.stack: stack = list(self.stack)
+                    stack.append((stack_push, self.index))
+            self.index += 1
+
+        # If subseq_token is a block delimiter, update stack 
+        for token in subseq_tokens:
+            stack_actions = self.block_delimiters.get(token)
+            if stack_actions is not None:
+                stack_pop, stack_push = stack_actions
+                if stack_pop is not None:
+                    if not self.stack or not self.remainder_stack:
+                        # Encountering end-if before if, etc.
+                        return None
+                    # Check that remainder_stack's top is the same as the
+                    # current stack's top
+                    if self.stack[-1] != self.remainder_stack[-1]:
+                        return None
+                    if stack is self.stack: stack = list(self.stack)
+                    stack_top, _ = stack.pop()
+                    if stack_top != stack_pop:
+                        return None
+                    if remainder_stack is self.remainder_stack:
+                        remainder_stack = list(self.remainder_stack)
+                    remainder_stack.pop()
+                if stack_push is not None:
+                    if stack is self.stack: stack = list(self.stack)
+                    stack.append((stack_push, self.index))
+                    if remainder_stack is self.remainder_stack:
+                        remainder_stack = list(self.remainder_stack)
+                    remainder_stack.append(stack[-1])
+            self.index += 1
+            
+        return CheckBlocksWellFormed(
+                stack,
+                remainder_stack,
+                self.index)
 
 
 def is_subseq(a, b):
     b_it = iter(b)
     return all(a_elem in b_it for a_elem in a)
+
+
+def subseq_bounds(a, b):
+    b_idx = 0
+    left_bound = []
+    for a_elem in a:
+        while a_elem != b[b_idx]:
+            b_idx += 1
+        left_bound.append(b_idx)
+        b_idx += 1
+
+    b_idx = len(b) - 1
+    right_bound = []
+    for a_elem in reversed(a):
+        while a_elem != b[b_idx]:
+            b_idx -= 1
+        right_bound.append(b_idx)
+        b_idx -= 1
+    right_bound = right_bound[::-1]
+
+    return left_bound, right_bound
 
 
 def subseq_insertions(a, b, debug=False):
@@ -705,31 +765,10 @@ def subseq_insertions(a, b, debug=False):
     return result
 
 
-def subseq_bounds(a, b):
-    b_idx = 0
-    left_bound = []
-    for a_elem in a:
-        while a_elem != b[b_idx]:
-            b_idx += 1
-        left_bound.append(b_idx)
-        b_idx += 1
-
-    b_idx = len(b) - 1
-    right_bound = []
-    for a_elem in reversed(a):
-        while a_elem != b[b_idx]:
-            b_idx -= 1
-        right_bound.append(b_idx)
-        b_idx -= 1
-    right_bound = right_bound[::-1]
-
-    return left_bound, right_bound
-
-
 def subseq_valid_remainder_exists(a, b, checker):
     # `a` is the subsequence, `b` is the longer sequence.
     if not a:
-        return bool(checker(b))
+        return bool(checker(b, []))
 
     left_bound, right_bound = subseq_bounds(a, b)
 
@@ -739,7 +778,7 @@ def subseq_valid_remainder_exists(a, b, checker):
             continue
 
         # Try placing a[0] in b[i]
-        new_checker = checker(b[:i])
+        new_checker = checker(b[:i], a[0:1])
         if new_checker is None:
             # The current prefix of b is not valid.
             continue
