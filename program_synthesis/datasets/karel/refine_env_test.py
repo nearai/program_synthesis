@@ -421,7 +421,7 @@ class TestComputeAddOps(object):
         assert  self.linearize_to_tokens(tokens) == linearized
 
     def _goal_reached_systematic(self, goal):
-        ops = refine_env.ComputeAddOps(self.parser.parse(goal))
+        goal_atree = refine_env.AnnotatedTree(code=goal)
         queue = collections.deque([(('DEF', 'run', 'm(', 'm)'), None)])
         closed = set()
         goal_reached = False
@@ -431,9 +431,11 @@ class TestComputeAddOps(object):
             closed.add(current)
 
             current_atree = refine_env.AnnotatedTree(code=current)
-            assert refine_env.is_subseq(current_atree.linearized[0], ops.goal)
+            assert refine_env.is_subseq(current_atree.linearized[0],
+                    goal_atree.linearized[0])
 
-            actions = set(ops.run(atree=current_atree))
+            actions = set(
+                refine_env.ComputeAddOps.run(current_atree, goal_atree))
             #bad_actions = set(
             #    a
             #    for a in refine_env.MutationActionSpace(code=current)
@@ -459,9 +461,9 @@ class TestComputeAddOps(object):
             #    mutation_space = refine_env.MutationActionSpace(
             #        tree=copy.deepcopy(current_tree))
             #    mutation_space.apply(bad_action)
-            #    new_code_linearized, _ = ops.linearize(mutation_space.tree)
-            #    self.assertFalse(
-            #        refine_env.is_subseq(new_code_linearized, ops.goal))
+            #    new_code_linearized, _ = refine_env.ComputeAddOps.linearize(mutation_space.tree)
+            #    assert not refine_env.is_subseq(new_code_linearized,
+            #        goal_atree.linearized[0]))
 
         assert goal_reached
 
@@ -469,7 +471,7 @@ class TestComputeAddOps(object):
                 '''DEF run m( m)''',
                 '''DEF run m( move turnLeft m)''',
                 '''DEF run m( move move move move move m)''',
-                '''DEF run m( 
+                '''DEF run m(
                 REPEAT R=10 r( putMarker move r)
                 putMarker turnLeft m)''',
                 '''DEF run m(

@@ -155,7 +155,6 @@ class MutationActionSpace(gym.Space):
             self.atree = AnnotatedTree(tree, code)
         else:
             self.atree = atree
-        self.is_tree_pristine = True
 
     def sample(self):
         raise NotImplementedError
@@ -229,8 +228,6 @@ class MutationActionSpace(gym.Space):
             return False
 
     def apply(self, action):
-        assert self.is_tree_pristine
-
         action_type, args = action
 
         if action_type == mutation.ADD_ACTION:
@@ -297,7 +294,8 @@ class MutationActionSpace(gym.Space):
 
         #elif action_type == mutation.REPLACE_COND:
         #   # Not yet implemented
-        #    return False #elif action_type == mutation.SWITCH_IF_WHILE:
+        #    return False 
+        #elif action_type == mutation.SWITCH_IF_WHILE:
         #    # Not yet implemented
         #    return False
         else:
@@ -490,10 +488,10 @@ class ComputeAddOps(object):
         self.goal_atree = AnnotatedTree(tree=goal_tree)
         self.goal, _ = self.goal_atree.linearized
 
-    def run(self, tree=None, code=None, atree=None):
-        if atree is None:
-            atree = AnnotatedTree(tree, code)
-        linearized, spans = atree.linearized
+    @classmethod
+    def run(cls, cur_atree=None, goal_atree=None):
+        linearized, spans = cur_atree.linearized
+        goal = goal_atree.linearized[0]
 
         # Example:
         #       move move
@@ -525,21 +523,21 @@ class ComputeAddOps(object):
             return seq[:pos] + (item, ) + seq[pos:]
 
         result = []
-        insertions = subseq_insertions(linearized, self.goal)
+        insertions = subseq_insertions(linearized, goal)
         for pos, items in enumerate(insertions):
             for item in items:
-                if item in self.action_ids:
+                if item in cls.action_ids:
                     if not subseq_valid_remainder_exists(
-                            insert(linearized, item, pos), self.goal,
+                            insert(linearized, item, pos), goal,
                             CheckBlocksWellFormed()):
                         continue
                     result.append((mutation.ADD_ACTION, (
-                        pos_to_post_insert_loc(pos), self.idx_to_token[item])))
+                        pos_to_post_insert_loc(pos), cls.idx_to_token[item])))
                     continue
 
                 # Must be if, ifElse, while, or repeat
                 # or the end- counterparts
-                token_type, cond = self.idx_to_token[item]
+                token_type, cond = cls.idx_to_token[item]
                 if token_type[:4] in ('end-', 'else'):
                     continue
 
@@ -547,35 +545,35 @@ class ComputeAddOps(object):
                 block_started = insert(linearized, item, pos)
                 start_loc = pos_to_pre_insert_loc(pos)
                 if token_type == 'ifElse':
-                    else_token = self.token_to_idx['else', cond]
-                    end_token = self.token_to_idx['end-ifElse', cond]
-                    cond_id = self.cond_to_id[cond]
+                    else_token = cls.token_to_idx['else', cond]
+                    end_token = cls.token_to_idx['end-ifElse', cond]
+                    cond_id = cls.cond_to_id[cond]
 
                     else_insertions = subseq_insertions(block_started,
-                                                        self.goal)
+                                                        goal)
                     for else_pos in range(pos + 1, len(block_started) + 1):
                         if else_token not in else_insertions[else_pos]:
                             continue
                         else_loc = pos_to_post_insert_loc(else_pos - 1)
-                        if (atree.pre_insert_locs[start_loc][0] is not
-                                atree.post_insert_locs[else_loc][0]):
+                        if (cur_atree.pre_insert_locs[start_loc][0] is not
+                                cur_atree.post_insert_locs[else_loc][0]):
                             continue
                         else_inserted = insert(block_started, else_token,
                                                else_pos)
                         end_insertions = subseq_insertions(else_inserted,
-                                                           self.goal)
+                                                           goal)
                         for end_pos in range(else_pos + 1,
                                              len(else_inserted) + 1):
                             if end_token not in end_insertions[end_pos]:
                                 continue
                             end_loc = pos_to_post_insert_loc(end_pos - 2)
-                            if (atree.post_insert_locs[else_loc][0] is not
-                                    atree.post_insert_locs[end_loc][0]):
+                            if (cur_atree.post_insert_locs[else_loc][0] is not
+                                   cur_atree.post_insert_locs[end_loc][0]):
                                 continue
                             end_inserted = insert(else_inserted, end_token,
                                                   end_pos)
                             if not subseq_valid_remainder_exists(
-                                    end_inserted, self.goal,
+                                    end_inserted, goal,
                                     CheckBlocksWellFormed()):
                                 continue
                             result.append((
@@ -589,23 +587,23 @@ class ComputeAddOps(object):
                                     # end
                                     end_loc)))
                 else:
-                    end_token = self.token_to_idx['end-' + token_type, cond]
+                    end_token = cls.token_to_idx['end-' + token_type, cond]
                     end_insertions = subseq_insertions(block_started,
-                                                       self.goal)
-                    cond_id = (self.repeat_count_to_id[cond]
+                                                       goal)
+                    cond_id = (cls.repeat_count_to_id[cond]
                                if token_type == 'repeat' else
-                               self.cond_to_id[cond])
+                               cls.cond_to_id[cond])
                     for end_pos in range(pos + 1, len(block_started) + 1):
                         if end_token not in end_insertions[end_pos]:
                             continue
                         end_loc = pos_to_post_insert_loc(end_pos - 1)
-                        if (atree.pre_insert_locs[start_loc][0] is not
-                                atree.post_insert_locs[end_loc][0]):
+                        if (cur_atree.pre_insert_locs[start_loc][0] is not
+                               cur_atree.post_insert_locs[end_loc][0]):
                             continue
                         end_inserted = insert(block_started, end_token,
                                               end_pos)
                         if not subseq_valid_remainder_exists(
-                                end_inserted, self.goal,
+                                end_inserted, goal,
                                 CheckBlocksWellFormed()):
                             continue
                         result.append((
