@@ -418,7 +418,7 @@ class CodeFromTracesExample(
                 self.orig_examples)
 
 
-class CodeFromTracesBatchProcessor(KarelTracer):
+class CodeFromTracesBatchProcessor(object):
     def __init__(self, vocab, for_eval):
         self.vocab = vocab
         self.for_eval = for_eval
@@ -478,7 +478,7 @@ class CodeFromTracesBatchProcessor(KarelTracer):
                 for test_idx, test in enumerate(item.input_tests):
                     self.tracer.reset(indices=test['input'])
                     prog()
-                    self.tracer.actions.append(1) # </s>
+                    self.tracer.actions.append('</s>')
 
                     trace_grids.append(self.tracer.grids)
                     conds.append(self.tracer.conds)

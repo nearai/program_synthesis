@@ -3,6 +3,7 @@ import collections
 import torch
 from torch.autograd import Variable
 
+from program_synthesis.models import beam_search
 
 def default(value, if_none):
     return if_none if value is None else value
@@ -72,3 +73,62 @@ class SequenceMemory(
         state = None if self.state is None else tuple(
                 expand(state_elem, k, dim=1) for state_elem in self.state)
         return SequenceMemory(mem, state)
+
+
+class MaskedMemory(
+        collections.namedtuple('MaskedMemory', ['memory', 'attn_mask'])):
+    @classmethod
+    def from_psp(cls, psp, new_shape=None):
+        memory, lengths = psp.pad(batch_first=True)
+        mask = get_attn_mask(lengths, memory.is_cuda)
+
+        if new_shape is not None:
+            memory = memory.view(*(new_shape + memory.shape[1:]))
+            mask = mask.view(*(new_shape + mask.shape[1:]))
+
+        return cls(memory, mask)
+
+    def expand_by_beam(self, beam_size):
+        return MaskedMemory(*(v.unsqueeze(1).repeat(1, beam_size, *([1] * (
+            v.dim() - 1))).view(-1, *v.shape[1:]) for v in self))
+
+    def apply(self, fn):
+        return MaskedMemory(fn(self.memory), fn(self.attn_mask))
+
+
+def get_attn_mask(seq_lengths, cuda):
+    max_length, batch_size = max(seq_lengths), len(seq_lengths)
+    ranges = torch.arange(
+        0, max_length,
+        out=torch.LongTensor()).unsqueeze(0).expand(batch_size, -1)
+    attn_mask = (ranges >= torch.LongTensor(seq_lengths).unsqueeze(1))
+    if cuda:
+        attn_mask = attn_mask.cuda()
+    return attn_mask
+
+
+class MultiContextLSTMState(
+        collections.namedtuple('MultiContextLSTMState', ['context', 'h', 'c']),
+        beam_search.BeamSearchState):
+    def select_for_beams(self, batch_size, indices):
+        '''Return the hidden state necessary to continue the beams.
+
+        batch size: int
+        indices: 2 x batch size * beam size LongTensor
+        '''
+        selected = [
+            None if self.context is None else self.context.view(
+                batch_size, -1,
+                *self.context.shape[1:])[indices.data.numpy()]
+        ]
+        for v in self.h, self.c:
+            # before: 2 x batch size (* beam size) x num pairs x hidden
+            # after:  2 x batch size x beam size x num pairs x hidden
+            v = v.view(2, batch_size, -1, *v.shape[2:])
+            # result: 2 x indices.shape[1] x num pairs x hidden
+            selected.append(v[(slice(None), ) + tuple(indices.data.numpy(
+            ))])
+        return MultiContextLSTMState(*selected)
+
+    def truncate(self, k):
+        return MultiContextLSTMState(self.context[:k], self.h[:, :k], self.c[:, :k])

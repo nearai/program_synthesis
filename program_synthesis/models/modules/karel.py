@@ -573,7 +573,7 @@ class LGRLSeqRefineDecoder(nn.Module):
                                              *code_memory.shape[1:])
             code_mask = code_mask.view(batch_size, pairs_per_example,
                                          *code_mask.shape[1:])
-            code_memory = base.MaskedMemory(code_memory, code_mask)
+            code_memory = utils.MaskedMemory(code_memory, code_mask)
         else:
             code_memory = None
 
@@ -586,7 +586,7 @@ class LGRLSeqRefineDecoder(nn.Module):
                                              *trace_memory.shape[1:])
             trace_mask = trace_mask.view(batch_size, pairs_per_example,
                                          *trace_mask.shape[1:])
-            trace_memory = base.MaskedMemory(trace_memory, trace_mask)
+            trace_memory = utils.MaskedMemory(trace_memory, trace_mask)
         else:
             trace_memory = None
 
@@ -808,7 +808,7 @@ class LGRLRefineEditMemory(beam_search.BeamSearchMemory):
         io_exp = utils.expand(self.io, beam_size)
         if self.code is None:
             code_exp = None
-        elif isinstance(self.code, base.MaskedMemory):
+        elif isinstance(self.code, utils.MaskedMemory):
             code_exp = self.code.expand_by_beam(beam_size)
         else:
             code_exp = self.code.expand(beam_size)
@@ -891,7 +891,7 @@ class LGRLSeqRefineEditDecoder(nn.Module):
             #code_memory = code_memory.unsqueeze(1).repeat(1, pairs_per_example,
             #                                              1, 1)
             #code_mask = code_mask.unsqueeze(1).repeat(1, pairs_per_example, 1)
-            code_memory = base.MaskedMemory(code_memory, code_mask)
+            code_memory = utils.MaskedMemory(code_memory, code_mask)
         else:
             code_memory = code_memory.mem
 
@@ -1207,12 +1207,7 @@ class LGRLKarel(nn.Module):
         super(LGRLKarel, self).__init__()
         self.args = args
 
-        if self.args.karel_io_enc == 'lgrl':
-            self.encoder = karel_common.LGRLTaskEncoder(args)
-        elif self.args.karel_io_enc == 'presnet':
-            self.encoder = karel_common.PResNetTaskEncoder(args)
-        else:
-            raise ValueError(self.args.karel_io_enc)
+        self.encoder = karel_common.make_task_encoder(args)
         self.decoder = LGRLSeqDecoder(vocab_size, args)
 
     def encode(self, input_grid, output_grid):

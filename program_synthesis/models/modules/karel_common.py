@@ -93,6 +93,17 @@ class PResNetTaskEncoder(nn.Module):
         return enc
 
 
+def make_task_encoder(args):
+    if args.karel_io_enc == 'lgrl':
+        return LGRLTaskEncoder(args)
+    elif args.karel_io_enc == 'presnet':
+        return PResNetTaskEncoder(args)
+    elif args.karel_io_enc == 'none':
+        return none_fn
+    else:
+        raise ValueError(name)
+
+
 class PResNetGridEncoder(nn.Module):
 
     def __init__(self, args):

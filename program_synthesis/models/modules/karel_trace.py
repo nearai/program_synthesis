@@ -335,35 +335,7 @@ class LatePoolingCodeDecoder(nn.Module):
             return LatePoolingCodeDecoder.Memory(io_exp, trace_exp)
 
     # TODO: Deduplicate with LGRLRefineDecoderState.
-    class State(
-            collections.namedtuple('State',
-                                   ['pairs_per_example', 'context', 'h', 'c']),
-            beam_search.BeamSearchState):
-        def select_for_beams(self, batch_size, indices):
-            '''Return the hidden state necessary to continue the beams.
-
-            batch size: int
-            indices: 2 x batch size * beam size LongTensor
-            '''
-            selected = [
-                None if self.context is None else self.context.view(
-                    batch_size, -1,
-                    *self.context.shape[1:])[indices.data.numpy()]
-            ]
-            for v in self.h, self.c:
-                # before: 2 x batch size (* beam size) x num pairs x hidden
-                # after:  2 x batch size x beam size x num pairs x hidden
-                v = v.view(2, batch_size, -1, *v.shape[2:])
-                # result: 2 x indices.shape[1] x num pairs x hidden
-                selected.append(v[(slice(None), ) + tuple(indices.data.numpy(
-                ))])
-            return LatePoolingCodeDecoder.State(self.pairs_per_example,
-                                                *selected)
-
-        def truncate(self, k):
-            return LatePoolingCodeDecoder.State(self.pairs_per_example,
-                                                self.context[:k],
-                                                self.h[:, :k], self.c[:, :k])
+    State = utils.MultiContextLSTMState
 
     def __init__(self, vocab_size, args):
         super(LatePoolingCodeDecoder, self).__init__()
@@ -400,16 +372,8 @@ class LatePoolingCodeDecoder(nn.Module):
     def prepare_memory(self, batch_size, pairs_per_example, io_embed,
                        trace_memory):
         if self.use_trace_memory and trace_memory is not None:
-            # batch * num pairs x trace length x 512
-            trace_memory, trace_lengths = trace_memory.mem.pad(
-                batch_first=True)
-            trace_mask = base.get_attn_mask(trace_lengths, self._cuda)
-            # batch x num pairs x trace length x 512
-            trace_memory = trace_memory.view(batch_size, pairs_per_example,
-                                             *trace_memory.shape[1:])
-            trace_mask = trace_mask.view(batch_size, pairs_per_example,
-                                         *trace_mask.shape[1:])
-            trace_memory = base.MaskedMemory(trace_memory, trace_mask)
+            trace_memory = utils.MaskedMemory.from_psp(trace_memory.mem,
+                    new_shape=(batch_size, pairs_per_example))
         else:
             trace_memory = None
 
@@ -478,7 +442,7 @@ class LatePoolingCodeDecoder(nn.Module):
         return logits, labels
 
     def decode_token(self, token, state, memory, attentions):
-        pairs_per_example = state.pairs_per_example
+        pairs_per_example = state.context.shape[1]
 
         # token: LongTensor, batch (* beam)
         token_emb = self.code_embed(token)
@@ -497,7 +461,7 @@ class LatePoolingCodeDecoder(nn.Module):
         #   io: batch (* beam) x num pairs x hidden size
         #   trace: batch (* beam) x num pairs x trace length x hidden size
         # last_token_emb: batch (* beam) x num pairs x hidden size
-        pairs_per_example = state.pairs_per_example
+        pairs_per_example = state.h.shape[2]
 
         dec_input = utils.maybe_concat(
             (last_token_emb, memory.io, state.context), dim=2)
@@ -532,7 +496,7 @@ class LatePoolingCodeDecoder(nn.Module):
         logits = self.out(emb_for_logits)
 
         return LatePoolingCodeDecoder.State(
-            state.pairs_per_example, None if new_context is None else
+            None if new_context is None else
             new_context.view(-1, pairs_per_example, new_context.shape[-1]),
             *new_state), logits
 
@@ -546,7 +510,7 @@ class LatePoolingCodeDecoder(nn.Module):
             context = None
 
         return LatePoolingCodeDecoder.State(
-            pairs_per_example, context, *utils.lstm_init(
+            context, *utils.lstm_init(
                 self._cuda, 2, 256, batch_size, pairs_per_example))
 
 
@@ -554,12 +518,7 @@ class CodeFromTraces(nn.Module):
     def __init__(self, vocab_size, args):
         super(CodeFromTraces, self).__init__()
 
-        if args.karel_io_enc == 'lgrl':
-            self.io_encoder = karel_common.LGRLTaskEncoder(args)
-        elif args.karel_io_enc == 'none':
-            self.io_encoder = karel_common.none_fn
-        else:
-            raise ValueError(args.karel_io_enc)
+        self.io_encoder = karel_common.make_task_encoder(args)
 
         if args.karel_trace_enc.startswith('indiv'):
             self.trace_encoder = IndividualTraceEncoder(args)
