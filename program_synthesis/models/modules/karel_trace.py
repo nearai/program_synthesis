@@ -319,7 +319,7 @@ class IndividualTraceEncoder(nn.Module):
         # state: 2 (layers) * 2 (directions) x batch x hidden size (256)
         output, state = self.encoder(enc_input.ps)
 
-        return utils.SequenceMemory(
+        return utils.EncodedSequence(
             enc_input.with_new_ps(output), state)
 
 
@@ -383,7 +383,7 @@ class LatePoolingCodeDecoder(nn.Module):
                 input_code, output_code):
         # io_embed: batch x num pairs x 512 or None
         # trace_memory:
-        #   SequenceMemory, containing:
+        #   EncodedSequence, containing:
         #     mem: PackedSequencePlus,
         #          batch size * num pairs x trace length x 512
         #     state: tuple containing two of

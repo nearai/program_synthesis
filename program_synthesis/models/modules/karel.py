@@ -206,7 +206,7 @@ class CodeEncoder(nn.Module):
                                      utils.lstm_init(self._cuda, 4, 256,
                                                inp_embed.ps.batch_sizes[0]))
 
-        return SequenceMemory(
+        return EncodedSequence(
                 inp_embed.with_new_ps(output),
                 state)
 
@@ -273,7 +273,7 @@ class CodeUpdater(nn.Module):
                     lambda t: torch.cat([t, code_trace_update], dim=1)).ps)
 
         code_memory = code_memory.mem.apply(lambda t: t + updates.data)
-        return SequenceMemory(code_memory, new_state)
+        return EncodedSequence(code_memory, new_state)
 
 
 class TraceEncoder(nn.Module):
@@ -395,7 +395,7 @@ class TimeConvTraceEncoder(TraceEncoder):
         # enc: batch x seq length x out_dim
         enc = self.fc(enc.contiguous().view(enc.shape[0], enc.shape[1], -1))
 
-        return SequenceMemory(traces_grids.with_new_ps(
+        return EncodedSequence(traces_grids.with_new_ps(
             nn.utils.rnn.pack_padded_sequence(
                 enc, seq_lengths, batch_first=True)), None)
 
@@ -493,7 +493,7 @@ class RecurrentTraceEncoder(TraceEncoder):
         output, state = self.encoder(seq_embs.ps,
                                      utils.lstm_init(self._cuda, 4, 256,
                                                seq_embs.ps.batch_sizes[0]))
-        return SequenceMemory(seq_embs.with_new_ps(output), state)
+        return EncodedSequence(seq_embs.with_new_ps(output), state)
 
 
 class LGRLSeqRefineDecoder(nn.Module):
@@ -550,7 +550,7 @@ class LGRLSeqRefineDecoder(nn.Module):
 
     def prepare_memory(self, io_embed, code_memory, trace_memory, _):
         # code_memory:
-        #   SequenceMemory, containing:
+        #   EncodedSequence, containing:
         #     mem: PackedSequencePlus,
         #          batch size * num pairs x code length x 512
         #     state: tuple containing two of
@@ -595,14 +595,14 @@ class LGRLSeqRefineDecoder(nn.Module):
     def forward(self, io_embed, code_memory, trace_memory, outputs, _):
         # io_embed: batch size x num pairs x 512
         # code_memory:
-        #   SequenceMemory, containing:
+        #   EncodedSequence, containing:
         #     mem: PackedSequencePlus,
         #          batch size (* num pairs) x code length x 512
         #     state: tuple containing two of
         #       2 (layers) * 2 (directions) x batch size (* num pairs) x 256
         #   or None
         # trace_memory:
-        #   SequenceMemory, containing:
+        #   EncodedSequence, containing:
         #     mem: PackedSequencePlus,
         #          batch size * num pairs x code length x 512
         #     state: tuple containing two of
@@ -876,7 +876,7 @@ class LGRLSeqRefineEditDecoder(nn.Module):
 
     def prepare_memory(self, io_embed, code_memory, _, ref_code):
         # code_memory:
-        #   SequenceMemory, containing:
+        #   EncodedSequence, containing:
         #     mem: PackedSequencePlus,
         #          batch size * num pairs x code length x 512
         #     state: tuple containing two of
@@ -900,7 +900,7 @@ class LGRLSeqRefineEditDecoder(nn.Module):
     def forward(self, io_embed, code_memory, _1, _2, dec_data):
         # io_embed: batch size x num pairs x 512
         # code_memory:
-        #   SequenceMemory, containing:
+        #   EncodedSequence, containing:
         #     mem: PackedSequencePlus,
         #          batch size * num pairs x code length x 512
         #     state: tuple containing two of

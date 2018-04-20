@@ -65,14 +65,15 @@ def lstm_init(cuda, num_layers, hidden_size, *batch_sizes):
     return (init, init)
 
 
-class SequenceMemory(
-        collections.namedtuple('SequenceMemory', ['mem', 'state'])):
+class EncodedSequence(
+        collections.namedtuple('EncodedSequence', ['mem', 'state'])):
+
     def expand(self, k):
         mem = None if self.mem is None else self.mem.expand(k)
         # Assumes state is for an LSTM.
         state = None if self.state is None else tuple(
                 expand(state_elem, k, dim=1) for state_elem in self.state)
-        return SequenceMemory(mem, state)
+        return EncodedSequence(mem, state)
 
 
 class MaskedMemory(
