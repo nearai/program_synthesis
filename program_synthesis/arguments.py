@@ -1,3 +1,5 @@
+import torch
+
 import argparse
 import time
 
@@ -92,6 +94,7 @@ def get_arg_parser(title, mode):
         train_group.add_argument('--karel-trace-grid-enc', default='presnet')
         train_group.add_argument('--karel-trace-cond-enc', default='concat')
         train_group.add_argument('--karel-code-dec', default='latepool')
+        train_group.add_argument('--karel-merge-io', default='max')
 
         train_group.add_argument('--karel-train-shuf', default=False, action='store_true')
 
@@ -107,6 +110,9 @@ def get_arg_parser(title, mode):
         eval_group.add_argument('--eval-final', action='store_true')
         eval_group.add_argument('--infer-output')
         eval_group.add_argument('--infer-limit', type=int)
+
+    else:
+        raise ValueError(mode)
 
     infer_group = parser.add_argument_group('infer')
     infer_group.add_argument('--max_decoder_length', type=int, default=100)
@@ -124,6 +130,13 @@ def get_arg_parser(title, mode):
         '--restore-map-to-cpu', action='store_true', default=False)
 
     return parser
+
+
+def parse(title, mode):
+    parser = get_arg_parser(title, mode)
+    args = parser.parse_args()
+    args.cuda = not args.no_cuda and torch.cuda.is_available()
+    return args
 
 
 def backport_default_args(args):

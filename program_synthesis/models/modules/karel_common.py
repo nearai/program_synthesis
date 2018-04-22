@@ -101,7 +101,7 @@ def make_task_encoder(args):
     elif args.karel_io_enc == 'none':
         return none_fn
     else:
-        raise ValueError(name)
+        raise ValueError(args.karel_io_enc)
 
 
 class PResNetGridEncoder(nn.Module):
@@ -128,11 +128,15 @@ class PResNetGridEncoder(nn.Module):
         self.grid_fc = nn.Linear(64 * 18 * 18, 256)
 
     def forward(self, grids):
-        # grids: batch size x 15 x 18 x 18
+        # grids: batch... x 15 x 18 x 18
+        batch_dims = grids.shape[:-3]
+        grids = grids.contiguous().view(-1, 15, 18, 18)
+
         enc = self.initial_conv(grids)
         for block in self.blocks:
             enc = enc + block(enc)
-        enc = self.grid_fc(enc.view(enc.shape[0], -1))
+        enc = self.grid_fc(enc.view(*(batch_dims + (-1,))))
+
         return enc
 
 
@@ -169,12 +173,28 @@ class LGRLGridEncoder(nn.Module):
         self.grid_fc = nn.Linear(64 * 18 * 18, 256)
 
     def forward(self, grids):
+        # grids: batch... x 15 x 18 x 18
+        batch_dims = grids.shape[:-3]
+        grids = grids.contiguous().view(-1, 15, 18, 18)
+
         # grids: batch size x 15 x 18 x 18
         enc = self.initial_conv(grids)
         enc = enc + self.block_1(enc)
         enc = enc + self.block_2(enc)
-        enc = self.grid_fc(enc.view(enc.shape[0], -1))
+        enc = self.grid_fc(enc.view(*(batch_dims + (-1,))))
+
         return enc
+
+
+def make_grid_encoder(args):
+    if args.karel_trace_grid_enc == 'lgrl':
+       return LGRLGridEncoder(args)
+    elif args.karel_trace_grid_enc == 'presnet':
+        return PResNetGridEncoder(args)
+    elif args.karel_trace_grid_enc == 'none':
+        return none_fn
+    else:
+        raise ValueError(args.karel_trace_grid_enc)
 
 
 def none_fn(*args, **kwargs):

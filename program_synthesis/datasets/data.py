@@ -112,6 +112,21 @@ class PlaceholderVocab(object):
         return len(self._vocab) + self._num_placeholders
 
 
+class Vocab(object):
+    def __init__(self, keys):
+        self.keys = keys
+        self.key_to_idx = {key: i for i, key in enumerate(keys)}
+
+    def stoi(self, key):
+        return self.key_to_idx[key]
+
+    def itos(self, idx):
+        return self.keys[idx]
+
+    def __len__(self):
+        return len(self.keys)
+
+
 def flatten_lisp_code(code):
     if isinstance(code, basestring):
         return [code]

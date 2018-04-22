@@ -62,14 +62,7 @@ class TraceDecoder(nn.Module):
         super(TraceDecoder, self).__init__()
         self._cuda = args.cuda
 
-        if args.karel_trace_grid_enc == 'lgrl':
-            self.grid_encoder = karel_common.LGRLGridEncoder(args)
-        elif args.karel_trace_grid_enc == 'presnet':
-            self.grid_encoder = karel_common.PResNetGridEncoder(args)
-        elif args.karel_trace_grid_enc == 'none':
-            self.grid_encoder = karel_common.none_fn
-        else:
-            raise ValueError(args.karel_trace_grid_enc)
+        self.grid_encoder = karel_common.make_grid_encoder(args)
 
         # Conditionals:
         #  front/left/rightIsClear, markersPresent
@@ -228,14 +221,7 @@ class IndividualTraceEncoder(nn.Module):
         super(IndividualTraceEncoder, self).__init__()
 
         # Grid encoder
-        if args.karel_trace_grid_enc == 'lgrl':
-            self.grid_encoder = karel_common.LGRLGridEncoder(args)
-        elif args.karel_trace_grid_enc == 'presnet':
-            self.grid_encoder = karel_common.PResNetGridEncoder(args)
-        elif args.karel_trace_grid_enc == 'none':
-            self.grid_encoder = karel_common.none_fn
-        else:
-            raise ValueError(args.karel_trace_grid_enc)
+        self.grid_encoder = karel_common.make_grid_encoder(args)
 
         # Conditionals:
         #  front/left/rightIsClear, markersPresent

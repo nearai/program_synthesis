@@ -165,6 +165,24 @@ class KarelExample(object):
         }
 
 
+class KarelEditExample(object):
+
+    __slots__ = ('cur_code', 'goal_code', 'allowed_edits', 'input_tests',
+                 'tests')
+
+    def __init__(self,
+            cur_code,
+            goal_code,
+            allowed_edits,
+            input_tests,
+            tests):
+        self.cur_code = cur_code
+        self.goal_code = goal_code
+        self.allowed_edits = allowed_edits
+        self.input_tests = input_tests
+        self.tests = tests
+
+
 class BucketizedSampler(object):
 
     def __init__(self, dataset, buckets, bucket_key, adaptive_size=None):
