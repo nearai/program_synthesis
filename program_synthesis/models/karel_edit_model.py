@@ -47,6 +47,12 @@ class KarelStepEditModel(karel_model.BaseKarelModel):
 
         super(KarelStepEditModel, self).__init__(args)
 
+    def debug(self, batch):
+        pass
+
+    def eval(self, batch):
+        raise NotImplementedError
+
     def compute_loss(self, batch):
         batch_size = batch.batch_size
         if self.args.cuda:
@@ -55,19 +61,27 @@ class KarelStepEditModel(karel_model.BaseKarelModel):
         initial_state, memory, initial_logits = self.model.prepare_initial(
             batch.input_grids, batch.output_grids, batch.current_grids,
             batch.current_code)
-        max_code_length = memory.current_code.memory.shape[1]
+        max_code_length = memory.current_code.memory.shape[2]
         initial_state_orig = initial_state
         # state before: (batch x num pairs x hidden,
         #                num layers x batch x num pairs x hidden,
         #                num layers x batch x num pairs x hidden)
-        # state after: list of (batch x num pairs x hidden,
+        # state after: list of (1 x num pairs x hidden,
         #                       1 x num layers x num pairs x hidden,
         #                       1 x num layers x num pairs x hidden)
         initial_state = zip(
             torch.chunk(initial_state.context, batch_size),
             torch.chunk(initial_state.h.permute(1, 0, 2, 3), batch_size),
             torch.chunk(initial_state.c.permute(1, 0, 2, 3), batch_size))
-        # memory: io, current_grid, current_code_memory, current_code_attn_mask
+        # memory: io, current_grid, current_code.memory, current_code.attn_mask
+        # before: (batch x num pairs x 512,
+        #          batch x num pairs x 256,
+        #          batch x num pairs x max code length x 512,
+        #          batch x num pairs x max code length)
+        # after: list of (1 x num pairs x 512,
+        #                 1 x num pairs x 256,
+        #                 1 x num pairs x max code length x 512,
+        #                 1 x num pairs x max code length)
         memory = zip(*(torch.chunk(t, batch_size) for t in memory.to_flat()))
         initial_logits = torch.chunk(initial_logits, batch_size)
 
@@ -100,12 +114,14 @@ class KarelStepEditModel(karel_model.BaseKarelModel):
                 return output, (context, h, c)
 
             def log_prob(logits, idx, size):
+                assert idx < size
                 return fold.add(
-                    'tf_torch_take:{}'.format(size),
+                    'tf_get_log_prob:{}'.format(size),
                     fold.add('tf_torch_log_softmax:{}'.format(size), logits),
                     idx)
 
-            def pointer_logits(output):
+            def pointer_logits(output, loc):
+                assert current_code_attn_mask[0, loc] == 0
                 return fold.add('pointer_logits', output, current_code_memory,
                                 current_code_attn_mask)
 
@@ -125,7 +141,7 @@ class KarelStepEditModel(karel_model.BaseKarelModel):
                     output, state = step(initial_state[batch_idx],
                                          karel_action)
                     loc_log_prob = log_prob(
-                        pointer_logits(output), location, max_code_length)
+                        pointer_logits(output, location), location, max_code_length)
 
                     item_log_probs.append(
                         batched_sum(action_log_prob, loc_log_prob))
@@ -152,11 +168,11 @@ class KarelStepEditModel(karel_model.BaseKarelModel):
                     output, state = step(state, cond)
 
                     start_log_prob = log_prob(
-                        pointer_logits(output), start, max_code_length)
+                        pointer_logits(output, start), start, max_code_length)
                     output, state = step_pointer(state, start)
 
                     end_log_prob = log_prob(
-                        pointer_logits(output), end, max_code_length)
+                        pointer_logits(output, end), end, max_code_length)
 
                     item_log_probs.append(
                         batched_sum(block_type_log_prob, cond_log_prob,
@@ -177,15 +193,15 @@ class KarelStepEditModel(karel_model.BaseKarelModel):
                     output, state = step(state, cond_id)
 
                     if_start_log_prob = log_prob(
-                        pointer_logits(output), if_start, max_code_length)
+                        pointer_logits(output, if_start), if_start, max_code_length)
                     output, state = step_pointer(state, if_start)
 
                     else_start_log_prob = log_prob(
-                        pointer_logits(output), else_start, max_code_length)
+                        pointer_logits(output, else_start), else_start, max_code_length)
                     output, state = step_pointer(state, else_start)
 
                     end_log_prob = log_prob(
-                        pointer_logits(output), end, max_code_length)
+                        pointer_logits(output, end), end, max_code_length)
 
                     item_log_probs.append(
                         batched_sum(block_type_log_prob, cond_log_prob,
@@ -194,7 +210,8 @@ class KarelStepEditModel(karel_model.BaseKarelModel):
 
             if not allowed_edits:
                 item_log_probs.append(
-                    log_prob(initial_logits[batch_idx], -1,
+                    log_prob(initial_logits[batch_idx],
+                             len(self.model.initial_vocab) - 1,
                              len(self.model.initial_vocab)))
 
             log_probs.append(item_log_probs)
@@ -202,8 +219,8 @@ class KarelStepEditModel(karel_model.BaseKarelModel):
         # log_probs before: list (batch size) of list (allowed_edits)
         # log_probs after: list (batch size) of Tensor, each with length
         #                  `allowed_edits`
-        log_probs = fold.apply(self.model, log_probs)
-        loss = -torch.mean(torch.cat([utils.logsumexp(t) for t in log_probs]))
+        log_probs_t = fold.apply(self.model, log_probs)
+        loss = -torch.mean(torch.cat([utils.logsumexp(t) for t in log_probs_t]))
 
         return loss
 

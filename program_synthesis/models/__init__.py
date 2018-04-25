@@ -2,6 +2,7 @@ from program_synthesis.models.karel_model import KarelLGRLModel
 from program_synthesis.models.karel_model import  KarelLGRLRefineModel
 from program_synthesis.models.karel_trace_model import TracePredictionModel
 from program_synthesis.models.karel_trace_model import  CodeFromTracesModel
+from program_synthesis.models.karel_edit_model import KarelStepEditModel
 
 
 def get_model(args):
@@ -10,5 +11,6 @@ def get_model(args):
         'karel-lgrl-ref': KarelLGRLRefineModel,
         'karel-trace-pred': TracePredictionModel,
         'karel-code-trace': CodeFromTracesModel,
+        'karel-edit': KarelStepEditModel,
     }
     return MODEL_TYPES[args.model_type](args)

@@ -260,8 +260,8 @@ class KarelEdit(nn.Module):
 
     # Methods for TorchFold.
     def __getattr__(self, name):
-        if name.startswith('tf_torch_take'):
-            return torch.take
+        if name.startswith('tf_get_log_prob'):
+            return self.tf_get_log_prob
         elif name.startswith('tf_torch_log_softmax'):
             return functools.partial(torch.nn.functional.log_softmax, dim=-1)
         else:
@@ -291,7 +291,16 @@ class KarelEdit(nn.Module):
     def tf_get_code_emb(self, memory, loc):
         # memory: batch x length x hidden
         # loc: batch, LongTensor
+        assert (loc < memory.shape[1]).all()
         return self.proj_code_for_input(memory[range(memory.shape[0]), loc])
+
+    def tf_get_log_prob(self, log_probs, idx):
+        # log_probs: batch x max length
+        # idx: batch, LongTensor
+        assert (idx < log_probs.shape[1]).all()
+        log_probs_cpu = log_probs.cpu()
+        idx_cpu = idx.cpu()
+        return log_probs[range(log_probs.shape[0]), idx]
 
     def tf_batched_sum(self, v1, v2, v3, v4, v5):
         return torch.sum(torch.stack((v1, v2, v3, v4, v5), dim=-1), dim=-1)

@@ -19,6 +19,7 @@ def get_arg_parser(title, mode):
     parser.add_argument('--vocab_min_freq', type=int, default=50)
     parser.add_argument('--batch_size', type=int, default=32)
     parser.add_argument('--load-sync', action='store_true')
+    parser.add_argument('--karel-edit-data-beam', type=int, default=5)
 
     parser.add_argument(
         '--pretrained', type=str, default='', 

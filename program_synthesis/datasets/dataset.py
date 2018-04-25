@@ -22,6 +22,8 @@ from program_synthesis.datasets import executor
 from program_synthesis.datasets import indexed_file
 from program_synthesis.datasets import stats
 from program_synthesis.datasets.karel.mutation import KarelExampleMutator
+from program_synthesis.datasets.karel import refine_env
+from program_synthesis.datasets.karel import edit_data_loader
 
 Schema = collections.namedtuple("Schema", ["args", "return_type"])
 
@@ -484,24 +486,51 @@ def get_algolisp_train_dataset(args, model, for_eval=False):
         max_code_length=args.dataset_max_code_length)
 
 
-def get_karel_train_dataset(args, model, for_eval=False):
+def get_karel_dataset(args, model, section, for_eval, num_async_workers, shuffle):
     suffix = args.dataset[5:]
 
     if args.karel_mutate_ref:
         mutation_dist = [float(x) for x in args.karel_mutate_n_dist.split(',')]
-        train_mutator = KarelExampleMutator(mutation_dist, rng_fixed=for_eval,
+        mutator = KarelExampleMutator(mutation_dist, rng_fixed=for_eval,
                 add_trace=args.karel_trace_enc != 'none')
     else:
-        train_mutator = lambda x: x
+        mutator = lambda x: x
+
+    if suffix == '-edit':
+        karel_dataset = KarelTorchDataset(
+            relpath('../../data/karel/{}.pkl'.format(section)), mutator)
+        #collate_fn = model.batch_processor(for_eval=for_eval)
+        collate_fn = model.batch_processor(for_eval=True)
+        if args.load_sync:
+            return edit_data_loader.SynchronousKarelEditDataLoader(
+                    karel_dataset,
+                    args.batch_size,
+                    collate_fn,
+                   beam_size=args.karel_edit_data_beam,
+                   shuffle_queue_size=10000)
+        else:
+            raise ValueError('Only --load-sync supported for now')
+
+    karel_dataset = KarelTorchDataset(
+        relpath('../../data/karel/{}{}.pkl'.format(section, suffix)), mutator)
+    collate_fn = model.batch_processor(for_eval=for_eval)
 
     return torch.utils.data.DataLoader(
-        KarelTorchDataset(
-            relpath('../../data/karel/train{}.pkl'.format(suffix)),
-            train_mutator),
+        karel_dataset,
         args.batch_size,
-        collate_fn=model.batch_processor(for_eval=for_eval),
-        num_workers=0 if args.load_sync else 4,
+        collate_fn=collate_fn,
+        num_workers=0 if args.load_sync else num_async_workers,
         pin_memory=False,
+        shuffle=args.karel_train_shuf and not for_eval)
+
+
+def get_karel_train_dataset(args, model, for_eval=False):
+    return get_karel_dataset(
+        args,
+        model,
+        'train',
+        for_eval,
+        num_async_workers=4,
         shuffle=args.karel_train_shuf and not for_eval)
 
 
@@ -512,41 +541,13 @@ def get_algolisp_eval_dataset(args, _):
 
 
 def get_karel_eval_dataset(args, model):
-    suffix = args.dataset[5:]
-    if args.karel_mutate_ref:
-        mutation_dist = [float(x) for x in args.karel_mutate_n_dist.split(',')]
-        dev_mutator = KarelExampleMutator(mutation_dist, rng_fixed=True,
-                add_trace=args.karel_trace_enc != 'none')
-    else:
-        dev_mutator = lambda x: x
-
-    dev_data = torch.utils.data.DataLoader(
-        KarelTorchDataset(
-            relpath('../../data/karel/val{}.pkl'.format(suffix)),
-            dev_mutator),
-        args.batch_size,
-        collate_fn=model.batch_processor(for_eval=True),
-        num_workers=0 if args.load_sync else 2)
-    return dev_data
+    return get_karel_dataset(
+        args, model, 'val', for_eval=True, num_async_workers=2, shuffle=False)
 
 
 def get_karel_eval_final_dataset(args, model):
-    suffix = args.dataset[5:]
-    if args.karel_mutate_ref:
-        mutation_dist = [float(x) for x in args.karel_mutate_n_dist.split(',')]
-        dev_mutator = KarelExampleMutator(mutation_dist, rng_fixed=True,
-                add_trace=args.karel_trace_enc != 'none')
-    else:
-        dev_mutator = lambda x: x
-
-    dev_data = torch.utils.data.DataLoader(
-        KarelTorchDataset(
-            relpath('../../data/karel/test{}.pkl'.format(suffix)),
-            dev_mutator),
-        args.batch_size,
-        collate_fn=model.batch_processor(for_eval=True),
-        num_workers=0 if args.load_sync else 2)
-    return dev_data
+    return get_karel_dataset(
+        args, model, 'test', for_eval=True, num_async_workers=2, shuffle=False)
 
 
 def set_vocab(args):
