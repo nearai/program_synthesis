@@ -428,6 +428,8 @@ class TestComputeAddOps(object):
 
         while queue:
             current, prev = queue.popleft()
+            if current in closed:
+                continue
             closed.add(current)
 
             current_atree = refine_env.AnnotatedTree(code=current)
@@ -510,25 +512,7 @@ class TestComputeAddOps(object):
                     turnLeft
                 i)
             m)''',
-            ])
-    def testRunShort(self, code):
-        self._goal_reached_systematic(tuple(code.split()))
-
-    @pytest.mark.timeout(20)
-    @pytest.mark.parametrize(
-        'code',
-        open(
-            os.path.join(
-                os.path.dirname(os.path.abspath(__file__)), 'testdata',
-                'short_val_code.txt')).readlines()[:300])
-    def testRunValCode(self, code):
-        self._goal_reached_systematic(tuple(code.split()))
-
-    @pytest.mark.skip
-    def testRunLong(self):
-        programs = [
-                tuple(p.split()) for p in
-                ('''DEF run m(
+                '''DEF run m(
                 REPEAT R=5 r(
                     move
                     IFELSE c( markersPresent c) i(
@@ -544,10 +528,19 @@ class TestComputeAddOps(object):
                     e)
                 r)
                 move
-            m)''',)
-        ]
-        for goal in programs:
-            self._goal_reached_systematic(goal)
+            m)''',
+            ])
+    def testRun(self, code):
+        self._goal_reached_systematic(tuple(code.split()))
+
+    @pytest.mark.parametrize(
+        'code',
+        open(
+            os.path.join(
+                os.path.dirname(os.path.abspath(__file__)), 'testdata',
+                'short_val_code.txt')).readlines()[:300])
+    def testRunValCode(self, code):
+        self._goal_reached_systematic(tuple(code.split()))
 
 
 class SubseqTest(unittest.TestCase):
