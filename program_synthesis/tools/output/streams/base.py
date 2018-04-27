@@ -8,5 +8,5 @@ class OutputStream(object):
     def close(self):
         raise NotImplementedError
 
-    def read(self):
+    def read(self, yield_none_if_waiting=False):
         raise NotImplementedError

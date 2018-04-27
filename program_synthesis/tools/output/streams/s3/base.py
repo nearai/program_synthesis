@@ -17,6 +17,7 @@ class S3OutputStream(OutputStream):
         self._firehose_status = False
         self._last_firehose_status_check = None
         self._buffer_interval_in_seconds = 60
+        self._records = []
 
     def open(self):
         if self._role_name is None:
@@ -63,10 +64,19 @@ class S3OutputStream(OutputStream):
         )
 
     def write(self, data):
+        self._records += data
+
+    def flush(self, closing=False):
+        if not closing and all([record == '\n' for record in self._records]):
+            return
+
+        if len(self._records) == 0:
+            return
+
         if not self._is_open:
             self.open()
 
-        data += '\n'
+        data = ''.join(self._records)
         if self._firehose_status == 'ACTIVE':
             self._firehose.put_record(
                 DeliveryStreamName=self._name,
@@ -76,7 +86,10 @@ class S3OutputStream(OutputStream):
             self._upload_manual_s3_log(data)
             self._check_firehouse_status()
 
+        self._records = []
+
     def close(self):
+        self.flush(closing=True)
         self._firehose.delete_delivery_stream(DeliveryStreamName=self._name)
 
     def _order_all_listed_objects(self, last_key=None):
@@ -106,16 +119,20 @@ class S3OutputStream(OutputStream):
             key=lambda x: x['LastModified'],
         )
 
-    def read(self):
-        try:
-            is_readable = self._check_firehouse_status() \
-                          in ('CREATING', 'ACTIVE')
-        except self._firehose.exceptions.ResourceNotFoundException:
-            is_readable = False
+    def read(self, wait_until_active=False, yield_none_if_waiting=False):
+        is_readable = False
+        while not is_readable:
+            try:
+                is_readable = self._check_firehouse_status() \
+                              in ('CREATING', 'ACTIVE')
+            except self._firehose.exceptions.ResourceNotFoundException:
+                is_readable = False
 
-        if not is_readable:
-            raise Exception('Stream is not active, use aggregate S3 bucket '
-                            'if you are sure that data exists.')
+            if not is_readable:
+                if not wait_until_active:
+                    raise Exception('Stream is not active, use aggregate S3 bucket '
+                                    'if you are sure that data exists.')
+                time.sleep(5)
 
         last_key = last_update = final_flush_timestamp = None
         while True:
@@ -135,6 +152,8 @@ class S3OutputStream(OutputStream):
                         and time.time() - last_update > update_limit_minutes * 60:
                     raise Exception("Active stream has not received update in "
                                     "{} minutes.".format(update_limit_minutes))
+                if yield_none_if_waiting:
+                    yield None
                 time.sleep(5)
                 continue
 

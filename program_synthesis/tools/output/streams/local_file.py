@@ -19,7 +19,7 @@ class LocalFileOutputStream(OutputStream):
     def close(self):
         self._file.close()
 
-    def read(self):
+    def read(self, yield_none_if_waiting=False):
         if self._file is None:
             self.open()
         yield self._file.read()
