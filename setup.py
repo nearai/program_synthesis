@@ -13,6 +13,7 @@ setup(
         'https://github.com/nearai/pytorch-tools/tarball/master#egg=pytorch-tools-0.0.1',
     ],
     install_requires=[
+        'boto3==1.7.10',
         'cached-property~=1.4',
         'ipython==5.5.0',
         'numpy==1.13.0',
