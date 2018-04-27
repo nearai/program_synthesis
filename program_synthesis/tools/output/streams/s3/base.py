@@ -6,6 +6,8 @@ from program_synthesis.tools.output.streams.base import OutputStream
 
 
 class S3OutputStream(OutputStream):
+    __version__ = '0.0.0'
+
     def __init__(self, name, bucket, prefix, role_name=None):
         self._name = name
         self._bucket = bucket
