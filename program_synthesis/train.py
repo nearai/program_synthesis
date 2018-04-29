@@ -1,4 +1,5 @@
 import argparse
+import collections
 import copy
 import math
 import random
@@ -7,6 +8,7 @@ import os
 import json
 
 import torch
+import tqdm
 
 from program_synthesis import arguments
 from program_synthesis import datasets
@@ -72,16 +74,25 @@ def train(args):
             reporter.report()
             if m.last_step % args.eval_every_n == 0:
                 m.model.eval()
-                stats = {'correct': 0, 'total': 0}
-                for dev_idx, dev_batch in enumerate(dev_data):
+                stats = collections.defaultdict(int)
+                for dev_idx, dev_batch in tqdm.tqdm(enumerate(dev_data)):
                     batch_res = m.eval(dev_batch)
-                    stats['correct'] += batch_res['correct']
-                    stats['total'] += batch_res['total']
-                    if dev_idx > args.eval_n_steps:
+                    for k, v in batch_res.items():
+                        stats[k] += v
+                    if args.eval_n_steps and dev_idx > args.eval_n_steps:
                         break
-                accuracy = float(stats['correct']) / stats['total']
-                print("Dev accuracy: %.5f" % accuracy)
-                reporter.record(m.last_step, **{'accuracy/dev': accuracy})
+                if 'correct' in stats:
+                    stats['accuracy'] = stats['correct']
+                    del stats['correct']
+                total = float(stats['total'])
+                del stats['total']
+                for k in stats:
+                    stats[k] /= total
+                print("Step {} stats: " + ", ".join(
+                    "{} = {}".format(k, v) for k, v in stats.items()))
+                reporter.record(m.last_step,
+                                **{'{}/dev': v
+                                   for k, v in stats.items()})
                 m.model.train()
 
 

@@ -51,9 +51,20 @@ class KarelStepEditModel(karel_model.BaseKarelModel):
         pass
 
     def eval(self, batch):
-        raise NotImplementedError
+        batch_size = batch.batch_size
+        if self.args.cuda:
+            batch = batch.cuda_infer()
+
+        loss, log_probs_per_example = self.compute_loss_annotated(batch)
+
+        total_log_prob = loss.data[0] * batch_size
+        return {'total': batch_size, 'log prob': total_log_prob}
 
     def compute_loss(self, batch):
+        loss, _ = self.compute_loss_annotated(batch)
+        return loss
+
+    def compute_loss_annotated(self, batch):
         batch_size = batch.batch_size
         if self.args.cuda:
             batch = batch.cuda_train()
@@ -220,9 +231,10 @@ class KarelStepEditModel(karel_model.BaseKarelModel):
         # log_probs after: list (batch size) of Tensor, each with length
         #                  `allowed_edits`
         log_probs_t = fold.apply(self.model, log_probs)
-        loss = -torch.mean(torch.cat([utils.logsumexp(t) for t in log_probs_t]))
+        log_probs_per_example = [utils.logsumexp(t) for t in log_probs_t]
+        loss = -torch.mean(torch.cat(log_probs_per_example))
 
-        return loss
+        return loss, log_probs_per_example
 
     def batch_processor(self, for_eval):
         return KarelStepEditBatchProcessor(self.args, self.vocab, for_eval)

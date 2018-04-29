@@ -496,24 +496,21 @@ def get_karel_dataset(args, model, section, for_eval, num_async_workers, shuffle
     else:
         mutator = lambda x: x
 
-    if suffix == '-edit':
-        karel_dataset = KarelTorchDataset(
-            relpath('../../data/karel/{}.pkl'.format(section)), mutator)
-        collate_fn = model.batch_processor(for_eval=for_eval)
+    karel_dataset = KarelTorchDataset(
+        relpath('../../data/karel/{}{}.pkl'.format(section, suffix)), mutator)
+    collate_fn = model.batch_processor(for_eval=for_eval)
+
+    if args.model_type == 'karel-edit':
         if args.load_sync:
             return edit_data_loader.SynchronousKarelEditDataLoader(
                     karel_dataset,
                     args.batch_size,
                     collate_fn,
-                   beam_size=args.karel_edit_data_beam,
+                   beam_size=None if for_eval else args.karel_edit_data_beam,
                    shuffle=not for_eval,
                    shuffle_queue_size=10000)
         else:
             raise ValueError('Only --load-sync supported for now')
-
-    karel_dataset = KarelTorchDataset(
-        relpath('../../data/karel/{}{}.pkl'.format(section, suffix)), mutator)
-    collate_fn = model.batch_processor(for_eval=for_eval)
 
     return torch.utils.data.DataLoader(
         karel_dataset,
