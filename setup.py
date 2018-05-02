@@ -16,6 +16,7 @@ setup(
         'boto3==1.7.10',
         'cached-property~=1.4',
         'ipython==5.5.0',
+        'gym==0.10.5',
         'numpy==1.13.0',
         'pytorch-tools==0.0.1',
         'ply==3.8',
