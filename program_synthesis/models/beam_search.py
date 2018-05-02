@@ -58,104 +58,105 @@ def beam_search(batch_size,
     # enc: batch size x hidden size
     # memory: batch size x sequence length x hidden size
     tt = torch.cuda if cuda else torch
-    prev_tokens = Variable(tt.LongTensor(
-        batch_size).fill_(0), volatile=volatile)
-    prev_probs = Variable(tt.FloatTensor(
-        batch_size, 1).fill_(0), volatile=volatile)
+    prev_tokens = Variable(tt.LongTensor(batch_size).fill_(0), volatile=volatile)
+    prev_acc_log_probs = Variable(tt.FloatTensor(batch_size, 1).fill_(0), volatile=volatile)
     prev_hidden = enc
-    finished = [[] for _ in range(batch_size)]
-    result = [[BeamSearchResult(sequence=[], log_probs=[], total_log_prob=0)
-               for _ in range(beam_size)] for _ in range(batch_size)]
-    batch_finished = [False for _ in range(batch_size)]
-    # b_idx: 0, ..., 0, 1, ..., 1, ..., b, ..., b
+    finished_beams = [[] for _ in range(batch_size)]
+    unfinished_beams = [[BeamSearchResult(sequence=[], log_probs=[], total_log_prob=0)
+                         for _ in range(beam_size)] for _ in range(batch_size)]
+    seq_is_finished = [False] * batch_size
+    # seq_indices: 0, ..., 0, 1, ..., 1, ..., b, ..., b
     # where b is the batch size, and each group of numbers has as many elements
     # as the beam size.
-    b_idx = Variable(
-        torch.arange(0, batch_size, out=torch.LongTensor()).unsqueeze(1).repeat(1, beam_size).view(-1), volatile=volatile)
+    seq_indices = Variable(
+        torch.arange(0, batch_size, out=torch.LongTensor()).unsqueeze(1).repeat(1, beam_size).view(-1),
+        volatile=volatile)
 
-    prev_masked_memory = masked_memory.expand_by_beam(beam_size)
+    expanded_masked_memory = masked_memory.expand_by_beam(beam_size)
 
     attn_list = [] if return_attention else None
     for step in range(max_decoder_length):
-        hidden, logits = decode_fn(prev_tokens, prev_hidden,
-                                prev_masked_memory if step > 0 else
-                                masked_memory, attentions=attn_list)
+        hidden, logits = decode_fn(prev_tokens.view(-1), prev_hidden,
+                                   expanded_masked_memory if step > 0 else
+                                   masked_memory, attentions=attn_list)
 
-        logit_size = logits.size(1)
+        vocab_size = logits.size(1)
         # log_probs: batch size x beam size x vocab size
-        log_probs = F.log_softmax(logits, dim=-1).view(batch_size, -1, logit_size)
-        total_log_probs = log_probs + prev_probs.unsqueeze(2)
+        log_probs = F.log_softmax(logits, dim=-1).view(batch_size, -1, vocab_size)
+        acc_log_probs = log_probs + prev_acc_log_probs.unsqueeze(2)
         # log_probs_flat: batch size x beam_size * vocab_size
-        log_probs_flat = total_log_probs.view(batch_size, -1)
+        acc_log_probs_flat = acc_log_probs.view(batch_size, -1)
         # indices: batch size x beam size
         # Each entry is in [0, beam_size * vocab_size)
-        prev_probs, indices = log_probs_flat.topk(min(beam_size, log_probs_flat.size(1)), dim=1)
-        # prev_tokens: batch_size * beam size
+        prev_acc_log_probs, indices_flat = acc_log_probs_flat.topk(min(beam_size, acc_log_probs_flat.size(1)), dim=1)
+        # prev_tokens: batch_size x beam size
         # Each entry indicates which token should be added to each beam.
-        prev_tokens = (indices % logit_size).view(-1)
+        prev_tokens = indices_flat % vocab_size
         # This takes a lot of time... about 50% of the whole thing.
-        indices = indices.cpu()
-        # k_idx: batch size x beam size
-        # Each entry is in [0, beam_size), indicating which beam to extend.
-        k_idx = (indices / logit_size)
-        idx = torch.stack([b_idx, k_idx.view(-1)])
+        indices_flat = indices_flat.cpu()
+        # beam_indices: batch size x beam size
+        # Each entry is in [0, beam_size), indicating which previous beam to extend.
+        beam_indices = indices_flat / vocab_size
+        seq_beam_indices = torch.stack([seq_indices, beam_indices.view(-1)])
         # prev_hidden: (batch size * beam size) x hidden size
         # Contains the hidden states which produced the top-k (k = beam size)
         # tokens, and should be extended in the step.
-        prev_hidden = hidden.select_for_beams(batch_size, idx)
+        prev_hidden = hidden.select_for_beams(batch_size, seq_beam_indices)
 
-        prev_result = result
-        result = [[] for _ in range(batch_size)]
+        prev_unfinished_beams = unfinished_beams
+        unfinished_beams = [[] for _ in range(batch_size)]
         can_stop = True
-        prev_probs_np = prev_probs.data.cpu().numpy()
+        prev_acc_log_probs_np = prev_acc_log_probs.data.cpu().numpy()
         log_probs_np = log_probs.data.cpu().numpy()
-        k_idx = k_idx.data.numpy()
-        indices = indices.data.numpy()
-        for batch_id in range(batch_size):
-            if batch_finished[batch_id]:
+        beam_indices_np = beam_indices.data.numpy()
+        prev_tokens_np = prev_tokens.data.cpu().numpy()
+        for seq_id in range(batch_size):
+            if seq_is_finished[seq_id]:
                 continue
-            # print(step, finished[batch_id])
-            if len(finished[batch_id]) >= beam_size:
+            # print(step, finished_beams[batch_id])
+            if len(finished_beams[seq_id]) >= beam_size:
                 # If last in finished has bigger log prob then best in topk, stop.
-                if finished[batch_id][-1].total_log_prob > prev_probs_np[batch_id, 0]:
-                    batch_finished[batch_id] = True
+                if finished_beams[seq_id][-1].total_log_prob > prev_acc_log_probs_np[seq_id, 0]:
+                    seq_is_finished[seq_id] = True
                     continue
-            for idx in range(beam_size):
-                token = indices[batch_id, idx] % logit_size
-                kidx = k_idx[batch_id, idx]
+            for beam_id in range(beam_size):
+                token = prev_tokens_np[seq_id, beam_id]
+                new_beam_id = beam_indices_np[seq_id, beam_id]
                 # print(step, batch_id, idx, 'token', token, kidx, 'prev', prev_result[batch_id][kidx], prev_probs.data[batch_id][idx])
                 if token == 1:  # 1 == </S>
-                    finished[batch_id].append(BeamSearchResult(
-                        sequence=prev_result[batch_id][kidx].sequence,
-                        total_log_prob=prev_probs_np[batch_id, idx],
-                        log_probs=prev_result[batch_id][kidx].log_probs + [log_probs_np[batch_id, kidx, token]]))
-                    result[batch_id].append(BeamSearchResult(sequence=[], log_probs=[], total_log_prob=0))
-                    prev_probs.data[batch_id][idx] = float('-inf')
+                    finished_beams[seq_id].append(BeamSearchResult(
+                        sequence=prev_unfinished_beams[seq_id][new_beam_id].sequence,
+                        total_log_prob=prev_acc_log_probs_np[seq_id, beam_id],
+                        log_probs=prev_unfinished_beams[seq_id][new_beam_id].log_probs +
+                                  [log_probs_np[seq_id, new_beam_id, token]]))
+                    unfinished_beams[seq_id].append(BeamSearchResult(sequence=[], log_probs=[], total_log_prob=0))
+                    prev_acc_log_probs.data[seq_id, beam_id] = float('-inf')
                 else:
-                    result[batch_id].append(BeamSearchResult(
-                        sequence=prev_result[batch_id][kidx].sequence + [token],
-                        total_log_prob=prev_probs_np[batch_id, idx],
-                        log_probs=prev_result[batch_id][kidx].log_probs + [log_probs_np[batch_id, kidx, token]]))
+                    unfinished_beams[seq_id].append(BeamSearchResult(
+                        sequence=prev_unfinished_beams[seq_id][new_beam_id].sequence + [token],
+                        total_log_prob=prev_acc_log_probs_np[seq_id, beam_id],
+                        log_probs=prev_unfinished_beams[seq_id][new_beam_id].log_probs +
+                                  [log_probs_np[seq_id, new_beam_id, token]]))
                     can_stop = False
-            if len(finished[batch_id]) >= beam_size:
+            if len(finished_beams[seq_id]) >= beam_size:
                 # Sort and clip.
-                finished[batch_id] = sorted(
-                    finished[batch_id], key=lambda x: -x.total_log_prob)[:beam_size]
+                finished_beams[seq_id] = sorted(
+                    finished_beams[seq_id], key=lambda x: x.total_log_prob, reverse=True)[:beam_size]
         if can_stop:
             break
 
-    for batch_id in range(batch_size):
+    for seq_id in range(batch_size):
         # If there is deficit in finished, fill it in with highest probable results.
-        if len(finished[batch_id]) < beam_size:
+        if len(finished_beams[seq_id]) < beam_size:
             i = 0
-            while i < beam_size and len(finished[batch_id]) < beam_size:
-                if result[batch_id][i]:
-                    finished[batch_id].append(result[batch_id][i])
+            while i < beam_size and len(finished_beams[seq_id]) < beam_size:
+                if unfinished_beams[seq_id][i]:
+                    finished_beams[seq_id].append(unfinished_beams[seq_id][i])
                 i += 1
 
     if not return_beam_search_result:
-        for batch_id in range(batch_size):
-            finished[batch_id] = [x.sequence for x in finished[batch_id]]
+        for seq_id in range(batch_size):
+            finished_beams[seq_id] = [x.sequence for x in finished_beams[seq_id]]
 
     if return_attention:
         # all elements of attn_list: (batch size * beam size) x input length
@@ -164,5 +165,5 @@ def beam_search(batch_size,
         attns = torch.stack(
                 [attn.view(batch_size, -1, attn.size(1)) for attn in attn_list],
                 dim=2)
-        return finished, attns
-    return finished
+        return finished_beams, attns
+    return finished_beams
