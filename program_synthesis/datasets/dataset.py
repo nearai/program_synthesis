@@ -255,7 +255,7 @@ class Dataset(object):
         for example in self.data:
             update_freqs(example.text)
             update_freqs(example.code_sequence)
-            for column in example.schema.args.iteritems():
+            for column in example.schema.args.items():
                 update_freqs(column)
         return data.get_vocab(freqs, min_freq)
 
@@ -435,9 +435,9 @@ class KarelTorchDataset(torch.utils.data.Dataset):
 
     def __getitem__(self, idx):
         if self.file is None:
-            self.file = open(self.filename)
+            self.file = open(self.filename, 'rb')
         self.file.seek(self.index[idx])
-        return self.mutator(KarelExample.from_dict(pickle.load(self.file)))
+        return self.mutator(KarelExample.from_dict(pickle.load(self.file, encoding='latin-1')))
 
 
 class KarelDataset(object):
@@ -445,7 +445,7 @@ class KarelDataset(object):
     def __init__(self, filename, batch_size, mutator=lambda x: x):
         self.filename = filename
         self.batch_size = batch_size
-        self.file = open(self.filename)
+        self.file = open(self.filename, 'rb')
         self.mutator = mutator
 
     def __iter__(self):

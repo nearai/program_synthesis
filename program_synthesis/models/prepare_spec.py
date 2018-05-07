@@ -30,12 +30,13 @@ def numpy_to_tensor(arr, cuda, volatile):
 
 class PackedSequencePlus(collections.namedtuple('PackedSequencePlus',
         ['ps', 'lengths', 'sort_to_orig', 'orig_to_sort'])):
-    def __init__(self, ps, lengths, sort_to_orig, orig_to_sort):
+    def __new__(cls, ps, lengths, sort_to_orig, orig_to_sort):
         sort_to_orig = np.array(sort_to_orig)
         orig_to_sort = np.array(orig_to_sort)
-        super(PackedSequencePlus, self).__init__(
-                ps, lengths, sort_to_orig, orig_to_sort)
+        self = super(PackedSequencePlus, cls).__new__(
+            cls, ps, lengths, sort_to_orig, orig_to_sort)
         self.cum_batch_sizes = np.cumsum([0] + self.ps.batch_sizes[:-1])
+        return self
 
     def apply(self, fn):
         return PackedSequencePlus(
