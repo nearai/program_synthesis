@@ -88,7 +88,7 @@ def train(args):
                 del stats['total']
                 for k in stats:
                     stats[k] /= total
-                print("Step {} stats: " + ", ".join(
+                print("Step {} stats: ".format(m.last_step) + ", ".join(
                     "{} = {}".format(k, v) for k, v in stats.items()))
                 reporter.record(m.last_step,
                                 **{'{}/dev': v

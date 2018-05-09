@@ -13,7 +13,6 @@ from program_synthesis import tools
 from program_synthesis.datasets import executor
 from program_synthesis.tools import evaluation
 
-
 class EmptyArgs(object):
     pass
 
@@ -40,9 +39,13 @@ def evaluate(args):
     top_k_exact = np.zeros(args.max_beam_trees, dtype=int)
     top_k_sem = np.zeros(args.max_beam_trees, dtype=int)
     top_k_gen = np.zeros(args.max_beam_trees, dtype=int)
+    exact_ranks = []
+    sem_ranks = []
+    gen_ranks = []
+    outputs = []
     total = 0.0
 
-    iterator = tqdm.tqdm(eval_dataset)
+    iterator = tqdm.tqdm(eval_dataset, dynamic_ncols=True)
     for batch in iterator:
         sequences = m.inference(batch, filtered=False)
 
@@ -50,11 +53,15 @@ def evaluate(args):
             total += 1
             orig_example = batch.orig_examples[batch_idx]
             exact_found, sem_found, gen_found = False, False, False
+            exact_rank, sem_rank, gen_rank = None, None, None
             for rank, tokens in enumerate(beams):
                 # Exact match
-                if not exact_found and tokens == orig_example.code_sequence:
+                ref_code = getattr(orig_example, 'code_sequence',
+                                   getattr(orig_example, 'goal_code', None))
+                if not exact_found and tuple(tokens) == tuple(ref_code):
                     top_k_exact[rank:] += 1
                     exact_found = True
+                    exact_rank = rank
 
                 if not sem_found or not exact_found:
                     # Semantic match (passes all input tests)
@@ -66,6 +73,7 @@ def evaluate(args):
                     if not sem_found and sem_match:
                         top_k_sem[rank:] += 1
                         sem_found = True
+                        sem_rank = rank
 
                     # Generalization (passes all input tests + other tests)
                     tests_eval = executor.evaluate_code(
@@ -75,9 +83,16 @@ def evaluate(args):
                     if not gen_found and gen:
                         top_k_gen[rank:] += 1
                         gen_found = True
+                        gen_rank = rank
 
                 if exact_found and sem_found and gen_found:
                     break
+
+            exact_ranks.append(exact_rank)
+            sem_ranks.append(sem_rank)
+            gen_ranks.append(gen_rank)
+            if args.save_beam_outputs:
+                outputs.append(beams)
 
         iterator.set_postfix(
             exact=top_k_exact[0] / total,
@@ -86,10 +101,33 @@ def evaluate(args):
 
     with open(args.report_path, 'w') as f:
         json.dump({
+            # Total number of programs in this report.
             'total': total,
+            # List where the Nth entry contains the number of programs with
+            # exact match among the top N beam search outputs.
+            # Length = args.max_beam_trees.
             'exact': top_k_exact.tolist(),
+            # List where the Nth entry contains the number of programs with
+            # semantic match (correct on all `input_tests`, given to the model)
+            # among the top N beam search outputs.
+            # Length = args.max_beam_trees.
             'semantic': top_k_sem.tolist(),
-            'generalization': top_k_gen.tolist()
+            # List where the Nth entry contains the number of programs with
+            # generalization (correct on all `input_tests` and `tests) among the
+            # top N beam search outputs.
+            # Length = args.max_beam_trees.
+            'generalization': top_k_gen.tolist(),
+            # For each program, the rank at which the corresponding type of
+            # match was found (None if not applicable to any rank).
+            'ranks': {
+                'exact': exact_ranks,
+                'semantic': sem_ranks,
+                'generalization': gen_ranks,
+            },
+            # List of length `total` where each item is a list containing
+            # `args.max_beam_trees` programs, as output by the beam search.
+            # Can be empty if this output was not saved.
+            'beam_outputs': outputs
         }, f)
 
 

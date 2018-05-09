@@ -80,6 +80,9 @@ def get_arg_parser(title, mode):
             '--refine-sample-frac', type=float, default=0.1,
             help='Fraction of batches for which we should sample code to add to the refinement data for training.')
 
+        train_group.add_argument('--batch-create-train', type=str, default='ConstantBatch(5, 1, False)')
+        train_group.add_argument('--batch-create-eval', type=str, default='ConstantBatch(5, 1, False)')
+
         train_group.add_argument('--karel-trace-enc', default='lstm')
         train_group.add_argument('--karel-code-enc', default='default')
         train_group.add_argument('--karel-code-update', default='default')
@@ -111,11 +114,14 @@ def get_arg_parser(title, mode):
         eval_group.add_argument('--eval-final', action='store_true')
         eval_group.add_argument('--infer-output')
         eval_group.add_argument('--infer-limit', type=int)
+        eval_group.add_argument('--save-beam-outputs', action='store_true')
 
     else:
         raise ValueError(mode)
 
     infer_group = parser.add_argument_group('infer')
+    infer_group.add_argument('--train-data-path', default='')
+    infer_group.add_argument('--eval-data-path', type=str, default='')
     infer_group.add_argument('--max_decoder_length', type=int, default=100)
     infer_group.add_argument('--max_beam_trees', type=int, default=100)
     infer_group.add_argument('--max_beam_iter', type=int, default=1000)

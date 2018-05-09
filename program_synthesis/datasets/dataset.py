@@ -24,6 +24,7 @@ from program_synthesis.datasets import stats
 from program_synthesis.datasets.karel.mutation import KarelExampleMutator
 from program_synthesis.datasets.karel import refine_env
 from program_synthesis.datasets.karel import edit_data_loader
+from program_synthesis.tools import batch_creators
 
 Schema = collections.namedtuple("Schema", ["args", "return_type"])
 
@@ -113,7 +114,8 @@ class KarelExample(object):
         'input_tests',
         'tests',
         'text',
-        'ref_example', )
+        'ref_example',
+        'resplit')
     schema = Schema(None, None)
     code_tree = []
     _empty_trace = executor.KarelTrace([], [], [])
@@ -127,6 +129,7 @@ class KarelExample(object):
         self.tests = tests
         self.text = code_sequence
         self.ref_example = ref_example
+        self.resplit = False
 
     @classmethod
     def from_dict(cls, d):
@@ -166,6 +169,16 @@ class KarelExample(object):
             'ref': self.ref_example.to_dict() if self.ref_example else None
         }
 
+    def resplit_examples(self, batch_creator):
+        assert not self.resplit
+        if batch_creator.is_shuffled:
+            random.shuffle(self.input_tests + self.tests)
+        self.input_tests, self.tests = batch_creator.from_examples(
+                self.input_tests + self.tests)
+        self.resplit = True
+        if self.ref_example:
+            self.ref_example.resplit_examples(batch_creator)
+
 
 class KarelEditExample(object):
 
@@ -184,6 +197,13 @@ class KarelEditExample(object):
         self.input_tests = input_tests
         self.tests = tests
 
+    def resplit_examples(self, batch_creator):
+        assert not self.resplit
+        if batch_creator.is_shuffled:
+            random.shuffle(self.input_tests + self.tests)
+        self.input_tests, self.tests = batch_creator.from_examples(
+                self.input_tests + self.tests)
+        self.resplit = True
 
 class BucketizedSampler(object):
 
@@ -486,7 +506,8 @@ def get_algolisp_train_dataset(args, model, for_eval=False):
         max_code_length=args.dataset_max_code_length)
 
 
-def get_karel_dataset(args, model, section, for_eval, num_async_workers, shuffle):
+def get_karel_dataset(args, model, section, for_eval, num_async_workers,
+                      shuffle, alt_path, batch_creator_spec):
     suffix = args.dataset[5:]
 
     if args.karel_mutate_ref:
@@ -496,9 +517,17 @@ def get_karel_dataset(args, model, section, for_eval, num_async_workers, shuffle
     else:
         mutator = lambda x: x
 
-    karel_dataset = KarelTorchDataset(
-        relpath('../../data/karel/{}{}.pkl'.format(section, suffix)), mutator)
-    collate_fn = model.batch_processor(for_eval=for_eval)
+    if alt_path:
+        path = try_paths(
+                relpath('../../' + alt_path),
+                alt_path)
+    else:
+        path = relpath('../../data/karel/{}{}.pkl'.format(section, suffix))
+
+    karel_dataset = KarelTorchDataset(path, mutator)
+    batch_creator = eval(batch_creator_spec, vars(batch_creators))
+    collate_fn = batch_creators.collate_wrapper(
+        model.batch_processor(for_eval=for_eval), batch_creator)
 
     if args.model_type == 'karel-edit':
         if args.load_sync:
@@ -528,7 +557,9 @@ def get_karel_train_dataset(args, model, for_eval=False):
         'train',
         for_eval,
         num_async_workers=4,
-        shuffle=args.karel_train_shuf and not for_eval)
+        shuffle=args.karel_train_shuf and not for_eval,
+        alt_path=args.train_data_path,
+        batch_creator_spec=args.batch_create_train)
 
 
 def get_algolisp_eval_dataset(args, _):
@@ -539,12 +570,26 @@ def get_algolisp_eval_dataset(args, _):
 
 def get_karel_eval_dataset(args, model):
     return get_karel_dataset(
-        args, model, 'val', for_eval=True, num_async_workers=2, shuffle=False)
+        args,
+        model,
+        'val',
+        for_eval=True,
+        num_async_workers=2,
+        shuffle=False,
+        alt_path=args.eval_data_path,
+        batch_creator_spec=args.batch_create_eval)
 
 
 def get_karel_eval_final_dataset(args, model):
     return get_karel_dataset(
-        args, model, 'test', for_eval=True, num_async_workers=2, shuffle=False)
+        args,
+        model,
+        'test',
+        for_eval=True,
+        num_async_workers=2,
+        shuffle=False,
+        alt_path=args.eval_data_path,
+        batch_creator_spec=args.batch_create_eval)
 
 
 def set_vocab(args):

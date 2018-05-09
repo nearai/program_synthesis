@@ -121,7 +121,6 @@ class BaseCodeModel(BaseModel):
 
         if args.cuda:
             self.model.cuda()
-        print(self.model)
 
     def reset_vocab(self):
         self.last_vocab = data.PlaceholderVocab(
