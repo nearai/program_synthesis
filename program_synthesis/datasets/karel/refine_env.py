@@ -156,8 +156,32 @@ class MutationActionSpace(gym.Space):
         else:
             self.atree = atree
 
+    def full_space(self):
+        space = []
+        # TODO: Add all actions
+
+        # Add actions
+        for loc in self.atree.add_action_locs:
+            for karel_action_name in mutation.ACTION_NAMES:
+                action = (mutation.ADD_ACTION, (loc, karel_action_name))
+                space.append(action)
+
+        # Remove actions
+        for loc in self.atree.remove_action_locs:
+            action = (mutation.REMOVE_ACTION, (loc,))
+            space.append(action)
+
+        # Replace actions
+        for loc in self.atree.replace_action_locs:
+            for karel_action_name in mutation.ACTION_NAMES:
+                action = (mutation.REPLACE_ACTION, (loc, karel_action_name))
+                space.append(action)
+
+        return space
+
     def sample(self):
-        raise NotImplementedError
+        space = self.full_space()
+        return space[np.random.choice(len(space))]
 
     def contains(self, action):
         action_type, args = action
@@ -331,6 +355,7 @@ class KarelRefineEnv(gym.Env):
 
     def __init__(self, input_tests):
         self.input_tests = input_tests
+        self.atree = None
         self.reset()
 
     # Overridden methods
@@ -707,7 +732,7 @@ class CheckBlocksWellFormed(object):
                         remainder_stack = list(self.remainder_stack)
                     remainder_stack.append(stack[-1])
             self.index += 1
-            
+
         return CheckBlocksWellFormed(
                 stack,
                 remainder_stack,
