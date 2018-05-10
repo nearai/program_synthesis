@@ -103,3 +103,9 @@ ENV/
 .mypy_cache/
 
 .idea/
+
+# logs
+program_synthesis/logdirs
+
+# karel_data
+data/karel
