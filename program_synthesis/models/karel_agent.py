@@ -1,35 +1,37 @@
+""" Karel Agent - Reinforcement Learning
+
+    More information on program_synthesis/models/karel-rl.md
+"""
 import collections
-import copy
 
+import io
 import numpy as np
-
 import torch
 import torch.nn as nn
+import torch.utils.data
 from torch import optim
 
 from program_synthesis import datasets
 from program_synthesis.datasets import data
-from program_synthesis.datasets.karel import refine_env
 from program_synthesis.datasets.karel import mutation
-
+from program_synthesis.datasets.karel import refine_env
+from program_synthesis.datasets.karel.refine_env import MutationActionSpace
 from program_synthesis.models import karel_model
 from program_synthesis.models import prepare_spec
 from program_synthesis.models.modules import karel
 from program_synthesis.models.modules import karel_common
 from program_synthesis.models.modules import karel_edit
-
 from program_synthesis.tools import saver
 
-
 DISCOUNT = 0.9
-EPISLON = 0.1
+EPSILON = 0.1
 ALPHA = 0.7
 
 
 #  https://arxiv.org/pdf/1511.04143.pdf
 
-class KarelEditEnv(object):
 
+class KarelEditEnv(object):
     def __init__(self):
         self.dataset = datasets.dataset.KarelTorchDataset(
             datasets.dataset.relpath('../../data/karel/{}{}.pkl'.format('train', '')), lambda x: x)
@@ -43,19 +45,29 @@ class KarelEditEnv(object):
         self._cur_env = None
 
     def reset(self):
+        """
+        :return: (Task, Observation/State)
+        """
         example = self.data_iter.next()  # returns list of 1 element.
         self._cur_env = refine_env.KarelRefineEnv(example[0].input_tests)
         obs = self._cur_env.reset()
         input_grids, output_grids = karel_model.encode_io_grids(example)
         return (input_grids, output_grids), self.prepare_obs(obs)
 
+    @property
+    def atree(self):
+        return self._cur_env.atree
+
     def prepare_tasks(self, tasks):
         input_grids = torch.cat([t[0] for t in tasks], dim=0)
         output_grids = torch.cat([t[1] for t in tasks], dim=0)
-        return (input_grids, output_grids)
+        return input_grids, output_grids
 
     def prepare_states(self, states):
-        return torch.cat(states, dim=0)
+        padded_states = torch.empty(len(states), 20)
+        for idx, state in enumerate(states):
+            padded_states[idx][:state.shape[1]] = state[0]
+        return padded_states
 
     def prepare_obs(self, obs):
         current_code = prepare_spec.lists_padding_to_tensor(
@@ -65,10 +77,16 @@ class KarelEditEnv(object):
         #     [obs['code']], self.vocab.stoi, cuda=False, volatile=True)
         return current_code
 
-    def prepare_actions(self, actions):
+    @staticmethod
+    def prepare_actions(actions):
         return actions
 
     def step(self, action):
+        """ Execute one action on the environment
+
+        :param action:
+        :return: Observation/State, Reward/int, Done/bool, info/dic
+        """
         obs, reward, done, info = self._cur_env.step(action)
         return self.prepare_obs(obs), reward, done, info
 
@@ -81,13 +99,14 @@ class KarelEditPolicy(nn.Module):
         self.io_encoder = karel_common.make_task_encoder(args)
         self.code_encoder = karel.CodeEncoder(vocab_size, args)
 
-        # Action decoder.
+        # Action decoder
         self.action_type = nn.Linear(100, 5)
         self.action_pointer = karel_edit.ScaledDotProductPointer(100, 100)
         self.action_token = nn.Linear(100, vocab_size, bias=False)
 
-    def encode(self, input_grid, output_grid):
-        return self.io_encoder(input_grid, output_grid)
+    def encode_task(self, tasks):
+        input_grids, output_grids = tasks
+        return self.io_encoder(input_grids, output_grids)
 
     def encode_code(self, code_state):
         return self.code_encoder(code_state)
@@ -102,30 +121,33 @@ class KarelEditPolicy(nn.Module):
 
 
 class KarelAgent(object):
-
     def __init__(self, env, args):
         self.vocab = env.vocab
+        self.env = env
+        self.task_state = None
+
+        self.build_model(args)
+
+    def build_model(self, args):
         self.model = KarelEditPolicy(30, args)
         self.criterion = nn.MSELoss()
         self.optimizer = optim.Adam(self.model.parameters(), lr=args.lr)
-        self.task_state = None
 
     def set_task(self, task):
-        input_grids, output_grids = task
-        self.task_state = self.model.encode(input_grids, output_grids)
+        self.task_state = self.model.encode_task(task)
 
     def select_action(self, state, epsilon_greedy):
-        return (mutation.ADD_ACTION, (3, 'move'))
-        assert self.task_state is not None
-        if epsilon_greedy is not None and np.random.random() < epsilon_greedy:
-            return np.random.randint(state.size)
-        _, action = self.best_action_value([state])
-        return action[0]
+        action_space = MutationActionSpace(atree=self.env.atree)
+        if True or (epsilon_greedy is not None and np.random.random() < epsilon_greedy):
+            action = action_space.sample()
+        else:
+            _, action = self.best_action_value([state])
+
+        return action
 
     def action_value(self, tasks, states):
-        input_grids, output_grids = tasks
-        task_state = self.model.encode(input_grids, output_grids)
-        return self.model.action_value(task_state, states)
+        tasks_encoded = self.model.encode_task(tasks)
+        return self.model.action_value(tasks_encoded, states)
 
     def best_action_value(self, tasks, states):
         input_grids, output_grids = tasks
@@ -151,7 +173,6 @@ class KarelAgent(object):
 
 
 class ReplayBuffer(object):
-
     def __init__(self, max_size, erase_factor):
         self.max_size = max_size
         self.erase_factor = erase_factor
@@ -172,11 +193,19 @@ class ReplayBuffer(object):
         return [self.buffer[idx] for idx in index]
 
 
-StepExample = collections.namedtuple('StepExample', ['task', 'state', 'action', 'reward', 'new_state'])
+class StepExample(collections.namedtuple('StepExample', ['task', 'state', 'action', 'reward', 'new_state'])):
+    def __str__(self):
+        buff = io.StringIO()
+
+        print("State:", self.state, file=buff)
+        print(self.state.shape, file=buff)
+        print("Action: {} Reward: {}".format(self.action, self.reward), file=buff)
+
+        return buff.getvalue()
 
 
 def rollout(env, agent, epsilon_greedy, max_rollout_length):
-    eps = EPISLON if epsilon_greedy else None
+    eps = EPSILON if epsilon_greedy else None
     task, state = env.reset()
     agent.set_task(task)
     experience = []
@@ -193,7 +222,6 @@ def rollout(env, agent, epsilon_greedy, max_rollout_length):
 
 
 class PolicyTrainer(object):
-
     def __init__(self, args, agent_cls, env):
         self.args = args
         self.actor = agent_cls(env, args)
@@ -207,10 +235,10 @@ class PolicyTrainer(object):
         actions = self.env.prepare_actions([ex.action for ex in batch])
         targets = np.zeros(len(batch))
         # prepare_batch(batch)
-        value = self.critic.action_value(states)
+        values = self.critic.action_value(tasks, states)
         new_value, _ = self.actor.best_action_value(new_states)
         for idx, ex in enumerate(batch):
-            Q_s_a = value[idx][ex.action]
+            Q_s_a = values[idx][ex.action]
             new_Q_s_a = 0 if ex.reward == 0 else (ex.reward + DISCOUNT * new_value[idx])
             targets[idx] = Q_s_a + ALPHA * (new_Q_s_a - Q_s_a)
         self.critic.train(tasks, states, actions, targets)
@@ -222,7 +250,7 @@ class PolicyTrainer(object):
             for _ in range(self.args.num_episodes):
                 _, experience = rollout(self.env, self.actor, True, self.args.max_rollout_length)
                 replay_buffer.add(experience)
-            
+
             for _ in range(self.args.num_training_steps):
                 batch = replay_buffer.sample(self.args.batch_size)
                 self.train_actor_critic(batch)
@@ -235,16 +263,21 @@ class PolicyTrainer(object):
 def main():
     args = saver.ArgsDict(
         num_epochs=100, max_rollout_length=10, replay_buffer_size=16384, erase_factor=0.01,
-        num_episodes=10, num_training_steps=10, batch_size=32, update_actor_epoch=10, 
-        karel_io_enc='lgrl', lr=0.001)
+        num_episodes=10, num_training_steps=10, batch_size=32, update_actor_epoch=10,
+        karel_io_enc='lgrl', lr=0.001, cuda=False)
 
     agent_cls = KarelAgent
     env = KarelEditEnv()
-    # experience = rollout(env, agent_cls(env, args), False, 1)
-    # for x in experience:
-    #     print(x)
-    # env.reset()
-    # print(env.step((mutation.ADD_ACTION, (3, 'move'))))
+
+    success, experience = rollout(env, agent_cls(env, args), False, 10)
+
+    for x in experience:
+        print("*****************")
+        print(x)
+
+    env.reset()
+    exit(0)
+
     trainer = PolicyTrainer(args, agent_cls, env)
     trainer.train()
 
