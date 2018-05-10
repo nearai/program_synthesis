@@ -8,6 +8,7 @@ import string
 import unicodedata
 import os
 import sys
+import six
 
 from IPython.lib import pretty
 
@@ -35,7 +36,10 @@ def load_vocab(filename, mapping=True):
         for idx, line in enumerate(f):
             if mapping:
                 try:
-                    key, value = line.decode('utf-8').strip().split('\t')
+                    if six.PY2:
+                        key, value = line.decode('utf-8').strip().split('\t')
+                    else:
+                        key, value = line.strip().split('\t')
                     if key in vocab:
                         raise ValueError(
                             "Got %s key again with value %s" % (key, value))
@@ -44,7 +48,10 @@ def load_vocab(filename, mapping=True):
                     print(line)
                     raise e
             else:
-                key = line.decode('utf-8').strip()
+                if six.PY2:
+                    key = line.decode('utf-8').strip()
+                else:
+                    key = line.strip()
                 if key in vocab:
                     raise ValueError(
                         "Got %s key again with value %s" % (key, idx))
@@ -55,12 +62,15 @@ def load_vocab(filename, mapping=True):
 
 def save_vocab(filename, vocab):
     with open(filename, 'w') as f:
-        for key, value in sorted(vocab.iteritems(), key=lambda x: x[1]):
-            f.write((u'%s\t%d\n' % (key, value)).encode('utf-8'))
+        for key, value in sorted(vocab.items(), key=lambda x: x[1]):
+            line = u'%s\t%d\n' % (key, value)
+            if six.PY2:
+                line = line.encode('utf-8')
+            f.write(line)
 
 
 def get_rev_vocab(vocab):
-    return {idx: key for key, idx in vocab.iteritems()}
+    return {idx: key for key, idx in vocab.items()}
 
 
 def get_vocab(freqs, threshold):
@@ -68,7 +78,7 @@ def get_vocab(freqs, threshold):
              UNK_TOKEN_STR: UNK_TOKEN, SEQ_SPLIT_STR: SEQ_SPLIT}
     init_size = len(vocab)
     for idx, (key, value) in enumerate(
-            sorted(freqs.iteritems(), key=lambda x: x[1], reverse=True)):
+            sorted(freqs.items(), key=lambda x: x[1], reverse=True)):
         if value < threshold:
             break
         vocab[key] = idx + init_size
