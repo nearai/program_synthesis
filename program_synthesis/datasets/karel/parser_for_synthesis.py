@@ -1,5 +1,6 @@
 from __future__ import print_function
 import functools
+import six
 
 import ply.lex
 
@@ -165,7 +166,7 @@ class KarelForSynthesisParser(Parser):
         except KeyError as e:
             raise KarelSyntaxError('Unknown token: {}'.format(e))
         tokens.append(None)
-        return iter(tokens).__next__
+        return six.next(iter(tokens))
 
     #########
     # parser
