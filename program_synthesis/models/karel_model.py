@@ -56,7 +56,7 @@ def encode_trace_grids(grids_lists):
         if isinstance(grid, dict):
             last_grid = last_grids[batch_idx]
             assert last_grid.isdisjoint(grid['plus'])
-            assert last_grid >= grid['minus']
+            assert last_grid >= set(grid['minus'])
             last_grid.update(grid['plus'])
             last_grid.difference_update(grid['minus'])
         else:

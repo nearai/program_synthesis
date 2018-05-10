@@ -195,7 +195,7 @@ class MultiEmbedding(nn.Module):
         super(MultiEmbedding, self).__init__()
 
         self.embeddings = nn.ModuleList(
-            [nn.Embedding(size, dim) for size, dim in zip(sizes, dims)])
+            [nn.Embedding(size, int(dim)) for size, dim in zip(sizes, dims)])
         if combiner == 'sum':
             self.combiner = self._sum
         elif combiner == 'cat':
