@@ -249,7 +249,7 @@ class Dataset(object):
         self.shuffle = shuffle
 
     def __iter__(self):
-        self._index = range(len(self.data))
+        self._index = list(range(len(self.data)))
         if self.shuffle:
             random.shuffle(self._index)
         self._last_i = 0
