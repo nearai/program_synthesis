@@ -95,7 +95,7 @@ class PlaceholderVocab(object):
 
     def reset(self):
         self._last_idx = 0
-        self._indicies = range(len(self._vocab), len(self._vocab) + self._num_placeholders)
+        self._indicies = list(range(len(self._vocab), len(self._vocab) + self._num_placeholders))
         random.shuffle(self._indicies)
         self._placeholders = {}
         self._rev_placeholders = {}
