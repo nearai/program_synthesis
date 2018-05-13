@@ -387,12 +387,12 @@ class LatePoolingCodeDecoder(nn.Module):
         # batch x num pairs x 512
         io_embed_slice = io_embed = None
         if memory.io is not None:
-            io_embed = io_embed_slice = memory.io[list(input_code.orig_to_sort)]
+            io_embed = io_embed_slice = memory.io[input_code.orig_to_sort, :]
         # MaskedMemory, batch x num pairs x trace length x 512
         trace_memory = trace_memory_slice = None
         if memory.trace is not None:
             trace_memory = trace_memory_slice = memory.trace.apply(
-                lambda t: t[list(input_code.orig_to_sort)])
+                lambda t: t[input_code.orig_to_sort, :])
         memory = LatePoolingCodeDecoder.Memory(io_embed_slice,
                 trace_memory_slice)
 
