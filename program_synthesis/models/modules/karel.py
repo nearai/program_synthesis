@@ -207,12 +207,31 @@ class CodeEncoder(nn.Module):
                                                inp_embed.ps.batch_sizes[0]))
 
         return utils.EncodedSequence(
-                inp_embed.with_new_ps(output),
-                state)
+            inp_embed.with_new_ps(output),
+            state)
+
+
+class CodeEncoderAlternative(nn.Module):
+    def __init__(self, vocab_size, args):
+        super(CodeEncoderAlternative, self).__init__()
+        self._cuda = args.cuda
+        self.embed = nn.Embedding(vocab_size, 256)
+        self.encoder = nn.LSTM(input_size=256, hidden_size=256, num_layers=2, bidirectional=True, batch_first=True)
+
+    def forward(self, inputs):
+        inputs = inputs.type(torch.LongTensor)  # Make valid tensor for embeddings
+        inp_embed = self.embed(inputs)
+
+        inp_embed = inp_embed.permute((1, 0, 2))
+        seq, (output, _) = self.encoder(inp_embed,
+                                        utils.lstm_init(self._cuda, 4, 256, inp_embed.shape[0]))
+
+        output = seq[-1]
+        return inp_embed, output
 
 
 class CodeUpdater(nn.Module):
-    def __init__(self,  args):
+    def __init__(self, args):
         super(CodeUpdater, self).__init__()
         self._cuda = args.cuda
         self.encoder = nn.LSTM(
