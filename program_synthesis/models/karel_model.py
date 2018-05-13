@@ -46,12 +46,13 @@ def encode_io_grids(batch):
 
 
 def encode_padded_code_seqs(batch, vocab):
-    return  prepare_spec.lists_padding_to_tensor(
+    return prepare_spec.lists_padding_to_tensor(
         [item.code_sequence for item in batch], vocab.stoi, False)
 
 
 def encode_trace_grids(grids_lists):
     last_grids = [set() for _ in grids_lists]
+
     def fill(grid, batch_idx, out):
         if isinstance(grid, dict):
             last_grid = last_grids[batch_idx]
@@ -63,8 +64,9 @@ def encode_trace_grids(grids_lists):
             last_grid = last_grids[batch_idx] = set(grid)
         out.zero_()
         out.view(-1)[list(last_grid)] = 1
+
     return lists_to_packed_sequence(
-            grids_lists, (15, 18, 18), torch.FloatTensor, fill)
+        grids_lists, (15, 18, 18), torch.FloatTensor, fill)
 
 
 def maybe_cuda(tensor, async=False):
@@ -82,14 +84,14 @@ def lists_to_packed_sequence(lists, item_shape, tensor_type, item_to_tensor):
     batch_bounds = prepare_spec.batch_bounds_for_packing(lengths)
     idx = 0
     for i, bound in enumerate(batch_bounds):
-        for batch_idx, lst  in enumerate(sorted_lists[:bound]):
+        for batch_idx, lst in enumerate(sorted_lists[:bound]):
             item_to_tensor(lst[i], batch_idx, result[idx])
             idx += 1
 
     result = Variable(result)
     return prepare_spec.PackedSequencePlus(
-            nn.utils.rnn.PackedSequence(result, batch_bounds),
-            lengths, sort_to_orig, orig_to_sort)
+        nn.utils.rnn.PackedSequence(result, batch_bounds),
+        lengths, sort_to_orig, orig_to_sort)
 
 
 def interleave(source_lists, interleave_indices):
@@ -215,7 +217,6 @@ class KarelLGRLModel(BaseKarelModel):
             return [[[self.vocab.itos(idx) for idx in beam] for beam in beams]
                     for beams in sequences]
 
-
     def batch_processor(self, for_eval):
         return KarelLGRLBatchProcessor(self.vocab, for_eval)
 
@@ -248,7 +249,7 @@ class KarelLGRLRefineModel(BaseKarelModel):
         self.executor = executor.get_executor(args)()
 
         self.trace_grid_lengths = []
-        self.trace_event_lengths  = []
+        self.trace_event_lengths = []
         self.trace_lengths = []
         super(KarelLGRLRefineModel, self).__init__(args)
 
@@ -258,7 +259,7 @@ class KarelLGRLRefineModel(BaseKarelModel):
          orig_examples) = batch
 
         if orig_examples:
-            for i, orig_example in  enumerate(orig_examples):
+            for i, orig_example in enumerate(orig_examples):
                 self.trace_grid_lengths.append((orig_example.idx, [
                     ref_trace_grids.lengths[ref_trace_grids.sort_to_orig[i * 5
                                                                          + j]]
@@ -313,8 +314,8 @@ class KarelLGRLRefineModel(BaseKarelModel):
             input_grids, output_grids, ref_code, ref_trace_grids,
             ref_trace_events, cag_interleave, code_update_info)
         init_state = self.model.decoder.init_state(
-                ref_code_memory, ref_trace_memory,
-                io_embed.shape[0], io_embed.shape[1])
+            ref_code_memory, ref_trace_memory,
+            io_embed.shape[0], io_embed.shape[1])
         memory = self.model.decoder.prepare_memory(io_embed, ref_code_memory,
                                                    ref_trace_memory, ref_code)
 
@@ -347,8 +348,8 @@ KarelLGRLRefineExample = collections.namedtuple('KarelLGRLRefineExample', (
 
 
 class PackedTrace(collections.namedtuple('PackedTrace', ('actions',
-    'action_code_indices', 'conds', 'cond_code_indices',
-    'interleave_indices'))):
+                                                         'action_code_indices', 'conds', 'cond_code_indices',
+                                                         'interleave_indices'))):
     def cuda(self, async=False):
         actions = maybe_cuda(self.actions, async)
         action_code_indices = maybe_cuda(self.action_code_indices, async)
@@ -356,11 +357,11 @@ class PackedTrace(collections.namedtuple('PackedTrace', ('actions',
         cond_code_indices = maybe_cuda(self.cond_code_indices, async)
 
         return PackedTrace(actions, action_code_indices, conds,
-                cond_code_indices, self.interleave_indices)
+                           cond_code_indices, self.interleave_indices)
 
 
 class PackedDecoderData(collections.namedtuple('PackedDecoderData', ('input',
-    'output', 'io_embed_indices', 'ref_code'))):
+                                                                     'output', 'io_embed_indices', 'ref_code'))):
     def cuda(self, async=False):
         input_ = maybe_cuda(self.input, async)
         output = maybe_cuda(self.output, async)
@@ -370,7 +371,7 @@ class PackedDecoderData(collections.namedtuple('PackedDecoderData', ('input',
 
 
 class CodeUpdateInfo(
-        collections.namedtuple('CodeUpdateInfo', (
+    collections.namedtuple('CodeUpdateInfo', (
             'code_indices', 'trace_indices', 'code_trace_update_indices',
             'max_trace_refs'))):
     def cuda(self, async=False):
@@ -420,26 +421,26 @@ class KarelLGRLRefineBatchProcessor(object):
             ref_trace_grids = self.prepare_traces_grids(batch)
             ref_trace_events = self.prepare_traces_events(batch, ref_code_exp)
 
-            cag_interleave,  action_events, cond_events = [], [], []
+            cag_interleave, action_events, cond_events = [], [], []
             grid_lengths = [ref_trace_grids.lengths[i] for i in
-                    ref_trace_grids.sort_to_orig]
+                            ref_trace_grids.sort_to_orig]
             for batch_idx, (
                     grid_length, trace_interleave,
                     g_ca_interleave) in enumerate(
-                        zip(grid_lengths, ref_trace_events.interleave_indices,
-                            self.interleave_grids_events(batch))):
+                zip(grid_lengths, ref_trace_events.interleave_indices,
+                    self.interleave_grids_events(batch))):
                 cag_for_item = interleave([[2] * grid_length,
-                    trace_interleave], g_ca_interleave)
+                                           trace_interleave], g_ca_interleave)
                 cag_interleave.append(cag_for_item)
 
                 # Probably possible to omit this computaiton and recover from
                 # the same information from cag_interleave below.
                 action_idx, cond_idx = 0, 0
                 for seq_idx, cag in enumerate(cag_for_item):
-                    if cag == 0: # cond
+                    if cag == 0:  # cond
                         cond_events.append((batch_idx, seq_idx, cond_idx))
                         cond_idx += 1
-                    elif cag == 1: # action
+                    elif cag == 1:  # action
                         action_events.append((batch_idx, seq_idx, action_idx))
                         action_idx += 1
 
@@ -447,15 +448,15 @@ class KarelLGRLRefineBatchProcessor(object):
                 (ref_trace_events.conds, ref_trace_events.actions,
                  ref_trace_grids), cag_interleave)
             code_update_info = self.compute_code_update_indices(
-                    cag_interleave, ref_trace_events, ref_code_exp, cond_events,
-                    action_events)
+                cag_interleave, ref_trace_events, ref_code_exp, cond_events,
+                action_events)
 
         orig_examples = batch if self.for_eval else None
 
         return KarelLGRLRefineExample(
             input_grids, output_grids, code_seqs, dec_data,
             ref_code, ref_trace_grids, ref_trace_events, cag_interleave,
-            code_update_info,  orig_examples)
+            code_update_info, orig_examples)
 
     def compute_code_update_indices(
             self, cag_interleave, ref_trace_events, ref_code,
@@ -463,11 +464,11 @@ class KarelLGRLRefineBatchProcessor(object):
         batch_idx, seq_idx, cond_idx = zip(*cond_events)
         # span_start/end: Tensor with size = total number of cond events
         span_start, span_end = ref_trace_events.conds.select(batch_idx,
-                cond_idx).data[:, :2].transpose(0, 1)
+                                                             cond_idx).data[:, :2].transpose(0, 1)
         cond_event_reps = span_end - span_start + 1
         cond_event_indices = np.repeat(
-                cag_interleave.psp_template.raw_index(batch_idx, seq_idx),
-                repeats=cond_event_reps)
+            cag_interleave.psp_template.raw_index(batch_idx, seq_idx),
+            repeats=cond_event_reps)
         cond_code_indices = ref_code.raw_index(
             np.repeat(batch_idx, cond_event_reps), [
                 code_seq_idx
@@ -477,33 +478,33 @@ class KarelLGRLRefineBatchProcessor(object):
 
         batch_idx, seq_idx, action_idx = zip(*action_events)
         action_event_indices = cag_interleave.psp_template.raw_index(batch_idx,
-                seq_idx)
+                                                                     seq_idx)
         action_code_indices = ref_code.raw_index(batch_idx,
-                ref_trace_events.actions.select(batch_idx,
-                    action_idx).data[:, 0])
+                                                 ref_trace_events.actions.select(batch_idx,
+                                                                                 action_idx).data[:, 0])
 
         code_indices = np.concatenate((cond_code_indices,
-            action_code_indices))
+                                       action_code_indices))
         trace_indices = np.concatenate((cond_event_indices,
-                action_event_indices))
+                                        action_event_indices))
 
         (_, max_trace_refs), = collections.Counter(
-                code_indices).most_common(1)
+            code_indices).most_common(1)
         num_appearances = collections.defaultdict(int)
         code_trace_update_indices = np.empty_like(code_indices)
         for array_idx, ref_code_idx in enumerate(code_indices):
             code_trace_update_indices[array_idx] = (ref_code_idx *
-                    max_trace_refs + num_appearances[ref_code_idx])
+                                                    max_trace_refs + num_appearances[ref_code_idx])
             num_appearances[ref_code_idx] += 1
 
         code_indices = torch.from_numpy(code_indices)
         trace_indices = torch.from_numpy(trace_indices)
         code_trace_update_indices = Variable(torch.from_numpy(
-                code_trace_update_indices))
+            code_trace_update_indices))
 
         return CodeUpdateInfo(
-                code_indices, trace_indices, code_trace_update_indices,
-                max_trace_refs)
+            code_indices, trace_indices, code_trace_update_indices,
+            max_trace_refs)
 
     def compute_edit_ops(self, batch, ref_code):
         # Sequence length: 2 + len(edit_ops)
@@ -528,9 +529,9 @@ class KarelLGRLRefineBatchProcessor(object):
         # - op + </s>
         edit_lists = []
         for batch_idx, item in enumerate(batch):
-            edit_ops =  list(
-                    edit.compute_edit_ops(item.ref_example.code_sequence,
-                        item.code_sequence, self.vocab.stoi))
+            edit_ops = list(
+                edit.compute_edit_ops(item.ref_example.code_sequence,
+                                      item.code_sequence, self.vocab.stoi))
             dest_iter = itertools.chain(['<s>'], item.code_sequence)
 
             # Op = <s>, emb location, last token = <s>
@@ -559,7 +560,7 @@ class KarelLGRLRefineBatchProcessor(object):
                 # XXX last_token should be 0 (<s>) at the beginning
                 try:
                     last_token = 2 if op_idx == 3 else self.vocab.stoi(
-                            next(dest_iter))
+                        next(dest_iter))
                 except StopIteration:
                     raise Exception('dest_iter ended early')
 
@@ -581,14 +582,16 @@ class KarelLGRLRefineBatchProcessor(object):
         def padder3d(op_emb_pos_last_token, _, out):
             op, emb_pos, last_token = op_emb_pos_last_token
             return out.copy_(torch.LongTensor([op, emb_pos, last_token]))
+
         def padder1d(op_emb_pos_last_token, _, out):
             return out.copy_(torch.LongTensor([op_emb_pos_last_token[0]]))
+
         rnn_inputs = lists_to_packed_sequence(
-                [lst[:-1] for lst in edit_lists], (3,), torch.LongTensor,
-                padder3d)
+            [lst[:-1] for lst in edit_lists], (3,), torch.LongTensor,
+            padder3d)
         rnn_outputs = lists_to_packed_sequence(
-                [lst[1:] for lst in edit_lists], (1,), torch.LongTensor,
-                padder1d)
+            [lst[1:] for lst in edit_lists], (1,), torch.LongTensor,
+            padder1d)
 
         io_embed_indices = torch.LongTensor([
             expanded_idx
@@ -598,7 +601,7 @@ class KarelLGRLRefineBatchProcessor(object):
         ])
 
         return PackedDecoderData(rnn_inputs, rnn_outputs, io_embed_indices,
-                ref_code)
+                                 ref_code)
 
     def interleave_grids_events(self, batch):
         events_lists = [
@@ -636,7 +639,7 @@ class KarelLGRLRefineBatchProcessor(object):
         interleave_indices = []
         for item in batch:
             for test in item.ref_example.input_tests:
-                action_events, cond_events, interleave  = [], [], []
+                action_events, cond_events, interleave = [], [], []
                 for event in test['trace'].events:
                     # TODO: Devise better way to test if an event is an action
                     if event.cond_span is None:
@@ -650,40 +653,40 @@ class KarelLGRLRefineBatchProcessor(object):
                 interleave_indices.append(interleave)
 
         packed_action_events = lists_to_packed_sequence(
-                all_action_events,
-                [2],
-                torch.LongTensor,
-                lambda ev, batch_idx, out: out.copy_(torch.LongTensor([
-                    ev.span[0], ev.success,
-                    ])))
+            all_action_events,
+            [2],
+            torch.LongTensor,
+            lambda ev, batch_idx, out: out.copy_(torch.LongTensor([
+                ev.span[0], ev.success,
+            ])))
         action_code_indices = None
         if ref_code:
             action_code_indices = Variable(torch.LongTensor(
-                    ref_code.raw_index(
-                        packed_action_events.orig_batch_indices(),
-                        packed_action_events.ps.data.data[:, 0].numpy())))
+                ref_code.raw_index(
+                    packed_action_events.orig_batch_indices(),
+                    packed_action_events.ps.data.data[:, 0].numpy())))
 
         packed_cond_events = lists_to_packed_sequence(
-                all_cond_events,
-                [6],
-                torch.LongTensor,
-                lambda ev, batch_idx, out: out.copy_(
-                    torch.LongTensor([
-                        ev.span[0], ev.span[1],
-                        ev.cond_span[0], ev.cond_span[1],
-                        int(ev.cond_value) if isinstance(ev.cond_value, bool)
-                        else ev.cond_value + 2,
-                        ev.success])))
+            all_cond_events,
+            [6],
+            torch.LongTensor,
+            lambda ev, batch_idx, out: out.copy_(
+                torch.LongTensor([
+                    ev.span[0], ev.span[1],
+                    ev.cond_span[0], ev.cond_span[1],
+                    int(ev.cond_value) if isinstance(ev.cond_value, bool)
+                    else ev.cond_value + 2,
+                    ev.success])))
         cond_code_indices = None
         if ref_code:
             # TODO: the following should work even if there are no cond events.
             cond_code_indices = Variable(torch.LongTensor(
-                    ref_code.raw_index(
-                        np.expand_dims(
-                            packed_cond_events.orig_batch_indices(),
-                            axis=1),
-                        packed_cond_events.ps.data.data[:, :4].numpy())))
+                ref_code.raw_index(
+                    np.expand_dims(
+                        packed_cond_events.orig_batch_indices(),
+                        axis=1),
+                    packed_cond_events.ps.data.data[:, :4].numpy())))
 
         return PackedTrace(
-                packed_action_events, action_code_indices, packed_cond_events,
-                cond_code_indices, interleave_indices)
+            packed_action_events, action_code_indices, packed_cond_events,
+            cond_code_indices, interleave_indices)

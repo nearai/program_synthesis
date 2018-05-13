@@ -47,7 +47,7 @@ class LGRLTaskEncoder(nn.Module):
     def forward(self, input_grid, output_grid):
         batch_dims = input_grid.shape[:-3]
         input_grid = input_grid.contiguous().view(-1, 15, 18, 18)
-        output_grid  = output_grid.contiguous().view(-1, 15, 18, 18)
+        output_grid = output_grid.contiguous().view(-1, 15, 18, 18)
 
         input_enc = self.input_encoder(input_grid)
         output_enc = self.output_encoder(output_grid)
@@ -60,7 +60,6 @@ class LGRLTaskEncoder(nn.Module):
 
 
 class PResNetTaskEncoder(nn.Module):
-
     def __init__(self, args):
         super(PResNetTaskEncoder, self).__init__()
 
@@ -83,7 +82,7 @@ class PResNetTaskEncoder(nn.Module):
     def forward(self, input_grid, output_grid):
         batch_dims = input_grid.shape[:-3]
         input_grid = input_grid.contiguous().view(-1, 15, 18, 18)
-        output_grid  = output_grid.contiguous().view(-1, 15, 18, 18)
+        output_grid = output_grid.contiguous().view(-1, 15, 18, 18)
         grid = torch.cat([input_grid, output_grid], dim=1)
 
         enc = self.initial_conv(grid)
@@ -105,7 +104,6 @@ def make_task_encoder(args):
 
 
 class PResNetGridEncoder(nn.Module):
-
     def __init__(self, args):
         super(PResNetGridEncoder, self).__init__()
 
@@ -188,7 +186,7 @@ class LGRLGridEncoder(nn.Module):
 
 def make_grid_encoder(args):
     if args.karel_trace_grid_enc == 'lgrl':
-       return LGRLGridEncoder(args)
+        return LGRLGridEncoder(args)
     elif args.karel_trace_grid_enc == 'presnet':
         return PResNetGridEncoder(args)
     elif args.karel_trace_grid_enc == 'none':
