@@ -102,7 +102,7 @@ class AnnotatedTree(object):
     # ADD_ACTION
     @property
     def add_action_locs(self):
-        #return self.pre_insert_locs
+        # return self.pre_insert_locs
         return self.post_insert_locs
 
     # REMOVE_ACTION
@@ -178,6 +178,42 @@ class MutationActionSpace(gym.Space):
                 space.append(action)
 
         return space
+
+    def sample_parameters(self, action):
+        """ Sample random parameters
+        """
+        if action == mutation.ADD_ACTION:
+            valid_loc = list(self.atree.add_action_locs)
+            sel_loc = valid_loc[np.random.choice(len(valid_loc))]
+
+            sel_tok = np.random.choice(mutation.ACTION_NAMES)
+
+            return sel_loc, sel_tok
+
+        elif action == mutation.REMOVE_ACTION:
+            valid_loc = list(self.atree.remove_action_locs)
+
+            if len(valid_loc) == 0:
+                return None
+
+            sel_loc = valid_loc[np.random.choice(len(valid_loc))]
+
+            return sel_loc,
+
+        elif action == mutation.REPLACE_ACTION:
+            valid_loc = list(self.atree.replace_action_locs)
+
+            if len(valid_loc) == 0:
+                return None
+
+            sel_loc = valid_loc[np.random.choice(len(valid_loc))]
+
+            sel_tok = np.random.choice(mutation.ACTION_NAMES)
+
+            return sel_loc, sel_tok
+        else:
+            # TODO[IMPLEMENT_ACTION]
+            raise NotImplementedError()
 
     def sample(self):
         space = self.full_space()
@@ -316,10 +352,10 @@ class MutationActionSpace(gym.Space):
             }
             body_elems.insert(if_start_i, new_block)
 
-        #elif action_type == mutation.REPLACE_COND:
+        # elif action_type == mutation.REPLACE_COND:
         #   # Not yet implemented
         #    return False 
-        #elif action_type == mutation.SWITCH_IF_WHILE:
+        # elif action_type == mutation.SWITCH_IF_WHILE:
         #    # Not yet implemented
         #    return False
         else:
@@ -388,12 +424,12 @@ class KarelRefineEnv(gym.Env):
             if result != test['output']:
                 all_correct = False
         return {
-            'code': tuple(self.atree.code),
-            'inputs': [test['input'] for test in self.input_tests],
-            'outputs': outputs,
-            'traces': traces,
-            'desired_outputs': [test['output'] for test in self.input_tests],
-        }, all_correct
+                   'code': tuple(self.atree.code),
+                   'inputs': [test['input'] for test in self.input_tests],
+                   'outputs': outputs,
+                   'traces': traces,
+                   'desired_outputs': [test['output'] for test in self.input_tests],
+               }, all_correct
 
 
 def linearize_cond(node):
@@ -471,11 +507,11 @@ class ComputeAddOps(object):
                 end_index = mid_span[1] + 1
             end_span = (end_index, end_index)
 
-            tokens = ((cls.token_to_idx['ifElse', cond], ) + if_body_tokens +
-                      (cls.token_to_idx['else', cond], ) + else_body_tokens +
-                      (cls.token_to_idx['end-ifElse', cond], ))
-            orig_spans = (begin_span, ) + if_body_spans + (
-                mid_span, ) + else_body_spans + (end_span, )
+            tokens = ((cls.token_to_idx['ifElse', cond],) + if_body_tokens +
+                      (cls.token_to_idx['else', cond],) + else_body_tokens +
+                      (cls.token_to_idx['end-ifElse', cond],))
+            orig_spans = (begin_span,) + if_body_spans + (
+                mid_span,) + else_body_spans + (end_span,)
             return tokens, orig_spans
 
         elif node_type in ('if', 'while', 'repeat'):
@@ -501,13 +537,13 @@ class ComputeAddOps(object):
                 end_index = body_offset
             end_span = (end_index, end_index)
 
-            tokens = (cls.token_to_idx[node_type, cond], ) + body_tokens + (
-                cls.token_to_idx['end-' + node_type, cond], )
-            orig_spans = (begin_span, ) + body_spans + (end_span, )
+            tokens = (cls.token_to_idx[node_type, cond],) + body_tokens + (
+                cls.token_to_idx['end-' + node_type, cond],)
+            orig_spans = (begin_span,) + body_spans + (end_span,)
             return tokens, orig_spans
 
         else:
-            return (cls.token_to_idx[node_type], ), ((offset, offset), )
+            return (cls.token_to_idx[node_type],), ((offset, offset),)
 
     def __init__(self, goal_tree):
         self.goal_atree = AnnotatedTree(tree=goal_tree)
@@ -545,7 +581,7 @@ class ComputeAddOps(object):
                 return spans[pos][0]
 
         def insert(seq, item, pos):
-            return seq[:pos] + (item, ) + seq[pos:]
+            return seq[:pos] + (item,) + seq[pos:]
 
         result = []
         insertions = subseq_insertions(linearized, goal)
@@ -593,7 +629,7 @@ class ComputeAddOps(object):
                                 continue
                             end_loc = pos_to_post_insert_loc(end_pos - 2)
                             if (cur_atree.post_insert_locs[else_loc][0] is not
-                                   cur_atree.post_insert_locs[end_loc][0]):
+                                    cur_atree.post_insert_locs[end_loc][0]):
                                 continue
                             end_inserted = insert(else_inserted, end_token,
                                                   end_pos)
@@ -623,7 +659,7 @@ class ComputeAddOps(object):
                             continue
                         end_loc = pos_to_post_insert_loc(end_pos - 1)
                         if (cur_atree.pre_insert_locs[start_loc][0] is not
-                               cur_atree.post_insert_locs[end_loc][0]):
+                                cur_atree.post_insert_locs[end_loc][0]):
                             continue
                         end_inserted = insert(block_started, end_token,
                                               end_pos)
@@ -696,7 +732,7 @@ class CheckBlocksWellFormed(object):
                         # Encountering end-if before if, etc.
                         return None
                     if stack is self.stack: stack = list(self.stack)
-                    stack_top, _  = stack.pop()
+                    stack_top, _ = stack.pop()
                     if stack_top != stack_pop:
                         # Encountering if then end-while, etc
                         return None
@@ -734,9 +770,9 @@ class CheckBlocksWellFormed(object):
             self.index += 1
 
         return CheckBlocksWellFormed(
-                stack,
-                remainder_stack,
-                self.index)
+            stack,
+            remainder_stack,
+            self.index)
 
 
 def is_subseq(a, b):
@@ -780,7 +816,7 @@ def subseq_insertions(a, b, debug=False):
     # After a[0], ..., a[-1]
     for i in range(len(a)):
         insert = set(b[left_bound[i] + 1:right_bound[i + 1]
-                       if i + 1 < len(a) else None])
+        if i + 1 < len(a) else None])
         result.append(insert)
 
     if debug:
