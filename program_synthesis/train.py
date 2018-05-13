@@ -91,7 +91,7 @@ def train(args):
                 print("Step {} stats: ".format(m.last_step) + ", ".join(
                     "{} = {}".format(k, v) for k, v in stats.items()))
                 reporter.record(m.last_step,
-                                **{'{}/dev'.format(key): v
+                                **{'{}/dev'.format(k): v
                                    for k, v in stats.items()})
                 m.model.train()
 
