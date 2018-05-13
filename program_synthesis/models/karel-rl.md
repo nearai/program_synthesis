@@ -17,14 +17,14 @@ Task: (input_grids, output_grids)
     
 ### Action
 
-Each action is of the form `ActionName, Arguments` where arguments is a tuple of value that fully characterize the action. 
-The arguments vary from action to action.
+Each action is of the form `ActionName, Parameters` where parameters is a tuple of value that fully characterize the action. 
+The parameters vary from action to action.
 
-+ ADD_ACTION(new_location, karel_action)
++ ADD_ACTION(new_location, karel_token)
 
 + REMOVE_ACTION(location,)
 
-+ REPLACE_ACTION(location, karel_action)
++ REPLACE_ACTION(location, karel_token)
 
 + UNWRAP_BLOCK(location,)
 
@@ -54,7 +54,7 @@ The arguments vary from action to action.
     # DEF run m( move move m)
     #            0    1    2
     
-##### Karel actions
+##### Karel tokens
 + move
 + turnLeft
 + turnRight
