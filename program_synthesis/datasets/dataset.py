@@ -457,7 +457,11 @@ class KarelTorchDataset(torch.utils.data.Dataset):
         if self.file is None:
             self.file = open(self.filename, 'rb')
         self.file.seek(self.index[idx])
-        return self.mutator(KarelExample.from_dict(pickle.load(self.file, encoding='latin-1')))
+
+        if six.PY2:
+            return self.mutator(KarelExample.from_dict(pickle.load(self.file)))
+        else:
+            return self.mutator(KarelExample.from_dict(pickle.load(self.file, encoding='latin-1')))
 
 
 class KarelDataset(object):

@@ -111,9 +111,16 @@ class TracePredictionModel(karel_model.BaseKarelModel):
             output_grids = output_grids.cuda(async=True)
 
         io_embed = self.model.encode(input_grids, output_grids)
+
+        # batch.input_grids is always on CPU, unlike input_grids
+        fields = batch.input_grids.data.numpy().astype(bool)
+        cached_state = np.empty(fields.shape[0], dtype=np.object)
+        for i, field in enumerate(fields):
+            self.kr.init_from_array(field)
+            cached_state[i] = self.kr.cached_state()
+
         init_state = karel_trace.TraceDecoderState(
-            # batch.input_grids is always on CPU, unlike input_grids
-            batch.input_grids.data.numpy().astype(bool),
+            fields, cached_state,
             *self.model.decoder.init_state(input_grids.shape[0]))
         memory = karel.LGRLMemory(io_embed)
 
@@ -150,55 +157,88 @@ class TracePredictionModel(karel_model.BaseKarelModel):
         for orig_example in batch.orig_examples:
             orig_example = copy.deepcopy(orig_example)
             output.append(orig_example)
-            for test in (orig_example.input_tests + orig_example.tests
-                         if self.args.karel_trace_inc_val else []):
+            for test in (orig_example.input_tests + (orig_example.tests
+                         if self.args.karel_trace_inc_val else [])):
                 result = inference_results[grid_idx]
                 candidates = result.info['candidates']
                 if self.args.max_eval_trials:
                     candidates = candidates[:self.args.max_eval_trials]
 
-                found = False
+                traces = []
                 for cand in candidates:
-                    self.tracer.reset(grid=input_grids[grid_idx])
-                    success = True
-                    for action in cand:
-                        success = getattr(self.kr, action, lambda: False)()
-                        if not success:
-                            counters['failure-' + action] += 1
-                    if  np.all(
-                            self.tracer.full_grid == output_grids[grid_idx]):
-                        found = True
-                        break
+                    trace = executor.KarelTrace(
+                        grids=None,
+                        events=cand,
+                        cond_values=None)
+                    traces.append(trace)
 
-                counters['total'] += 1
-                if found:
-                    grids = self.tracer.grids
-                    actions = self.tracer.actions
-                    conds = self.tracer.conds
-                    counters['correct'] += 1
-                else:
-                    grids = [input_grids[grid_idx], output_grids[grid_idx]]
-                    actions = ['UNK']
-                    # TODO fix conds
-                    conds = [self.tracer.conds[0], self.tracer.conds[-1]]
+                    #self.tracer.reset(grid=input_grids[grid_idx])
+                    #for action in cand:
+                    #    success = getattr(self.kr, action, lambda: False)()
+                    #    if not success:
+                    #        counters['failure-' + action] += 1
 
-                grids = karel_common.compress_trace(
-                        [np.where(g.ravel())[0].tolist() for g in
-                            grids])
-                assert len(grids) >= 2
-                test['trace'] = executor.KarelTrace(
-                    grids=grids,
-                    events=[
-                        executor.KarelEvent(
-                            timestep=t,
-                            type=name,
-                            span=None,
-                            cond_span=None,
-                            cond_value=None,
-                            success=None)
-                        for t, name in enumerate(actions)
-                    ],
-                    cond_values=conds)
+                    #correct_output =  np.all(
+                    #        self.tracer.full_grid == output_grids[grid_idx])
+
+                    counters['total'] += 1
+                    #counters['correct'] += correct_output
+                    #counters['correct_frac'] = counters['correct'] / float(
+                    #    counters['total'])
+
+                    ## Doesn't contain invalid actions.
+                    #grids = self.tracer.grids
+                    #actions = self.tracer.actions
+                    #conds = self.tracer.conds
+
+                    #grids = karel_common.compress_trace(
+                    #        [np.where(g.ravel())[0].tolist() for g in
+                    #            grids])
+
+                    #trace = executor.KarelTrace(
+                    #    grids=grids,
+                    #    events=actions,
+                    #    cond_values=conds)
+                    #traces.append((trace, correct_output))
+
+                test['traces'] = traces
+
+                ## Save the 'best' trace separately.
+                #for trace, is_correct in traces:
+                #    if is_correct:
+                #        test['trace'] = executor.KarelTrace(
+                #            grids=trace.grids,
+                #            events=[
+                #                executor.KarelEvent(
+                #                    timestep=t,
+                #                    type=name,
+                #                    span=None,
+                #                    cond_span=None,
+                #                    cond_value=None,
+                #                    success=None)
+                #                for t, name in enumerate(trace.events)
+                #            ],
+                #            cond_values=trace.cond_values)
+                #        break
+
+                ## None of the traces worked.
+                #if not is_correct:
+                #    counters['all_incorrect'] += 1
+                #    test['trace'] = executor.KarelTrace(
+                #        grids=[input_grids[grid_idx], output_grids[grid_idx]],
+                #        events=[
+                #            executor.KarelEvent(
+                #                timestep=0,
+                #                type='UNK',
+                #                span=None,
+                #                cond_span=None,
+                #                cond_value=None,
+                #                success=None)
+                #        ],
+                #        # TODO fix conds
+                #        cond_values=[self.tracer.conds[0],
+                #            self.tracer.conds[-1]])
+
                 grid_idx += 1
 
         return [example.to_dict() for example in output]
@@ -391,7 +431,7 @@ class CodeFromTracesModel(karel_model.BaseKarelModel):
 
     def eval(self, batch):
         correct = 0
-        total_per_key, correct_per_key = collections.defaultdict(int), collections.defaultdict(int)        
+        total_per_key, correct_per_key = collections.defaultdict(int), collections.defaultdict(int)
         for res, example in zip(self.inference(batch), batch.orig_examples):
             stats = executor.evaluate_code(
                 res.code_sequence, None, example.tests, self.executor.execute)
