@@ -18,6 +18,20 @@ from program_synthesis.models.modules import karel_common
 from program_synthesis.models.modules import karel_trace
 
 
+def _get_example_key(args, example):
+    if args.report_per_length:
+        l = len(example.code_sequence)
+        if l < 13:
+            l = 6
+        elif l < 23:
+            l = 13
+        elif l < 30:
+            l = 23
+        else:
+            l = 30
+        return l
+
+
 class KarelTracer(object):
 
     def __init__(self, runtime, keep_failures=True):
@@ -148,7 +162,7 @@ class TracePredictionModel(karel_model.BaseKarelModel):
                     self.tracer.reset(grid=input_grids[grid_idx])
                     success = True
                     for action in cand:
-                        success = getattr(self.kr, action)()
+                        success = getattr(self.kr, action, lambda: False)()
                         if not success:
                             counters['failure-' + action] += 1
                     if  np.all(
@@ -199,13 +213,14 @@ class TracePredictionModel(karel_model.BaseKarelModel):
         input_grids = batch.input_grids.data.numpy().astype(bool)
         output_grids = batch.output_grids.data.numpy().astype(bool)
 
-        for i, result in enumerate(results):
+        for i, (ex, result) in enumerate(zip(batch, results)):
             action_seq = result.code_sequence
             self.eval_kr.init_from_array(input_grids[i])
             for action in action_seq:
                 getattr(self.eval_kr, action)()
             # input_grids[i] is mutated in place by self.eval_kr.
-            correct += np.all(input_grids[i] == output_grids[i])
+            is_correct = np.all(input_grids[i] == output_grids[i])
+            correct += 1 if is_correct else 0
 
         return {'correct': correct, 'total': len(results)}
 
@@ -266,26 +281,28 @@ class TracePredictionBatchProcessor(object):
                 idx += 1
 
         input_grids, output_grids = [
-            Variable(t) for t in (input_grids, output_grids)
+            Variable(t, volatile=self.for_eval) for t in (input_grids, output_grids)
         ]
         trace_grids = karel_model.lists_to_packed_sequence(
             trace_grids, (15, 18, 18), torch.FloatTensor,
-            lambda item, batch_idx, out: out.copy_(torch.from_numpy(item.astype(np.float32))))
+            lambda item, batch_idx, out: out.copy_(torch.from_numpy(item.astype(np.float32))),
+            volatile=self.for_eval)
         conds = karel_model.lists_to_packed_sequence(
             conds, (4,), torch.LongTensor,
-            lambda item, batch_idx, out: out.copy_(torch.LongTensor(item)))
+            lambda item, batch_idx, out: out.copy_(torch.LongTensor(item)),
+            volatile=self.for_eval)
         input_actions = prepare_spec.lists_to_packed_sequence(
             [lst[:-1] for lst in actions],
             lambda x: x,
             cuda=False,
-            volatile=False)
+            volatile=self.for_eval)
         output_actions = prepare_spec.lists_to_packed_sequence(
             [lst[1:] for lst in actions],
             lambda x: x,
             cuda=False,
-            volatile=False)
+            volatile=self.for_eval)
         io_embed_indices = torch.LongTensor([
-            idx
+            idx.item()
             for b in input_actions.ps.batch_sizes
             for idx in input_actions.orig_to_sort[:b]
         ])
@@ -374,13 +391,21 @@ class CodeFromTracesModel(karel_model.BaseKarelModel):
 
     def eval(self, batch):
         correct = 0
+        total_per_key, correct_per_key = collections.defaultdict(int), collections.defaultdict(int)        
         for res, example in zip(self.inference(batch), batch.orig_examples):
             stats = executor.evaluate_code(
                 res.code_sequence, None, example.tests, self.executor.execute)
+            key = _get_example_key(self.args, example)
+            if key is not None:
+                total_per_key[key] += 1
             if stats['correct'] == stats['total']:
                 correct += 1
-        return {'correct': correct, 'total': len(batch.orig_examples)}
-
+                if key is not None:
+                    correct_per_key[key] += 1
+        result = {'correct': correct, 'total': len(batch.orig_examples)}
+        if total_per_key:
+            result.update({'correct_per_key': correct_per_key, 'total_per_key': total_per_key})
+        return result
 
     def batch_processor(self, for_eval):
         return CodeFromTracesBatchProcessor(self.vocab, for_eval)
@@ -429,7 +454,7 @@ class CodeFromTracesBatchProcessor(object):
         batch_size = len(batch)
         pairs_per_example = len(batch[0].input_tests)
 
-        input_grids, output_grids = karel_model.encode_io_grids(batch)
+        input_grids, output_grids = karel_model.encode_io_grids(batch, volatile=self.for_eval)
         code_seqs = [['<S>'] + item.code_sequence + ['</S>'] for item in batch]
 
         if 'trace' in batch[0].input_tests[0]:
@@ -491,17 +516,19 @@ class CodeFromTracesBatchProcessor(object):
 
             trace_grids = karel_model.lists_to_packed_sequence(
                 trace_grids, (15, 18, 18), torch.FloatTensor,
-                lambda item, batch_idx, out: out.copy_(torch.from_numpy(item.astype(np.float32))))
+                lambda item, batch_idx, out: out.copy_(torch.from_numpy(item.astype(np.float32))),
+                volatile=self.for_eval)
 
         conds = karel_model.lists_to_packed_sequence(
             conds, (4,), torch.LongTensor,
-            lambda item, batch_idx, out: out.copy_(torch.LongTensor(item)))
+            lambda item, batch_idx, out: out.copy_(torch.LongTensor(item)),
+            volatile=self.for_eval)
 
         actions = prepare_spec.lists_to_packed_sequence(
             actions,
             lambda x: x,
             cuda=False,
-            volatile=False)
+            volatile=self.for_eval)
 
         interleave = prepare_spec.prepare_interleave_packed_sequences(
                 (trace_grids, actions), interleave)
@@ -510,13 +537,13 @@ class CodeFromTracesBatchProcessor(object):
                 [seq[:-1] for seq in code_seqs],
                 self.vocab.stoi,
                 cuda=False,
-                volatile=False)
+                volatile=self.for_eval)
 
         output_code = prepare_spec.lists_to_packed_sequence(
                 [seq[1:] for seq in code_seqs],
                 self.vocab.stoi,
                 cuda=False,
-                volatile=False)
+                volatile=self.for_eval)
 
         orig_examples = batch if self.for_eval else None
 

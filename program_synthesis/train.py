@@ -66,7 +66,9 @@ def train_start(args):
 def train(args):
     print("Training:")
     train_data, dev_data, m, sampler = train_start(args)
-    reporter = tools.Reporter(log_interval=args.log_interval, logdir=args.model_dir)
+    reporter = tools.Reporter(
+        log_interval=args.log_interval,
+        logdir=args.model_dir, smooth_interval=args.log_interval)
     for epoch in range(args.num_epochs):
         for batch_idx, batch in enumerate(sampler):
             res = m.train(batch)
@@ -78,7 +80,14 @@ def train(args):
                 for dev_idx, dev_batch in tqdm.tqdm(enumerate(dev_data)):
                     batch_res = m.eval(dev_batch)
                     for k, v in batch_res.items():
-                        stats[k] += v
+                        if isinstance(v, dict):
+                            if k not in stats:
+                                stats[k] = v
+                            else:
+                                for i1, i2 in v.items():
+                                    stats[k][i1] += i2
+                        else:
+                            stats[k] += v
                     if args.eval_n_steps and dev_idx > args.eval_n_steps:
                         break
                 if 'correct' in stats:
@@ -86,6 +95,13 @@ def train(args):
                     del stats['correct']
                 total = float(stats['total'])
                 del stats['total']
+                if 'correct_per_key' in stats:
+                    for key in stats['correct_per_key']:
+                        stats['accuracy/key=%s' % key] = (
+                            float(stats['correct_per_key'][key]) /
+                            stats['total_per_key'][key] * total)
+                    del stats['correct_per_key']
+                    del stats['total_per_key']
                 for k in stats:
                     stats[k] /= total
                 print("Step {} stats: ".format(m.last_step) + ", ".join(
