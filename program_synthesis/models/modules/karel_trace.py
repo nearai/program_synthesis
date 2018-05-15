@@ -34,7 +34,7 @@ id_to_action = {
 
 
 class TraceDecoderState(
-        collections.namedtuple('TraceDecoderState', ['field', 'h', 'c']),
+        collections.namedtuple('TraceDecoderState', ['field', 'cached_state', 'h', 'c']),
         beam_search.BeamSearchState):
     def select_for_beams(self, batch_size, indices):
         '''Return the hidden state necessary to continue the beams.
@@ -43,17 +43,19 @@ class TraceDecoderState(
         indices: 2 x batch size * beam size LongTensor
         '''
         # field: batch size (* beam size) x 15 x 18 x 18, numpy.ndarray
+        indices_tuple = tuple(indices.data.numpy())
         selected = [
             self.field.reshape(
                 batch_size, -1,
-                *self.field.shape[1:])[tuple(indices.data.numpy())]
+                *self.field.shape[1:])[indices_tuple],
+            self.cached_state.reshape(batch_size, -1)[indices_tuple]
         ]
         for v in self.h, self.c:
             # before: 2 x batch size (* beam size) x num pairs x hidden
             # after:  2 x batch size x beam size x num pairs x hidden
             v = v.view(2, batch_size, -1, *v.shape[2:])
             # result: 2 x indices.shape[1] x num pairs x hidden
-            selected.append(v[(slice(None), ) + tuple(indices.data.numpy())])
+            selected.append(v[(slice(None), ) + indices_tuple])
         return TraceDecoderState(*selected)
 
 
@@ -130,15 +132,18 @@ class TraceDecoder(nn.Module):
                 or self.cond_embed is not karel_common.none_fn):
             kr = karel_runtime.KarelRuntime()
             fields = state.field.copy()
+            cached_states = np.empty_like(state.cached_state)
             conds = []
-            for field, action_id in zip(fields, token.data.cpu()):
-                kr.init_from_array(field)
+            for i, (field, cached_state, action_id) in enumerate(zip(
+                    fields, state.cached_state, token.data.cpu())):
+                kr.init_from_array(field, cached_state)
                 if action_id >= 2:  # Ignore <s>, </s>
                     getattr(kr, id_to_action[action_id])()
                 conds.append([
                     int(v) for v in (kr.frontIsClear(), kr.leftIsClear(),
                                      kr.rightIsClear(), kr.markersPresent())
                 ])
+                cached_states[i] = kr.cached_state()
             fields_t = Variable(torch.from_numpy(fields.astype(np.float32)))
             conds_t = Variable(torch.LongTensor(conds))
             if self._cuda:
@@ -148,6 +153,7 @@ class TraceDecoder(nn.Module):
             cond_embed = self.cond_embed(conds_t)
         else:
             fields = state.field
+            cached_state = state.cached_state
             grid_embed = None
             cond_embed = None
 
@@ -166,7 +172,7 @@ class TraceDecoder(nn.Module):
         dec_output = dec_output.squeeze(0)
         logits = self.out(dec_output)
 
-        return TraceDecoderState(fields, *new_state), logits
+        return TraceDecoderState(fields, cached_states, *new_state), logits
 
     def init_state(self, *args):
         return utils.lstm_init(self._cuda, 2, 256, *args)

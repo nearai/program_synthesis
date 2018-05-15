@@ -60,6 +60,9 @@ def get_arg_parser(title, mode):
             '--reinforce-beam-size', type=int, default=100,
             help='Size of beam to evalutate when using reinforce'
         )
+        
+        # Additional reporting.
+        train_group.add_argument('--report_per_length', action='store_true', default=False)
 
         # REFINE.
         train_group.add_argument('--refine', action='store_true', default=False)

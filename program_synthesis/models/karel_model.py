@@ -28,7 +28,7 @@ def code_to_tokens(seq, vocab):
     return tokens
 
 
-def encode_io_grids(batch):
+def encode_io_grids(batch, volatile=False):
     # TODO: Don't hard-code 5 I/O examples
     input_grids, output_grids = [
         torch.zeros(len(batch), 5, 15, 18, 18) for _ in range(2)
@@ -40,7 +40,7 @@ def encode_io_grids(batch):
             input_grids[batch_idx, test_idx].view(-1)[inp] = 1
             output_grids[batch_idx, test_idx].view(-1)[out] = 1
     input_grids, output_grids = [
-        Variable(t) for t in (input_grids, output_grids)
+        Variable(t, volatile=volatile) for t in (input_grids, output_grids)
     ]
     return input_grids, output_grids
 
@@ -75,7 +75,9 @@ def maybe_cuda(tensor, async=False):
     return tensor.cuda(async=async)
 
 
-def lists_to_packed_sequence(lists, item_shape, tensor_type, item_to_tensor):
+def lists_to_packed_sequence(
+        lists, item_shape, tensor_type, item_to_tensor,
+        volatile=False):
     # TODO: deduplicate with the version in prepare_spec.
     result = tensor_type(sum(len(lst) for lst in lists), *item_shape)
 
@@ -88,7 +90,7 @@ def lists_to_packed_sequence(lists, item_shape, tensor_type, item_to_tensor):
             item_to_tensor(lst[i], batch_idx, result[idx])
             idx += 1
 
-    result = Variable(result)
+    result = Variable(result, volatile=volatile)
     return prepare_spec.PackedSequencePlus(
         nn.utils.rnn.PackedSequence(result, batch_bounds),
         lengths, sort_to_orig, orig_to_sort)
@@ -232,7 +234,7 @@ class KarelLGRLBatchProcessor(object):
         self.for_eval = for_eval
 
     def __call__(self, batch):
-        input_grids, output_grids = encode_io_grids(batch)
+        input_grids, output_grids = encode_io_grids(batch, volatile=self.for_eval)
         code_seqs = encode_padded_code_seqs(batch, self.vocab)
         orig_examples = batch if self.for_eval else None
         return KarelLGRLExample(input_grids, output_grids, code_seqs,
@@ -390,7 +392,7 @@ class KarelLGRLRefineBatchProcessor(object):
         self.for_eval = for_eval
 
     def __call__(self, batch):
-        input_grids, output_grids = encode_io_grids(batch)
+        input_grids, output_grids = encode_io_grids(batch, volatile=self.for_eval)
         code_seqs = encode_padded_code_seqs(batch, self.vocab)
 
         if self.args.karel_code_enc == 'none':

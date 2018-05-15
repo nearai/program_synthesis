@@ -2,6 +2,7 @@
 #-*- coding: utf-8 -*-
 from __future__ import print_function
 
+import collections
 import re
 import numpy as np
 from collections import Counter
@@ -36,6 +37,10 @@ def event_callback_prototype(block_name, block_span,  cond_span, cond_value,
       - n: block_span[1] or index of e)
   '''
     raise NotImplementedError
+
+
+CachedState = collections.namedtuple('CachedState',
+        ('height', 'width', 'hero_pos', 'hero_dir', 'nonwalls'))
 
 
 class KarelRuntime(object):
@@ -152,7 +157,14 @@ class KarelRuntime(object):
     def state(self):
         return self.world
 
-    def init_from_array(self, state):
+    def init_from_array(self, state, cached=None):
+        if cached:
+            self.world = state[:, :cached.height, :cached.width]
+            self.hero_pos = cached.hero_pos.copy()
+            self.hero_dir = cached.hero_dir
+            self.nonwalls = cached.nonwalls
+            return
+
         ys, xs = np.where(state[5])
         height, width = ys.max() + 1, xs.max() + 1
         self.world = state[:, :height, :width]
@@ -170,6 +182,10 @@ class KarelRuntime(object):
 
     def compute_nonwalls(self):
         self.nonwalls = np.logical_not(self.world[4:6].any(axis=0))
+
+    def cached_state(self):
+        return CachedState(self.world.shape[1], self.world.shape[2],
+                self.hero_pos, self.hero_dir, self.nonwalls)
 
     def draw_exception(self, exception):
         pass
