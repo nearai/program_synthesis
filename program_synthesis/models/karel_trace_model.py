@@ -166,11 +166,7 @@ class TracePredictionModel(karel_model.BaseKarelModel):
 
                 traces = []
                 for cand in candidates:
-                    trace = executor.KarelTrace(
-                        grids=None,
-                        events=cand,
-                        cond_values=None)
-                    traces.append(trace)
+                    traces.append(cand)
 
                     #self.tracer.reset(grid=input_grids[grid_idx])
                     #for action in cand:
