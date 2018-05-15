@@ -31,7 +31,7 @@ if __name__ == '__main__':
     input_file = open(args.input)
 
     index_offset = 0
-    for i, piece_num_elems in tqdm.tqdm(enumerate(pieces_num_elems)):
+    for i, piece_num_elems in enumerate(tqdm.tqdm(pieces_num_elems)):
         piece_name  = '{}-{:03d}-of-{:03d}{}'.format(
                 root, i, args.num_pieces, ext)
 

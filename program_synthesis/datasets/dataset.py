@@ -164,6 +164,7 @@ class KarelExample(object):
                 'out': example['output'],
                 'trace': example.get('trace', self._empty_trace),
                 'trace_grids': example.get('trace', self._empty_trace).grids,
+                'traces': example.get('traces', []),
             } for example in self.input_tests + self.tests],
             'code': self.code_sequence,
             'ref': self.ref_example.to_dict() if self.ref_example else None

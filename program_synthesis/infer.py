@@ -18,6 +18,8 @@ def infer(args):
     arguments.backport_default_args(args)
     datasets.set_vocab(args)
     m = models.get_model(args)
+    if m.last_step == 0:
+        raise ValueError('Attempting to evaluate on untrained model')
 
     if args.eval_final:
         eval_dataset = datasets.get_eval_final_dataset(args, m)
