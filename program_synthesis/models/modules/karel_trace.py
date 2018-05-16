@@ -338,8 +338,8 @@ class LatePoolingCodeDecoder(nn.Module):
             selected = [
                 None if self.context is None else self.context.view(
                     batch_size, -1,
-                    *self.context.shape[1:])[indices, :],
-                [state[indices, :] for state in self.prev_states]
+                    *self.context.shape[1:])[indices.data.numpy()],
+                [state.view(batch_size, -1, *state.shape[1:])[indices.data.numpy()] for state in self.prev_states]
             ]
             for v in self.h, self.c:
                 # before: 2 x batch size (* beam size) x num pairs x hidden
