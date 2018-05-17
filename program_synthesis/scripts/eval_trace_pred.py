@@ -4,6 +4,7 @@ import collections
 import glob
 import json
 import re
+import tqdm
 
 import numpy as np
 import pandas as pd
@@ -54,7 +55,8 @@ def eval_traces(trace_model, eval_dataset, beam_size):
 
     trace_model.args.max_beam_trees = beam_size
     report = []
-    for batch in eval_dataset:
+    iterator = tqdm.tqdm(eval_dataset, dynamic_ncols=True)
+    for batch in iterator:
         res = trace_model.inference(batch)
         idx = 0
         input_grids = batch.input_grids.data.numpy().astype(bool)
@@ -94,6 +96,6 @@ if __name__ == "__main__":
     trace_model, trace_eval_dataset, trace_executor = load_model(
         '../../../../karel-io-trace-code/logdirs/20180321/karel-trace-pred-gridpresnet',
         'karel-trace-pred', 300100)
-    report = eval_traces(trace_model, trace_eval_dataset, 1)
+    report = eval_traces(trace_model, trace_eval_dataset, 10)
     show_report(report)
 
