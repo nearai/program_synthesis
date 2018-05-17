@@ -506,6 +506,7 @@ class CodeFromTracesBatchProcessor(object):
             probs[i] = 0
             if np.all(probs == 0):
                 break
+            probs /= np.sum(probs)
 
         # Unable to produce a satisfactory trace
         input_grid = np.zeros((15, 18, 18), dtype=np.bool)
