@@ -81,7 +81,7 @@ def at_least_k(dct, k):
     return False
 
 def show_report(report):
-    for k in [1, 5, 10]:
+    for k in [1, 5, 10, 20, 30, 32, 40, 50, 60, 64]:
         correct = 0.0
         exact_match = 0.0
         for row in report:
@@ -96,6 +96,6 @@ if __name__ == "__main__":
     trace_model, trace_eval_dataset, trace_executor = load_model(
         '../../../../karel-io-trace-code/logdirs/20180321/karel-trace-pred-gridpresnet',
         'karel-trace-pred', 300100)
-    report = eval_traces(trace_model, trace_eval_dataset, 10)
+    report = eval_traces(trace_model, trace_eval_dataset, 20)
     show_report(report)
 
