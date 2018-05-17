@@ -145,6 +145,8 @@ class KarelExample(object):
                 ex['trace'] = executor.KarelTrace(
                         grids=example['trace_grids'],
                         events=[])
+            if 'traces' in example:
+                ex['traces'] = example['traces']
             all_examples.append(ex)
         assert len(all_examples) == 6
         ref_dict = d.get('ref')

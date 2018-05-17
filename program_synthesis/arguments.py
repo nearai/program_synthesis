@@ -93,6 +93,7 @@ def get_arg_parser(title, mode):
                 type=int)
         train_group.add_argument('--karel-refine-dec', default='default')
         train_group.add_argument('--karel-trace-usage', default='memory')
+        train_group.add_argument('--karel-trace-top-k', default=1, type=int)
         train_group.add_argument('--karel-code-usage', default='memory')
 
         train_group.add_argument('--karel-io-enc', default='lgrl')

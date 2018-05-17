@@ -167,7 +167,6 @@ class TracePredictionModel(karel_model.BaseKarelModel):
                 traces = []
                 for cand in candidates:
                     traces.append(cand)
-
                     #self.tracer.reset(grid=input_grids[grid_idx])
                     #for action in cand:
                     #    success = getattr(self.kr, action, lambda: False)()
@@ -444,7 +443,7 @@ class CodeFromTracesModel(karel_model.BaseKarelModel):
         return result
 
     def batch_processor(self, for_eval):
-        return CodeFromTracesBatchProcessor(self.vocab, for_eval)
+        return CodeFromTracesBatchProcessor(self.vocab, for_eval, self.args)
 
 
 class CodeFromTracesExample(
@@ -480,11 +479,45 @@ class CodeFromTracesExample(
 
 
 class CodeFromTracesBatchProcessor(object):
-    def __init__(self, vocab, for_eval):
+    def __init__(self, vocab, for_eval, args):
         self.vocab = vocab
         self.for_eval = for_eval
+        self.args = args
         self.karel_parser = parser_for_synthesis.KarelForSynthesisParser()
         self.tracer = KarelTracer(self.karel_parser.karel)
+
+    def select_trace(self, top_k, test):
+        probs = np.ones(top_k)
+        probs /= top_k
+        while True:
+            self.tracer.reset(indices=test['input'])
+            i = np.random.choice(top_k, p=probs)
+            trace = test['traces'][i]
+            # TODO: Don't hardcode 200
+            if len(trace) < 200:
+                for action in trace:
+                    getattr(self.karel_parser.karel, action, lambda: False)()
+
+                if (np.where(self.tracer.full_grid.ravel())[0].tolist() ==
+                        test['output']):
+                    # This trace was successful
+                    return (self.tracer.grids, self.tracer.actions,
+                            self.tracer.conds)
+            probs[i] = 0
+            if np.all(probs == 0):
+                break
+
+        # Unable to produce a satisfactory trace
+        input_grid = np.zeros((15, 18, 18), dtype=np.bool)
+        output_grid = np.zeros((15, 18, 18), dtype=np.bool)
+        input_grid.ravel()[test['input']] = True
+        output_grid.ravel()[test['output']] = True
+
+        return (
+                [input_grid, output_grid],
+                ['UNK'],
+                # TODO: Fix these conds
+                [self.tracer.conds[0], self.tracer.conds[-1]],)
 
     def __call__(self, batch):
         batch_size = len(batch)
@@ -493,7 +526,44 @@ class CodeFromTracesBatchProcessor(object):
         input_grids, output_grids = karel_model.encode_io_grids(batch, volatile=self.for_eval)
         code_seqs = [['<S>'] + item.code_sequence + ['</S>'] for item in batch]
 
-        if 'trace' in batch[0].input_tests[0]:
+        if 'traces' in batch[0].input_tests[0]:
+            # TODO: Allow a mixture
+            assert all(
+                    'traces' in test for item in batch for test in
+                    item.input_tests)
+
+            grids_lists = []
+            conds = []
+            actions = []
+            grid_idx = 0
+            for batch_idx, item in enumerate(batch):
+                for test_idx, test in enumerate(item.input_tests):
+                    grids, trace_actions, trace_conds = self.select_trace(
+                        self.args.karel_trace_top_k, test)
+
+                    action_ids = []
+                    for action in trace_actions:
+                        action_id = karel_trace.action_to_id.get(action)
+                        if action_id is not None:
+                            action_ids.append(action_id)
+                    action_ids.append(1)   # </s>
+
+                    grids_lists.append(grids)
+                    actions.append(action_ids)
+                    conds.append(trace_conds)
+                    grid_idx += 1
+
+            trace_grids = karel_model.lists_to_packed_sequence(
+                grids_lists, (15, 18, 18), torch.FloatTensor,
+                lambda item, batch_idx, out: out.copy_(torch.from_numpy(item.astype(np.float32))),
+                volatile=self.for_eval)
+
+            assert all(
+                len(g) == len(a) for g, a in zip(grids_lists, actions))
+            interleave = [[0] + [1, 0] * (len(grids_list) - 1)
+                          for grids_list in grids_lists]
+
+        elif 'trace' in batch[0].input_tests[0]:
             # TODO: Allow a mixture of tests with and without predefined traces
             assert all('trace' in test for item in batch for test in
                     item.input_tests)
