@@ -6,6 +6,8 @@ import torch.nn.functional as F
 from torch.autograd import Variable
 import numpy as np
 
+import torch.sparse
+
 from program_synthesis.datasets import data
 from program_synthesis.models import base
 from program_synthesis.models import beam_search
