@@ -1,6 +1,7 @@
 import numpy as np
 
-from program_synthesis.algolisp.dataset import executor, bleu
+from program_synthesis.tools import bleu
+from program_synthesis.algolisp.dataset import executor
 
 
 def is_same_code(example, res):
