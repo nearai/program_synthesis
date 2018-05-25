@@ -1,12 +1,11 @@
-import collections
-
-from cached_property import cached_property
 import gym
 import numpy as np
+from cached_property import cached_property
 
 from program_synthesis.datasets import executor as executor_mod
 from program_synthesis.datasets.karel import mutation
 from program_synthesis.datasets.karel import parser_for_synthesis
+from program_synthesis.models.rl_agent.utils import ActionAddParameters, ActionRemoveParameters, ActionReplaceParameters
 
 
 class AnnotatedTree(object):
@@ -188,7 +187,7 @@ class MutationActionSpace(gym.Space):
 
             sel_tok = np.random.choice(mutation.ACTION_NAMES)
 
-            return sel_loc, sel_tok
+            return ActionAddParameters(sel_loc, sel_tok)
 
         elif action == mutation.REMOVE_ACTION:
             valid_loc = list(self.atree.remove_action_locs)
@@ -198,7 +197,7 @@ class MutationActionSpace(gym.Space):
 
             sel_loc = valid_loc[np.random.choice(len(valid_loc))]
 
-            return sel_loc,
+            return ActionRemoveParameters(sel_loc)
 
         elif action == mutation.REPLACE_ACTION:
             valid_loc = list(self.atree.replace_action_locs)
@@ -210,7 +209,7 @@ class MutationActionSpace(gym.Space):
 
             sel_tok = np.random.choice(mutation.ACTION_NAMES)
 
-            return sel_loc, sel_tok
+            return ActionReplaceParameters(sel_loc, sel_tok)
         else:
             # TODO[IMPLEMENT_ACTION]
             raise NotImplementedError()

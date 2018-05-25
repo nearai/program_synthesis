@@ -25,6 +25,7 @@ class ReplayBuffer(object):
         return [self.buffer[idx] for idx in index]
 
 
+# TODO: Change `state` name for `code`
 class StepExample(collections.namedtuple('StepExample', ['task', 'state', 'action', 'reward', 'new_state'])):
     def __str__(self):
         buff = io.StringIO()
@@ -34,3 +35,10 @@ class StepExample(collections.namedtuple('StepExample', ['task', 'state', 'actio
         print("Action: {} Reward: {}".format(self.action, self.reward), file=buff)
 
         return buff.getvalue()
+
+
+Action = collections.namedtuple('Action', ['id', 'parameters'])
+
+ActionAddParameters = collections.namedtuple('ActionAddParameters', ['location', 'token'])
+ActionRemoveParameters = collections.namedtuple('ActionRemoveParameters', ['location'])
+ActionReplaceParameters = collections.namedtuple('ActionReplaceParameters', ['location', 'token'])
