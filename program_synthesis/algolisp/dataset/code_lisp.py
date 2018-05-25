@@ -125,7 +125,7 @@ def div(x, y):
 
 
 def slice_func(arr, lo, hi):
-    lo, hi = max(0, lo), max(0, hi)
+    lo = max(0, lo)
     return arr[lo:hi]
 
 

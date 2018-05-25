@@ -1,7 +1,7 @@
 import re
 
-import code_types
-import code_lisp
+from program_synthesis.algolisp.dataset import code_types
+from program_synthesis.algolisp.dataset import code_lisp
 
 
 def parse_arguments(args):
