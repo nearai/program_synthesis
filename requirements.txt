@@ -1,3 +1,4 @@
+gym
 git+git://github.com/nearai/pytorch-tools
 ipython
 # Workaround for https://github.com/numpy/numpy/issues/10474

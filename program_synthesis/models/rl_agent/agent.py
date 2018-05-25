@@ -6,18 +6,27 @@
 
 import numpy as np
 import torch
-import torch.nn as nn
 import torch.utils.data
+from program_synthesis.datasets.karel import mutation
 from torch import optim
 
-from program_synthesis.datasets.karel.mutation import ADD_ACTION, REMOVE_ACTION, REPLACE_ACTION
-from program_synthesis.datasets.karel.refine_env import MutationActionSpace, AnnotatedTree
+from program_synthesis.datasets.karel.refine_env import MutationActionSpace
+from program_synthesis.models.rl_agent.config import VOCAB_SIZE, EPSILON, DISCOUNT, ALPHA, TOTAL_MUTATION_ACTIONS, \
+    MAX_TOKEN_PER_CODE, LOCATION_EMBED_SIZE
 from program_synthesis.models.rl_agent.environment import KarelEditEnv
 from program_synthesis.models.rl_agent.policy import KarelEditPolicy
-from program_synthesis.models.rl_agent.utils import ReplayBuffer, StepExample
+from program_synthesis.models.rl_agent.utils import ReplayBuffer, StepExample, Action
 from program_synthesis.tools import saver
 
-from program_synthesis.models.rl_agent.config import VOCAB_SIZE, EPSILON, DISCOUNT, ALPHA
+
+# https://discuss.pytorch.org/t/nn-criterions-dont-compute-the-gradient-w-r-t-targets/3693
+def mse_loss(input, target):
+    return torch.sum((input - target) ** 2) / input.data.nelement()
+
+
+# https://discuss.pytorch.org/t/is-there-something-like-keras-utils-to-categorical-in-pytorch/5960/2
+def to_categorical(y, num_classes):
+    return torch.eye(num_classes)[y.type(torch.long)]
 
 
 class KarelAgent:
@@ -28,7 +37,7 @@ class KarelAgent:
 
         # Build model
         self.model = KarelEditPolicy(VOCAB_SIZE, args)
-        self.criterion = nn.MSELoss()
+        self.criterion = mse_loss
         self.optimizer = optim.Adam(self.model.parameters(), lr=args.lr)
 
     def set_task(self, task):
@@ -42,7 +51,7 @@ class KarelAgent:
             act_dist = torch.exp(action_value)
             act_dist /= act_dist.sum()
         else:
-            raise ValueError(f'Mode {mode} is invalid')
+            raise ValueError('Mode {mode} is invalid'.format(mode=mode))
 
         return act_dist
 
@@ -69,7 +78,7 @@ class KarelAgent:
                 params = action_space.sample_parameters(action_id)
 
                 if params is not None:
-                    return action_id, params
+                    return Action(action_id, params)
         else:
             action_value = self.model.action_value(self.task_enc, code)
             act_dist = self.policy_from_value(action_value, mode='softmax')
@@ -84,7 +93,9 @@ class KarelAgent:
                 params = action_space.sample_parameters(action_id)
 
                 if params is not None:
-                    return action_id, params
+                    break
+
+            return Action(action_id, params)
 
     def action_value(self, tasks, code):
         """ Determine the value of each action (without parameters)
@@ -101,20 +112,71 @@ class KarelAgent:
         return best_val
 
     def train(self, tasks, states, actions, targets):
+        batch_size = targets.shape[0]
+
+        # Compute action gradients
         self.optimizer.zero_grad()
-        input_grids, output_grids = tasks
-        task_state = self.model.encode(input_grids, output_grids)
-        action_values = self.model.action_value(task_state, states)
-        current_value = action_values.dot(actions)
+        tasks_encoded = self.model.encode_task(tasks)
+        action_values = self.model.action_value(tasks_encoded, states)
+        current_value = torch.Tensor([action_values[idx][actions[idx][0]] for idx in range(batch_size)])
         loss = self.criterion(current_value, targets)
-        loss.backward()
+
+        # https://discuss.pytorch.org/t/runtimeerror-trying-to-backward-through-the-graph-a-second-time-but-the-buffers-have-already-been-freed-specify-retain-graph-true-when-calling-backward-the-first-time/6795/2?
+        # Is it better to compute multiple loss once?
+        loss.backward(retain_graph=True)
+
         self.optimizer.step()
+
+        # Update location network
+        self.optimizer.zero_grad()
+
+        masks = torch.ones(batch_size, MAX_TOKEN_PER_CODE)
+        selected_location = torch.zeros(batch_size, MAX_TOKEN_PER_CODE)
+
+        for idx in range(batch_size):
+            if actions[idx].id in (mutation.ADD_ACTION, mutation.REPLACE_ACTION, mutation.REMOVE_ACTION):
+                selected_location[idx][actions[idx].parameters.location] = 1.
+
+        action_categorical = to_categorical(torch.Tensor([a.id for a in actions]), TOTAL_MUTATION_ACTIONS)
+        states_encoded = to_categorical(states, VOCAB_SIZE)
+
+        location_reward_vec, location_embed_vec = self.model.location(action_categorical, tasks_encoded, states_encoded,
+                                                                      masks)
+        location_reward_vec = location_reward_vec.reshape(batch_size, -1)
+
+        has_location = torch.ones(batch_size)
+
+        location_reward = (location_reward_vec * selected_location).sum(1)
+        location_reward_target = targets * has_location
+
+        location_loss = self.criterion(location_reward, location_reward_target)
+
+        location_loss.backward(retain_graph=True)
+        self.optimizer.step()
+
+        # Update token network
+        self.optimizer.zero_grad()
+
+        location_embed = torch.zeros(batch_size, LOCATION_EMBED_SIZE)
+        token_selected = torch.zeros(batch_size, len(mutation.ACTION_NAMES))
+
+        for idx in range(batch_size):
+            if actions[idx].id in (mutation.ADD_ACTION, mutation.REPLACE_ACTION):
+                location_embed[idx] = location_embed_vec[idx][actions[idx].parameters.location]
+                token_selected[idx][mutation.get_action_name_id(actions[idx].parameters.token)] = 1.
+
+        token_value = self.model.karel_token(action_categorical, tasks_encoded, location_embed)
+        token_reward = (token_selected * token_value).sum(1)
+
+        token_loss = mse_loss(token_reward, targets)
+        token_loss.backward()
+
+        self.optimizer.step()
+
+        print("train step...")
 
     def update(self, other):
         self.model.load_state_dict(other.model.state_dict())
-
-
-# TODO: Change `state` name for `code`
 
 
 def rollout(env, agent, epsilon_greedy, max_rollout_length):
@@ -150,27 +212,12 @@ class PolicyTrainer(object):
         new_states = self.env.prepare_states([ex.new_state for ex in batch])
         actions = self.env.prepare_actions([ex.action for ex in batch])
 
-        tasks_enc = self.actor.model.encode_task(tasks)
-
-        targets = np.zeros(len(batch))
+        targets = torch.zeros(len(batch))
         values = self.critic.action_value(tasks, states)
         new_value = self.actor.best_action_value(tasks, new_states)
 
         for idx, ex in enumerate(batch):
-            code = self.env.recover_code(ex.state)
-            atree = AnnotatedTree(code=code)
-            # Q_s_a =
-
-            if ex.action == ADD_ACTION:
-                pass
-            elif ex.action == REMOVE_ACTION:
-                pass
-            elif ex.action == REPLACE_ACTION:
-                pass
-            else:
-                raise NotImplementedError('Action not implemented')
-
-            Q_s_a = values[idx][ex.action]
+            Q_s_a = values[idx][ex.action[0]]
             new_Q_s_a = 0 if ex.reward == 0 else (ex.reward + DISCOUNT * new_value[idx])
             targets[idx] = Q_s_a + ALPHA * (new_Q_s_a - Q_s_a)
 
