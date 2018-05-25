@@ -1,6 +1,6 @@
 # Setup
 
-This codebase uses Python 2.
+This codebase uses Python 2 / 3.
 
 1. (optionally) Create a virtualenv.
 2. Install PyTorch from https://pytorch.org
@@ -10,14 +10,14 @@ This codebase uses Python 2.
 # Training models
 
 ## Karel
-Download the preproessed dataset:
+Download the preprocessed dataset:
 ```
 cd data
 wget https://s3.us-east-2.amazonaws.com/karel-dataset/karel.tar.gz
 tar xf karel.tar.gz
 ```
 
-Train a model with SGD:
+Train a model with SGD from `program_synthesis/karel` folder:
 ```
 python train.py --dataset karel --model_type karel-lgrl \
   --debug_every_n=10000 --eval_every_n=10000 --keep_every_n=50000 \

@@ -1,9 +1,9 @@
 import unittest
 import math
 
-from code_lisp import *
-from code_lisp_parser import parse_and_compile
-import code_trace
+from program_synthesis.algolisp.dataset.code_lisp import *
+from program_synthesis.algolisp.dataset.code_lisp_parser import parse_and_compile
+from program_synthesis.algolisp.dataset import code_trace
 
 
 class TestLisp(unittest.TestCase):
