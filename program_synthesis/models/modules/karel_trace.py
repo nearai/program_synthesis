@@ -326,8 +326,37 @@ class LatePoolingCodeDecoder(nn.Module):
                 beam_size)
             return LatePoolingCodeDecoder.Memory(io_exp, trace_exp)
 
+    class State(
+            collections.namedtuple('State', ['context', 'prev_states', 'h', 'c']),
+            beam_search.BeamSearchState):
+        def select_for_beams(self, batch_size, indices):
+            '''Return the hidden state necessary to continue the beams.
+
+            batch size: int
+            indices: 2 x batch size * beam size LongTensor
+            '''
+            selected = [
+                None if self.context is None else self.context.view(
+                    batch_size, -1,
+                    *self.context.shape[1:])[indices.data.numpy()],
+                [state.view(batch_size, -1, *state.shape[1:])[indices.data.numpy()] for state in self.prev_states]
+            ]
+            for v in self.h, self.c:
+                # before: 2 x batch size (* beam size) x num pairs x hidden
+                # after:  2 x batch size x beam size x num pairs x hidden
+                v = v.view(2, batch_size, -1, *v.shape[2:])
+                # result: 2 x indices.shape[1] x num pairs x hidden
+                selected.append(v[(slice(None), ) + tuple(indices.data.numpy(
+                ))])
+            return LatePoolingCodeDecoder.State(*selected)
+
+        def truncate(self, k):
+            return LatePoolingCodeDecoder.State(
+                self.context[:k],
+                [state[:k] for state in self.prev_states], self.h[:, :k], self.c[:, :k])
+
     # TODO: Deduplicate with LGRLRefineDecoderState.
-    State = utils.MultiContextLSTMState
+    # State = utils.MultiContextLSTMState
 
     def __init__(self, vocab_size, args):
         super(LatePoolingCodeDecoder, self).__init__()
@@ -349,17 +378,23 @@ class LatePoolingCodeDecoder(nn.Module):
             self.trace_attention = attention.SimpleSDPAttention(256, 512)
 
         self.use_io_embed = args.karel_io_enc != 'none'
+        self.use_intra_attention = args.karel_code_dec.endswith(':att')
+        if self.use_intra_attention:
+            self.intra_attention = attention.SimpleSDPAttention(256, 256)
 
         self.code_embed = nn.Embedding(vocab_size, 256)
         self.decoder = nn.LSTM(
             input_size=256 +  # last code token
-            (512 if self.use_io_embed else 0) +  # io embedding
-            (512 if self.use_trace_memory else 0),  # memory from trace
+            (512 if self.use_io_embed else 0) +       # io embedding
+            (512 if self.use_trace_memory else 0),    # memory from trace
             hidden_size=256,
             num_layers=2)
 
-        self.out = nn.Linear(256 + (512 if self.use_trace_memory else 0),
-                             vocab_size)
+        self.out = nn.Linear(
+            256 + 
+            (512 if self.use_trace_memory else 0) +
+            (256 if self.use_intra_attention else 0),
+            vocab_size)
 
     def prepare_memory(self, batch_size, pairs_per_example, io_embed,
                        trace_memory):
@@ -478,9 +513,16 @@ class LatePoolingCodeDecoder(nn.Module):
                 utils.flatten(memory.trace.memory, 0),
                 utils.flatten(memory.trace.attn_mask, 0))
 
+        intra_context = None
+        if self.use_intra_attention:
+            intra_context, _ = self.intra_attention(
+                dec_output,
+                torch.cat([s.view(-1, 1, s.shape[-1]) for s in state.prev_states], dim=1),
+                None)
+
         # batch (* beam) * num pairs x hidden
         emb_for_logits = utils.maybe_concat(
-            (new_context, dec_output), dim=1)
+            (new_context, dec_output, intra_context), dim=1)
         # batch (* beam) x hidden
         emb_for_logits, _ = emb_for_logits.view(
             -1, pairs_per_example, emb_for_logits.shape[-1]).max(dim=1)
@@ -490,6 +532,8 @@ class LatePoolingCodeDecoder(nn.Module):
         return LatePoolingCodeDecoder.State(
             None if new_context is None else
             new_context.view(-1, pairs_per_example, new_context.shape[-1]),
+            state.prev_states + [
+                dec_output.view(-1, pairs_per_example, dec_output.shape[-1])],
             *new_state), logits
 
     def init_state(self, batch_size, pairs_per_example):
@@ -501,8 +545,15 @@ class LatePoolingCodeDecoder(nn.Module):
         else:
             context = None
 
+        if self.use_intra_attention:
+            prev_states = [Variable(torch.zeros(batch_size, pairs_per_example, 256))]
+            if self._cuda:
+                prev_states[-1] = prev_states[-1].cuda()
+        else:
+            prev_states = []
+
         return LatePoolingCodeDecoder.State(
-            context, *utils.lstm_init(
+            context, prev_states, *utils.lstm_init(
                 self._cuda, 2, 256, batch_size, pairs_per_example))
 
 
