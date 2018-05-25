@@ -5,7 +5,7 @@ from torch import nn as nn
 from program_synthesis.datasets.karel import mutation
 from program_synthesis.models.modules import karel_common, karel
 from program_synthesis.models.rl_agent.config import TOTAL_MUTATION_ACTIONS, TASK_EMBED_SIZE, LOCATION_EMBED_SIZE, \
-    TOKEN_EMBED_SIZE
+    TASK_STATE_EMBED, VOCAB_SIZE
 
 
 class KarelEditPolicy(nn.Module):
@@ -78,7 +78,7 @@ class ActionTypeModel(nn.Module):
 
     def __init__(self):
         super(ActionTypeModel, self).__init__()
-        self.dense0 = nn.Linear(TASK_EMBED_SIZE, 20)
+        self.dense0 = nn.Linear(TASK_STATE_EMBED, 20)
         self.dense1 = nn.Linear(20, TOTAL_MUTATION_ACTIONS)
 
     def forward(self, embed):
@@ -93,8 +93,8 @@ class LocationParameterModel(nn.Module):
 
         Input:
             A:  Action to be done [shape: (None, TOTAL_MUTATION_ACTION)]
-            E:  Embed of the (task, code) [shape: (None, INPUT_EMBED_SIZE)]
-            C:  np.array Code represented as token sequence [shape: (None, SEQ_LENGTH, TOKEN_EMBED)]
+            E:  Embed of the task [shape: (None, TASK_EMBED_SIZE)]
+            C:  np.array Code represented as token sequence [shape: (None, SEQ_LENGTH, VOCAB_SIZE)]
             M:  np.array
                 M.shape == C.shape
                 Mask array denoting that an action in the given location is valid.
@@ -110,18 +110,18 @@ class LocationParameterModel(nn.Module):
 
     def __init__(self):
         super(LocationParameterModel, self).__init__()
-        self.lstm = nn.LSTM(TOKEN_EMBED_SIZE, LOCATION_EMBED_SIZE)
+        self.lstm = nn.LSTM(VOCAB_SIZE, LOCATION_EMBED_SIZE)
 
         self.dense_cell = nn.Linear(TOTAL_MUTATION_ACTIONS + TASK_EMBED_SIZE, LOCATION_EMBED_SIZE)
         self.dense_reward = nn.Linear(LOCATION_EMBED_SIZE, 1)
 
-    def forward(self, action, embed, code, mask):
+    def forward(self, action, tasks_enc, code, mask):
         # Prepare code vector
         code = code.permute((1, 0, 2))  # Seq length, batch size, vector size
 
         seq_length, batch_size, _ = code.shape
 
-        cell = F.relu(self.dense_cell(torch.cat([action, embed], dim=1)))
+        cell = F.relu(self.dense_cell(torch.cat([action, tasks_enc], dim=1)))
         hidden = torch.zeros(cell.shape)
 
         comp = (hidden.view(1, *hidden.shape), cell.view(1, *cell.shape))
@@ -139,7 +139,7 @@ class KarelTokenParameterModel(nn.Module):
 
         Input:
             A: Action (One hot encoding)
-            E: Embed of the (task, code)
+            E: Embed of the task
             L: Location Embedding
 
         Output:
@@ -161,5 +161,5 @@ class KarelTokenParameterModel(nn.Module):
         repr = torch.cat([action, embed, loc_embed], dim=1)
         hidden = F.relu(self.dense0(repr))
         hidden = F.relu(self.dense1(hidden))
-        output = F.softmax(self.dense2(hidden))
+        output = F.softmax(self.dense2(hidden), dim=1)
         return output
