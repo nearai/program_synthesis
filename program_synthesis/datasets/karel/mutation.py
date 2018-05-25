@@ -45,6 +45,11 @@ CONDS_MASKED_PROBS = {
 }
 
 ACTION_NAMES = ('move', 'turnLeft', 'turnRight', 'putMarker', 'pickMarker')
+
+
+def get_action_name_id(action_name):
+    return ACTION_NAMES.index(action_name)
+
 ACTIONS_MASKED_PROBS = {
     n: masked_uniform(len(ACTION_NAMES), i)
     for i, n in enumerate(ACTION_NAMES)
