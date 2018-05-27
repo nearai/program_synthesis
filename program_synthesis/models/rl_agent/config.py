@@ -1,3 +1,5 @@
+from program_synthesis.datasets.karel.mutation import ACTION_NAMES
+
 DISCOUNT = 0.99
 EPSILON = 0.1
 ALPHA = 0.7
@@ -5,7 +7,23 @@ ALPHA = 0.7
 VOCAB_SIZE = 43
 MAX_TOKEN_PER_CODE = 20
 
+# Number of different possible actions to modify the code
 TOTAL_MUTATION_ACTIONS = 8
+
+# Dimension of task latent space
+# Task <=> (I/O)
 TASK_EMBED_SIZE = 512
-TASK_STATE_EMBED = 1024
+
+CODE_EMBED_SIZE = 512
+
+# Dimension of state latent space
+# State <=> (Task, Code Embed)
+STATE_EMBED_SIZE = TASK_EMBED_SIZE + CODE_EMBED_SIZE
+
+# Dimension of each location latent space
 LOCATION_EMBED_SIZE = 32
+
+# Token embed size
+TOKEN_EMBED_SIZE = 256
+
+KAREL_STATIC_TOKEN = len(ACTION_NAMES)
