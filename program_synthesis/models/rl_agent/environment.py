@@ -1,10 +1,10 @@
 import itertools
+
 import torch
 
 from program_synthesis import datasets
 from program_synthesis.datasets import data
 from program_synthesis.datasets.karel import refine_env
-from program_synthesis.datasets.karel.refine_env import MutationActionSpace
 from program_synthesis.models import karel_model, prepare_spec
 from .config import MAX_TOKEN_PER_CODE
 
@@ -36,6 +36,10 @@ class KarelEditEnv(object):
     def atree(self):
         return self._cur_env.atree
 
+    @property
+    def action_space(self):
+        return self._cur_env.action_space
+
     @staticmethod
     def prepare_tasks(tasks):
         input_grids = torch.cat([t[0] for t in tasks], dim=0)
@@ -58,11 +62,12 @@ class KarelEditEnv(object):
         return current_code
 
     def recover_code(self, state):
+        state = state.reshape(-1)  # Remove first dimension
         return ' '.join(
-                        itertools.takewhile(
-                            lambda token: token != '</S>',
-                            map(self.vocab.itos, state[1:])
-                        )
+            itertools.takewhile(
+                lambda token: token != '</S>',
+                map(self.vocab.itos, state[1:].numpy())
+            )
         )
 
     @staticmethod
