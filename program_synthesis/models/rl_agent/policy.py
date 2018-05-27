@@ -2,10 +2,9 @@ import torch
 import torch.nn.functional as F
 from torch import nn as nn
 
-from program_synthesis.datasets.karel import mutation
 from program_synthesis.models.modules import karel_common, karel
 from program_synthesis.models.rl_agent.config import TOTAL_MUTATION_ACTIONS, TASK_EMBED_SIZE, LOCATION_EMBED_SIZE, \
-    TASK_STATE_EMBED, VOCAB_SIZE
+    STATE_EMBED_SIZE, KAREL_STATIC_TOKEN, TOKEN_EMBED_SIZE
 
 
 class KarelEditPolicy(nn.Module):
@@ -22,7 +21,8 @@ class KarelEditPolicy(nn.Module):
         self.location = LocationParameterModel()
         self.karel_token = KarelTokenParameterModel()
 
-        self._code_embed = None
+        self.code_token_embed = None
+        self.code_enc = None
         self._state = None
 
     def encode_task(self, tasks):
@@ -43,27 +43,14 @@ class KarelEditPolicy(nn.Module):
             Note:
                 Store the embedded code in the policy for picking parameters
         """
-        self._code_embed, code_enc = self.encode_code(code)
-        self._state = torch.cat([task_enc, code_enc], 1)
+        self.code_token_embed, self.code_enc = self.encode_code(code)
+        self._state = torch.cat([task_enc, self.code_enc], dim=1)
+
         act = self.action_type(self._state)
         return act
 
-    def parameters_value(self, action):
-        """
-            Warning:
-                This method must be called after calling `action_value`
-        """
-        if action == mutation.ADD_ACTION:
-            pass
-        elif action == mutation.REMOVE_ACTION:
-            pass
-        elif action == mutation.REPLACE_ACTION:
-            pass
-        else:
-            raise NotImplementedError("Action parameters values not implemented yet.")
-
     def forward(self):
-        pass
+        raise ValueError("This module can't be evaluated")
 
 
 class ActionTypeModel(nn.Module):
@@ -75,11 +62,12 @@ class ActionTypeModel(nn.Module):
         Output:
             A:  Expected reward given an action
     """
+    HIDDEN_0 = 32
 
     def __init__(self):
         super(ActionTypeModel, self).__init__()
-        self.dense0 = nn.Linear(TASK_STATE_EMBED, 20)
-        self.dense1 = nn.Linear(20, TOTAL_MUTATION_ACTIONS)
+        self.dense0 = nn.Linear(STATE_EMBED_SIZE, self.HIDDEN_0)
+        self.dense1 = nn.Linear(self.HIDDEN_0, TOTAL_MUTATION_ACTIONS)
 
     def forward(self, embed):
         hidden = F.relu(self.dense0(embed))
@@ -92,12 +80,9 @@ class LocationParameterModel(nn.Module):
         It is a recurrent nn to support code sequence of different lengths
 
         Input:
-            A:  Action to be done [shape: (None, TOTAL_MUTATION_ACTION)]
-            E:  Embed of the task [shape: (None, TASK_EMBED_SIZE)]
-            C:  np.array Code represented as token sequence [shape: (None, SEQ_LENGTH, VOCAB_SIZE)]
-            M:  np.array
-                M.shape == C.shape
-                Mask array denoting that an action in the given location is valid.
+            A:  Action to be done [shape: (BATCH_SIZE, TOTAL_MUTATION_ACTION)]
+            E:  Embed of the task [shape: (BATCH_SIZE, TASK_EMBED_SIZE)]
+            C:  Code represented as token sequence [shape: (SEQ_LENGTH, BATCH_SIZE, TOKEN_EMBED)]
 
         Output:
             O:  np.array [shape: (None, SEQ_LENGTH, 1)]
@@ -110,26 +95,25 @@ class LocationParameterModel(nn.Module):
 
     def __init__(self):
         super(LocationParameterModel, self).__init__()
-        self.lstm = nn.LSTM(VOCAB_SIZE, LOCATION_EMBED_SIZE)
+        self.lstm = nn.LSTM(TOKEN_EMBED_SIZE, LOCATION_EMBED_SIZE)
 
         self.dense_cell = nn.Linear(TOTAL_MUTATION_ACTIONS + TASK_EMBED_SIZE, LOCATION_EMBED_SIZE)
         self.dense_reward = nn.Linear(LOCATION_EMBED_SIZE, 1)
 
-    def forward(self, action, tasks_enc, code, mask):
+    def forward(self, action, tasks_enc, code):
         # Prepare code vector
-        code = code.permute((1, 0, 2))  # Seq length, batch size, vector size
+        # code = code.permute((1, 0, 2))  # Convert to: (Seq length, batch size, vector size)
 
         seq_length, batch_size, _ = code.shape
 
         cell = F.relu(self.dense_cell(torch.cat([action, tasks_enc], dim=1)))
-        hidden = torch.zeros(cell.shape)
+        hidden = torch.zeros(*cell.shape)
 
         comp = (hidden.view(1, *hidden.shape), cell.view(1, *cell.shape))
 
         loc_embed, _ = self.lstm(code, comp)
 
         reward = F.sigmoid(self.dense_reward(loc_embed.view(-1, LOCATION_EMBED_SIZE))).view(seq_length, batch_size, -1)
-        reward = reward * mask.permute((1, 0)).view(seq_length, batch_size, 1)
 
         return reward.permute((1, 0, 2)), loc_embed.permute((1, 0, 2))
 
@@ -150,12 +134,14 @@ class KarelTokenParameterModel(nn.Module):
                 + putMarker
                 + pickMarker
     """
+    HIDDEN_0 = 32
+    HIDDEN_1 = 32
 
     def __init__(self):
         super(KarelTokenParameterModel, self).__init__()
-        self.dense0 = nn.Linear(TOTAL_MUTATION_ACTIONS + TASK_EMBED_SIZE + LOCATION_EMBED_SIZE, 50)
-        self.dense1 = nn.Linear(50, 50)
-        self.dense2 = nn.Linear(50, 5)
+        self.dense0 = nn.Linear(TOTAL_MUTATION_ACTIONS + TASK_EMBED_SIZE + LOCATION_EMBED_SIZE, self.HIDDEN_0)
+        self.dense1 = nn.Linear(self.HIDDEN_0, self.HIDDEN_1)
+        self.dense2 = nn.Linear(self.HIDDEN_1, KAREL_STATIC_TOKEN)
 
     def forward(self, action, embed, loc_embed):
         repr = torch.cat([action, embed, loc_embed], dim=1)
@@ -163,3 +149,4 @@ class KarelTokenParameterModel(nn.Module):
         hidden = F.relu(self.dense1(hidden))
         output = F.softmax(self.dense2(hidden), dim=1)
         return output
+
