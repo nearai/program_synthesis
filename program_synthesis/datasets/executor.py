@@ -4,6 +4,7 @@ import traceback
 
 import numpy as np
 import pylru
+import six
 
 from program_synthesis.datasets.karel import KarelForSynthesisParser
 from program_synthesis.datasets.karel import KarelSyntaxError
@@ -151,7 +152,7 @@ class KarelExecutor(object):
 
                 finished = False
                 if while_locs and while_counts:
-                    offending_span, count = max(while_counts.iteritems(),
+                    offending_span, count = max(six.iteritems(while_counts),
                                                 key=operator.itemgetter(1))
                     if count > 0 and offending_span in while_locs:
                         offending_loc = while_locs[offending_span]
