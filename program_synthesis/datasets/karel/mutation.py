@@ -8,6 +8,7 @@ import numpy as np
 from program_synthesis.datasets import executor
 from program_synthesis.datasets.karel import parser_for_synthesis
 
+
 # Tree structure
 # - run: body
 # - if: cond, body
@@ -32,16 +33,15 @@ def choose(rng, sequence, p=None):
 CONDS = [{
     'type': t
 }
-         for t in ('frontIsClear', 'leftIsClear', 'rightIsClear',
-                   'markersPresent', 'noMarkersPresent')]
+    for t in ('frontIsClear', 'leftIsClear', 'rightIsClear',
+              'markersPresent', 'noMarkersPresent')]
 # no not for markersPresent and noMarkersPresent
 CONDS.extend({'type': 'not', 'cond': cond} for cond in CONDS[:3])
 CONDS_MASKED_PROBS = {
     n: masked_uniform(len(CONDS), i)
-    for i, n in enumerate(
-        ('frontIsClear', 'leftIsClear', 'rightIsClear', 'markersPresent',
-         'noMarkersPresent', 'notfrontIsClear', 'notleftIsClear',
-         'notrightIsClear'))
+    for i, n in enumerate(('frontIsClear', 'leftIsClear', 'rightIsClear', 'markersPresent',
+                           'noMarkersPresent', 'notfrontIsClear', 'notleftIsClear',
+                           'notrightIsClear'))
 }
 
 ACTION_NAMES = ('move', 'turnLeft', 'turnRight', 'putMarker', 'pickMarker')
@@ -49,6 +49,7 @@ ACTION_NAMES = ('move', 'turnLeft', 'turnRight', 'putMarker', 'pickMarker')
 
 def get_action_name_id(action_name):
     return ACTION_NAMES.index(action_name)
+
 
 ACTIONS_MASKED_PROBS = {
     n: masked_uniform(len(ACTION_NAMES), i)
@@ -61,11 +62,13 @@ ACTIONS_DICT = dict(zip(ACTION_NAMES, ACTIONS))
 
 REPEAT_COUNTS = [{'type': 'count', 'value': i} for i in range(2, 11)]
 REPEAT_MASKED_PROBS = [None, None] + [masked_uniform(len(REPEAT_COUNTS), i) for
-        i in range(len(REPEAT_COUNTS))]
+                                      i in range(len(REPEAT_COUNTS))]
+
+BLOCK_TYPE = ['if', 'while', 'repeat']
 
 
 def random_singular_block(rng):
-    type_ = rng.choice(('if', 'while', 'repeat'))
+    type_ = rng.choice(BLOCK_TYPE)
     if type_ == 'repeat':
         return {'type': type_, 'times': rng.choice(REPEAT_COUNTS)}
     else:
@@ -91,12 +94,10 @@ REPLACE_COND = 6
 SWITCH_IF_WHILE = 7
 DEFAULT_PROBS = np.array([1, 1, 1, 1, .25, .75, 1, 1], dtype=float)
 
-
 BodyInfo = collections.namedtuple('BodyInfo', ['node', 'type', 'elems'])
 
 
 class TreeIndex(object):
-
     def __init__(self, tree):
         self.action_locs = []
         self.cond_locs = []
@@ -109,7 +110,7 @@ class TreeIndex(object):
             node, address = queue.popleft()
             if node['type'] == 'ifElse':
                 bodies = [BodyInfo(node, 'ifElse-if', node['ifBody']),
-                                   BodyInfo(node, 'ifElse-else', node['elseBody'])]
+                          BodyInfo(node, 'ifElse-else', node['elseBody'])]
                 self.unwrappables.append(address)
             elif 'body' in node:
                 bodies = [BodyInfo(node, node['type'], node['body'])]
@@ -130,7 +131,7 @@ class TreeIndex(object):
 
         self.add_locs = [(body.elems, i)
                          for body in self.all_bodies for i in range(
-                             len(body) + 1)]
+                len(body) + 1)]
         self.remove_locs = [x for x in self.action_locs if len(x[0]) > 1]
 
     def count_actions(self):
@@ -175,7 +176,7 @@ def mutate(tree, probs=None, rng=None):
     probs[WRAP_BLOCK] *= sum(wrap_block_choices)
     probs[WRAP_IFELSE] *= sum(wrap_ifelse_choices)
     probs[REPLACE_COND] *= len(tree_index.cond_locs)
-    probs[SWITCH_IF_WHILE] *=  len(tree_index.all_if_whiles)
+    probs[SWITCH_IF_WHILE] *= len(tree_index.all_if_whiles)
     probs_sum = np.sum(probs)
     if probs_sum == 0:
         raise Exception('No mutation possible')
@@ -191,7 +192,7 @@ def mutate(tree, probs=None, rng=None):
     elif choice == REPLACE_ACTION:
         body, i = choose(rng, tree_index.action_locs)
         body[i] = choose(rng, ACTIONS,
-                p=ACTIONS_MASKED_PROBS[body[i]['type']])
+                         p=ACTIONS_MASKED_PROBS[body[i]['type']])
     elif choice == UNWRAP_BLOCK:
         body, i = choose(rng, tree_index.unwrappables)
         block = body[i]
@@ -233,8 +234,8 @@ def mutate(tree, probs=None, rng=None):
                     'cond', {}).get('type', '')])
         elif 'repeat' in node:
             node['repeat'] = rng.choice(
-                    REPEAT_COUNTS,
-                    p=REPEAT_MASKED_PROBS[node['repeat']['times']['value']])
+                REPEAT_COUNTS,
+                p=REPEAT_MASKED_PROBS[node['repeat']['times']['value']])
     elif choice == SWITCH_IF_WHILE:
         node = choose(rng, tree_index.all_if_whiles)
         node['type'] = {'if': 'while', 'while': 'if'}[node['type']]
@@ -245,7 +246,7 @@ def mutate(tree, probs=None, rng=None):
 def mutate_n(tree, count, probs=None, rng=None, allow_in_place=False):
     if rng is None:
         rng = np.random.RandomState()
-    if count  == 1:
+    if count == 1:
         if allow_in_place:
             return mutate(tree, probs, rng)
         return mutate(copy.deepcopy(tree), probs, rng)
@@ -267,7 +268,6 @@ def mutate_n(tree, count, probs=None, rng=None, allow_in_place=False):
 
 
 class KarelExampleMutator(object):
-
     def __init__(self, n_dist, rng_fixed, add_trace, probs=None):
         self.n_dist = n_dist / np.sum(n_dist)
         self.rng_fixed = rng_fixed
@@ -276,7 +276,7 @@ class KarelExampleMutator(object):
 
         self.rng = np.random.RandomState()
         self.parser = parser_for_synthesis.KarelForSynthesisParser(
-                build_tree=True)
+            build_tree=True)
         self.executor = executor.KarelExecutor(action_limit=250)
 
     def __call__(self, karel_example):
@@ -295,19 +295,31 @@ class KarelExampleMutator(object):
         if self.add_trace:
             for ex in karel_example.input_tests:
                 result = self.executor.execute(new_code, None, ex['input'],
-                        record_trace=True, strict=True)
+                                               record_trace=True, strict=True)
                 new_ex = dict(ex)
                 new_ex['trace'] = result.trace
                 new_tests.append(new_ex)
 
         karel_example.ref_example = KarelExample(
-                idx=None,
-                guid=None,
-                code_sequence=new_code,
-                input_tests=new_tests,
-                tests=karel_example.tests)
+            idx=None,
+            guid=None,
+            code_sequence=new_code,
+            input_tests=new_tests,
+            tests=karel_example.tests)
         return karel_example
 
+# Definition of Action Parameters
+
+Action = collections.namedtuple('Action', ['id', 'parameters'])
+
+ActionAddParameters = collections.namedtuple('ActionAddParameters', ['location', 'token'])
+ActionRemoveParameters = collections.namedtuple('ActionRemoveParameters', ['location'])
+ActionReplaceParameters = collections.namedtuple('ActionReplaceParameters', ['location', 'token'])
+ActionUnwrapBlockParameters = collections.namedtuple('ActionUnwrapBlockParameters', ['location'])
+ActionWrapBlockParameters = collections.namedtuple('ActionWrapBlockParameters',
+                                                   ['block_type', 'cond_id', 'start', 'end'])
+ActionWrapIfElseParameters = collections.namedtuple('ActionWrapIfElseParameters',
+                                                    ['cond_id', 'if_start', 'else_start', 'end'])
 
 # Obsolete notes
 # ==============
