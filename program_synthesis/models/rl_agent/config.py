@@ -1,4 +1,4 @@
-from program_synthesis.datasets.karel.mutation import ACTION_NAMES
+from program_synthesis.datasets.karel.mutation import ACTION_NAMES, BLOCK_TYPE, CONDS, REPEAT_COUNTS
 
 DISCOUNT = 0.99
 EPSILON = 0.1
@@ -27,3 +27,6 @@ LOCATION_EMBED_SIZE = 32
 TOKEN_EMBED_SIZE = 256
 
 KAREL_STATIC_TOKEN = len(ACTION_NAMES)
+BLOCK_TYPE_SIZE = len(BLOCK_TYPE)
+CONDITION_SIZE = len(CONDS)
+REPEAT_COUNT_SIZE = len(REPEAT_COUNTS)
