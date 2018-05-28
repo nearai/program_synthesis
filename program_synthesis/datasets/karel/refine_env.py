@@ -1,11 +1,14 @@
 import gym
 import numpy as np
+import six
 from cached_property import cached_property
 
 from program_synthesis.datasets import executor as executor_mod
 from program_synthesis.datasets.karel import mutation
 from program_synthesis.datasets.karel import parser_for_synthesis
-from program_synthesis.models.rl_agent.utils import ActionAddParameters, ActionRemoveParameters, ActionReplaceParameters
+from program_synthesis.datasets.karel.mutation import ActionAddParameters, ActionRemoveParameters, \
+    ActionReplaceParameters, ActionUnwrapBlockParameters, ActionWrapBlockParameters, ActionWrapIfElseParameters, \
+    REPEAT_COUNTS
 
 
 class AnnotatedTree(object):
@@ -184,35 +187,60 @@ class MutationActionSpace(gym.Space):
         if action == mutation.ADD_ACTION:
             valid_loc = list(self.atree.add_action_locs)
             sel_loc = valid_loc[np.random.choice(len(valid_loc))]
-
             sel_tok = np.random.choice(mutation.ACTION_NAMES)
-
             return ActionAddParameters(sel_loc, sel_tok)
 
         elif action == mutation.REMOVE_ACTION:
             valid_loc = list(self.atree.remove_action_locs)
-
             if len(valid_loc) == 0:
                 return None
-
             sel_loc = valid_loc[np.random.choice(len(valid_loc))]
-
             return ActionRemoveParameters(sel_loc)
 
         elif action == mutation.REPLACE_ACTION:
             valid_loc = list(self.atree.replace_action_locs)
-
             if len(valid_loc) == 0:
                 return None
-
             sel_loc = valid_loc[np.random.choice(len(valid_loc))]
-
             sel_tok = np.random.choice(mutation.ACTION_NAMES)
-
             return ActionReplaceParameters(sel_loc, sel_tok)
-        else:
-            # TODO[IMPLEMENT_ACTION]
+
+        elif action == mutation.UNWRAP_BLOCK:
+            valid_loc = list(self.atree.unwrap_block_locs)
+            if len(valid_loc) == 0:
+                return None
+            sel_loc = valid_loc[np.random.choice(len(valid_loc))]
+            return ActionUnwrapBlockParameters(sel_loc)
+
+        elif action == mutation.WRAP_BLOCK:
+            block_type = np.random.choice(['if', 'while', 'repeat'])
+
+            if block_type == 'repeat':
+                cond_id = np.random.choice(len(REPEAT_COUNTS))
+            else:  # block_type in ('if', 'while')
+                cond_id = np.random.choice(len(mutation.CONDS))
+
+            valid_locs = list(self.enumerate_simple_wrap_spans())
+            start_loc, end_loc = valid_locs[np.random.choice(len(valid_locs))]
+
+            return ActionWrapBlockParameters(block_type, cond_id, start_loc, end_loc)
+
+        elif action == mutation.WRAP_IFELSE:
+            cond_id = np.random.choice(len(mutation.CONDS))
+            valid_locs = list(self.enumerate_composite_wrap_spans())
+            start_if_loc, start_else_loc, end_else_loc = valid_locs[np.random.choice(len(valid_locs))]
+            return ActionWrapIfElseParameters(cond_id, start_if_loc, start_else_loc, end_else_loc)
+
+        elif action == mutation.REPLACE_COND:
+            # TODO: Implement missing actions
             raise NotImplementedError()
+
+        elif action == mutation.SWITCH_IF_WHILE:
+            raise NotImplementedError()
+
+        else:
+            raise ValueError(f"Invalid action id {action}. \
+            Action id must be in the range [0, 8)")
 
     def sample(self):
         space = self.full_space()
@@ -362,13 +390,30 @@ class MutationActionSpace(gym.Space):
 
         self.atree.notify_mutation()
 
+    def enumerate_simple_wrap_spans(self):
+        for loc1, (body1, i1) in six.iteritems(self.atree.pre_insert_locs):
+            for loc2, (body2, i2) in six.iteritems(self.atree.post_insert_locs):
+                if body1 is not body2 or i2 < i1:
+                    continue
+                yield (loc1, loc2)
+
+    def enumerate_composite_wrap_spans(self):
+        for loc1, (body1, i1) in six.iteritems(self.atree.pre_insert_locs):
+            for loc2, (body2, i2) in six.iteritems(self.atree.post_insert_locs):
+                if body1 is not body2 or i2 < i1:
+                    continue
+                for loc3, (body3, i3) in six.iteritems(self.atree.post_insert_locs):
+                    if body3 is not body2 or i3 < i2:
+                        continue
+                    yield (loc1, loc2, loc3)
+
     def enumerate_additive_actions(self):
-        for location in self.add_action_locs:
+        for location in self.atree.add_action_locs:
             for karel_action in mutation.ACTION_NAMES:
                 yield mutation.ADD_ACTION, (location, karel_action)
 
-        for loc1, (body1, i1) in self.atree.pre_insert_locs.iteritems():
-            for loc2, (body2, i2) in self.atree.post_insert_locs.iteritems():
+        for loc1, (body1, i1) in six.iteritems(self.atree.pre_insert_locs):
+            for loc2, (body2, i2) in six.iteritems(self.atree.post_insert_locs):
                 if body2 is not body1 or i2 < i1:
                     continue
 
@@ -378,8 +423,7 @@ class MutationActionSpace(gym.Space):
                 for cond_id in range(len(mutation.CONDS)):
                     yield mutation.WRAP_BLOCK, ('if', cond_id, loc1, loc2)
                     yield mutation.WRAP_BLOCK, ('while', cond_id, loc1, loc2)
-                    for loc3, (body3,
-                               i3) in self.atree.post_insert_locs.iteritems():
+                    for loc3, (body3, i3) in six.iteritems(self.atree.post_insert_locs):
                         if body3 is not body2 or i3 < i2:
                             continue
                         yield mutation.WRAP_IFELSE, (cond_id, loc1, loc2, loc3)
