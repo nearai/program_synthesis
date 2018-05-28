@@ -1,7 +1,7 @@
 import torch
 
 from program_synthesis.models.rl_agent.agent import KarelAgent
-from program_synthesis.models.rl_agent.config import EPSILON, ALPHA, DISCOUNT
+from program_synthesis.models.rl_agent.config import EPSILON, ALPHA, DISCOUNT, MAX_TOKEN_PER_CODE
 from program_synthesis.models.rl_agent.environment import KarelEditEnv
 from program_synthesis.models.rl_agent.utils import StepExample, ReplayBuffer
 from program_synthesis.tools import saver
@@ -17,6 +17,7 @@ def rollout(env, agent, epsilon_greedy, max_rollout_length):
         for _ in range(max_rollout_length):
             action = agent.select_action(state, eps)
             new_state, reward, done, _ = env.step(action)
+            assert new_state.shape[-1] <= MAX_TOKEN_PER_CODE
             experience.append(StepExample(task, state, action, reward, new_state))
             if done:
                 success = True
@@ -77,7 +78,7 @@ def main():
         karel_io_enc='lgrl', lr=0.001, cuda=False)
 
     agent_cls = KarelAgent
-    env = KarelEditEnv()
+    env = KarelEditEnv(MAX_TOKEN_PER_CODE)
 
     # success, experience = rollout(env, agent_cls(env, args), False, 10)
     #

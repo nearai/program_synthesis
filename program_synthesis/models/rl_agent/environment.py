@@ -10,7 +10,7 @@ from .config import MAX_TOKEN_PER_CODE
 
 
 class KarelEditEnv(object):
-    def __init__(self):
+    def __init__(self, max_token_per_code=None):
         self.dataset = datasets.dataset.KarelTorchDataset(
             datasets.dataset.relpath('../../data/karel/{}{}.pkl'.format('train', '')), lambda x: x)
         self.vocab = data.PlaceholderVocab(
@@ -21,13 +21,14 @@ class KarelEditEnv(object):
         )
         self.data_iter = self.dataset_loader.__iter__()
         self._cur_env = None
+        self._max_token_per_code = max_token_per_code
 
     def reset(self):
         """
         :return: (Task, Observation/State)
         """
         sample = self.data_iter.next()  # returns list of 1 element.
-        self._cur_env = refine_env.KarelRefineEnv(sample[0].input_tests)
+        self._cur_env = refine_env.KarelRefineEnv(sample[0].input_tests, self._max_token_per_code)
         obs = self._cur_env.reset()
         input_grids, output_grids = karel_model.encode_io_grids(sample)
         return (input_grids, output_grids), self.prepare_obs(obs)

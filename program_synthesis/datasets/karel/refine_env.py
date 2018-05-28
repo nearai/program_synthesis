@@ -10,6 +10,11 @@ from program_synthesis.datasets.karel.mutation import ActionAddParameters, Actio
     ActionReplaceParameters, ActionUnwrapBlockParameters, ActionWrapBlockParameters, ActionWrapIfElseParameters, \
     REPEAT_COUNTS
 
+try:
+    import copy
+except ModuleNotFoundError:
+    pass
+
 
 class AnnotatedTree(object):
     parser = parser_for_synthesis.KarelForSynthesisParser(build_tree=True)
@@ -432,17 +437,27 @@ class MutationActionSpace(gym.Space):
 class KarelRefineEnv(gym.Env):
     executor = executor_mod.KarelExecutor()
 
-    def __init__(self, input_tests):
+    def __init__(self, input_tests, max_token=None):
         self.input_tests = input_tests
         self.atree = None
+        self._max_token_allowed = max_token
         self.reset()
 
     # Overridden methods
     def step(self, action):
+        if self._max_token_allowed is not None:
+            atree_copy = copy.deepcopy(self.action_space.atree)
+
         self.action_space.apply(action)
+
+        if self._max_token_allowed is not None and len(self.atree.code) + 2 > self._max_token_allowed:
+            # noinspection PyUnboundLocalVariable
+            self.action_space.atree = atree_copy
+            self.atree = atree_copy
 
         # Run new program on I/O grids to get observation
         observation, done = self.compute_obs()
+
         reward = float(done)
         info = {}
         return observation, reward, done, info
