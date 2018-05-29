@@ -202,12 +202,12 @@ class KarelTokenParameterModel(nn.Module):
     """ Compute Karel Token parameter/value of a given action + locations
 
         Input:
-            A: Action (One hot encoding)
-            E: Embed of the task
-            L: Location Embedding
+            A: Action (One hot encoding) [shape: (BATCH_SIZE, TOTAL_MUTATION_ACTIONS)]
+            E: Embed of the state [shape: (BATCH_SIZE, STATE_EMBED_SIZE)]
+            L: Location Embedding [shape: (BATCH_SIZE, LOCATION_EMBED_SIZE)]
 
         Output:
-            T: Token one hot encoding
+            T: Token one hot encoding [shape: (BATCH_SIZE, KAREL_STATIC_TOKEN)]
                 + move
                 + turnLeft
                 + turnRight
@@ -238,7 +238,7 @@ class BlockTypeModel(nn.Module):
             E: Embed of the state [shape: (BATCH_SIZE, STATE_EMBED_SIZE)]
 
         Output:
-            T: Token one hot encoding
+            T: Token one hot encoding [shape: (BATCH_SIZE, BLOCK_TYPE_SIZE)]
                 + if
                 + while
                 + repeat
@@ -299,7 +299,7 @@ class RepeatCountModel(nn.Module):
             E: Embed of the state [shape: (BATCH_SIZE, STATE_EMBED_SIZE)]
 
         Output:
-            T: Token one hot encoding [shape: (BATCH_SIZE, CONDITION_SIZE)]
+            T: Token one hot encoding [shape: (BATCH_SIZE, REPEAT_COUNT_SIZE)]
                 + 2
                 + 3
                 + ...

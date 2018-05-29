@@ -4,6 +4,8 @@
 
 """
 
+import time
+
 import numpy as np
 import torch
 import torch.utils.data
@@ -15,12 +17,16 @@ from program_synthesis.datasets.karel.mutation import ACTION_NAMES, BLOCK_TYPE, 
     ActionWrapIfElseParameters
 from program_synthesis.datasets.karel.refine_env import MutationActionSpace
 from program_synthesis.models.rl_agent.config import VOCAB_SIZE, TOTAL_MUTATION_ACTIONS, \
-    MAX_TOKEN_PER_CODE, LOCATION_EMBED_SIZE, TOKEN_EMBED_SIZE
+    LOCATION_EMBED_SIZE, KAREL_STATIC_TOKEN, BLOCK_TYPE_SIZE, CONDITION_SIZE, REPEAT_COUNT_SIZE
 from program_synthesis.models.rl_agent.policy import KarelEditPolicy
 
 
 # https://discuss.pytorch.org/t/nn-criterions-dont-compute-the-gradient-w-r-t-targets/3693
-def mse_loss(input, target):
+def mse_loss(input, target, mask=None):
+    if mask is not None:
+        input = input * mask
+        target = target * mask
+
     return torch.sum((input - target) ** 2) / input.data.nelement()
 
 
@@ -129,7 +135,7 @@ class KarelAgent:
                 while params is None:
                     action_id = np.random.choice(np.arange(8), p=act_dist.numpy().ravel())
 
-                    print("ACTION ID:", action_id)
+                    # print("ACTION ID:", action_id)
 
                     if action_id == mutation.ADD_ACTION:
                         action_categorical = torch.zeros(1, 8)
@@ -321,70 +327,132 @@ class KarelAgent:
         best_val, _ = action_values.max(dim=1)
         return best_val
 
-    def train(self, tasks, states, actions, targets):
-        # TODO: Fix loss
+    def train(self, tasks, codes, actions, targets):
+        # TODO: Deep train
+        # Target value of each action is the maximum value among their parameters
+        # Example:
+        # The target value of add_action, is the maximum value among the location where a token can be added
+        # The target value of the token is the real target of the example
 
+        _begin_train = time.clock()
         batch_size = targets.shape[0]
-
-        # Compute action gradients
-        self.optimizer.zero_grad()
-        tasks_encoded = self.model.encode_task(tasks)
-        action_values = self.model.action_value(tasks_encoded, states)
-        current_value = torch.Tensor([action_values[idx][actions[idx][0]] for idx in range(batch_size)])
-        loss = self.criterion(current_value, targets)
-
-        # https://discuss.pytorch.org/t/runtimeerror-trying-to-backward-through-the-graph-a-second-time-but-the-buffers-have-already-been-freed-specify-retain-graph-true-when-calling-backward-the-first-time/6795/2
-        # Is it better to compute multiple loss once?
-        loss.backward(retain_graph=True)
-
-        self.optimizer.step()
-
-        # Update location network
         self.optimizer.zero_grad()
 
-        selected_location = torch.zeros(batch_size, MAX_TOKEN_PER_CODE)
+        tasks_enc = self.model.encode_task(tasks)
+        action_values = self.model.action_value(tasks_enc, codes)
+        code_token_embed = self.model.code_token_embed
+        state_enc = self.model.state_enc
 
-        for idx in range(batch_size):
-            if actions[idx].id in (mutation.ADD_ACTION, mutation.REPLACE_ACTION, mutation.REMOVE_ACTION):
-                selected_location[idx][actions[idx].parameters.location] = 1.
+        batch_action_value = torch.zeros(batch_size)
 
-        action_categorical = to_categorical(torch.Tensor([a.id for a in actions]), TOTAL_MUTATION_ACTIONS)
-        states_encoded = self.model.code_encoder.get_embed(states).view(MAX_TOKEN_PER_CODE, batch_size,
-                                                                        TOKEN_EMBED_SIZE)
+        # noinspection PyTypeChecker
+        actions_categorical = to_categorical(torch.Tensor([action.id for action in actions]), TOTAL_MUTATION_ACTIONS)
+        location_embed = self.model.location(actions_categorical, state_enc, code_token_embed)
+        batch_location_embed = torch.zeros(batch_size, LOCATION_EMBED_SIZE)
+        batch_location_mask = torch.zeros(batch_size)
 
-        location_reward_vec, location_embed_vec = self.model.location(action_categorical, tasks_encoded, states_encoded)
-        location_reward_vec = location_reward_vec.reshape(batch_size, -1)
+        karel_token_locations = torch.zeros(batch_size, LOCATION_EMBED_SIZE)
+        karel_token_selected_mask = torch.zeros(batch_size, KAREL_STATIC_TOKEN)
+        karel_token_mask = torch.zeros(batch_size)
 
-        has_location = torch.ones(batch_size)
+        block_type_reward = self.model.block_type(state_enc)
+        block_type_selected_mask = torch.zeros(batch_size, BLOCK_TYPE_SIZE)
+        block_type_mask = torch.zeros(batch_size)
 
-        location_reward = (location_reward_vec * selected_location).sum(1)
-        location_reward_target = targets * has_location
+        condition_selected_mask = torch.zeros(batch_size, CONDITION_SIZE)
+        condition_mask = torch.zeros(batch_size)
 
-        location_loss = self.criterion(location_reward, location_reward_target)
+        repeat_count_reward = self.model.repeat_count(state_enc)
+        repeat_count_selected_mask = torch.zeros(batch_size, REPEAT_COUNT_SIZE)
+        repeat_count_mask = torch.zeros(batch_size)
 
-        location_loss.backward(retain_graph=True)
+        double_loc_0 = torch.zeros(batch_size, LOCATION_EMBED_SIZE)
+        double_loc_1 = torch.zeros(batch_size, LOCATION_EMBED_SIZE)
+        double_loc_mask = torch.zeros(batch_size)
+
+        triple_loc_0 = torch.zeros(batch_size, LOCATION_EMBED_SIZE)
+        triple_loc_1 = torch.zeros(batch_size, LOCATION_EMBED_SIZE)
+        triple_loc_2 = torch.zeros(batch_size, LOCATION_EMBED_SIZE)
+        triple_loc_mask = torch.zeros(batch_size)
+
+        for idx, action in enumerate(actions):
+            batch_action_value[idx] = action_values[idx][action.id]
+
+            if action.id in (
+                    mutation.ADD_ACTION, mutation.REMOVE_ACTION, mutation.REPLACE_ACTION, mutation.UNWRAP_BLOCK):
+                batch_location_embed[idx] = location_embed[idx][action.parameters.location]
+                batch_location_mask[idx] = 1.
+
+            if action.id in (mutation.ADD_ACTION, mutation.REPLACE_ACTION):
+                karel_token_locations[idx] = location_embed[idx][action.parameters.location]
+                karel_token_selected_mask[idx][mutation.get_action_name_id(action.parameters.token)] = 1.
+                karel_token_mask[idx] = 1.
+
+            if action.id == mutation.WRAP_BLOCK:
+                block_type_mask[idx] = 1.
+                block_type_selected_mask[idx][mutation.get_block_type_id(action.parameters.block_type)] = 1.
+
+                double_loc_0[idx] = location_embed[idx][action.parameters.start]
+                double_loc_1[idx] = location_embed[idx][action.parameters.end]
+                double_loc_mask[idx] = 1.
+
+                if action.id < 2:  # `if` | `while`
+                    condition_mask[idx] = 1.
+                    condition_selected_mask[idx][action.parameters.cond_id] = 1.
+                else:  # `repeat`
+                    repeat_count_mask[idx] = 1.
+                    repeat_count_selected_mask[idx][action.parameters.cond_id] = 1.
+
+            if action.id == mutation.WRAP_IFELSE:
+                condition_mask[idx] = 1.
+                condition_selected_mask[idx][action.parameters.cond_id] = 1.
+                block_type_selected_mask[idx][0] = 1.  # `if`
+
+                triple_loc_0[idx] = location_embed[idx][action.parameters.if_start]
+                triple_loc_1[idx] = location_embed[idx][action.parameters.else_start]
+                triple_loc_2[idx] = location_embed[idx][action.parameters.end]
+                triple_loc_mask[idx] = 1.
+
+        condition_reward = self.model.condition_id(state_enc, block_type_selected_mask)
+
+        batch_location_value = self.model.single_location(location_embed)
+        batch_karel_token_value = self.model.karel_token(actions_categorical, state_enc, karel_token_locations)
+
+        double_loc_value = self.model.double_location(double_loc_0, double_loc_1)
+        triple_loc_value = self.model.triple_location(triple_loc_0, triple_loc_1, triple_loc_2)
+
+        loss_0 = self.criterion(batch_action_value, targets)
+
+        loss_1 = self.criterion(batch_location_value, targets, batch_location_mask)
+
+        loss_2 = self.criterion((batch_karel_token_value * karel_token_selected_mask).sum(dim=1),
+                                targets, karel_token_mask)
+
+        loss_3 = self.criterion((block_type_reward * block_type_selected_mask).sum(dim=1),
+                                targets, block_type_mask)
+
+        loss_4 = self.criterion((condition_reward * condition_selected_mask).sum(dim=1),
+                                targets, condition_mask)
+
+        loss_5 = self.criterion((repeat_count_reward * repeat_count_selected_mask).sum(dim=1),
+                                targets, repeat_count_mask)
+
+        loss_6 = self.criterion(double_loc_value, targets, double_loc_mask)
+
+        loss_7 = self.criterion(triple_loc_value, targets, triple_loc_mask)
+
+        _checkpoint_train = time.clock()
+
+        loss = loss_0 + loss_1 + loss_2 + loss_3 + loss_4 + loss_5 + loss_6 + loss_7
+        loss.backward()
         self.optimizer.step()
 
-        # Update token network
-        self.optimizer.zero_grad()
+        _end_train = time.clock()
 
-        location_embed = torch.zeros(batch_size, LOCATION_EMBED_SIZE)
-        token_selected = torch.zeros(batch_size, len(mutation.ACTION_NAMES))
-
-        for idx in range(batch_size):
-            if actions[idx].id in (mutation.ADD_ACTION, mutation.REPLACE_ACTION):
-                location_embed[idx] = location_embed_vec[idx][actions[idx].parameters.location]
-                token_selected[idx][mutation.get_action_name_id(actions[idx].parameters.token)] = 1.
-
-        token_value = self.model.karel_token(action_categorical, tasks_encoded, location_embed)
-        token_reward = (token_selected * token_value).sum(1)
-
-        token_loss = mse_loss(token_reward, targets)
-        token_loss.backward()
-
-        self.optimizer.step()
-
-        print("train step...")
+        print(f"Building batch: {round(_checkpoint_train - _begin_train,3)}s")
+        print(f"Updating gradients: {round(_end_train - _checkpoint_train,3)}s")
+        print(f"Total time: {round(_end_train - _begin_train,3)}s")
+        print()
 
     def update(self, other):
         self.model.load_state_dict(other.model.state_dict())

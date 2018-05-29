@@ -67,6 +67,10 @@ REPEAT_MASKED_PROBS = [None, None] + [masked_uniform(len(REPEAT_COUNTS), i) for
 BLOCK_TYPE = ['if', 'while', 'repeat']
 
 
+def get_block_type_id(block_type):
+    return BLOCK_TYPE.index(block_type)
+
+
 def random_singular_block(rng):
     type_ = rng.choice(BLOCK_TYPE)
     if type_ == 'repeat':
@@ -307,6 +311,7 @@ class KarelExampleMutator(object):
             input_tests=new_tests,
             tests=karel_example.tests)
         return karel_example
+
 
 # Definition of Action Parameters
 
