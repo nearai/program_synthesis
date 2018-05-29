@@ -3,11 +3,14 @@ import torch
 from program_synthesis.models.rl_agent.agent import KarelAgent
 from program_synthesis.models.rl_agent.config import EPSILON, ALPHA, DISCOUNT, MAX_TOKEN_PER_CODE
 from program_synthesis.models.rl_agent.environment import KarelEditEnv
+from program_synthesis.models.rl_agent.logger import logger_debug, logger_task
 from program_synthesis.models.rl_agent.utils import StepExample, ReplayBuffer
 from program_synthesis.tools import saver
 
 
 def rollout(env, agent, epsilon_greedy, max_rollout_length):
+    logger_task.info("*** Start task ***")
+
     with torch.no_grad():
         eps = EPSILON if epsilon_greedy else None
         task, state = env.reset()
@@ -23,6 +26,8 @@ def rollout(env, agent, epsilon_greedy, max_rollout_length):
                 success = True
                 break
             state = new_state
+
+        logger_task.info(f"Success: {success}")
         return success, experience
 
 
@@ -79,15 +84,6 @@ def main():
 
     agent_cls = KarelAgent
     env = KarelEditEnv(MAX_TOKEN_PER_CODE)
-
-    # success, experience = rollout(env, agent_cls(env, args), False, 10)
-    #
-    # for x in experience:
-    #     print("*****************")
-    #     print(x)
-    #
-    # env.reset()
-    # exit(0)
 
     trainer = PolicyTrainer(args, agent_cls, env)
     trainer.train()

@@ -18,6 +18,7 @@ from program_synthesis.datasets.karel.mutation import ACTION_NAMES, BLOCK_TYPE, 
 from program_synthesis.datasets.karel.refine_env import MutationActionSpace
 from program_synthesis.models.rl_agent.config import VOCAB_SIZE, TOTAL_MUTATION_ACTIONS, \
     LOCATION_EMBED_SIZE, KAREL_STATIC_TOKEN, BLOCK_TYPE_SIZE, CONDITION_SIZE, REPEAT_COUNT_SIZE
+from program_synthesis.models.rl_agent.logger import logger_train, logger_task
 from program_synthesis.models.rl_agent.policy import KarelEditPolicy
 
 
@@ -84,8 +85,7 @@ class KarelAgent:
             dist /= dist.sum()
 
         if dist.sum() <= 1e-12:
-            print("Warning")
-            return None
+            raise ValueError()
 
         return np.random.choice(range(dist.shape[0]), p=dist)
 
@@ -134,8 +134,6 @@ class KarelAgent:
 
                 while params is None:
                     action_id = np.random.choice(np.arange(8), p=act_dist.numpy().ravel())
-
-                    # print("ACTION ID:", action_id)
 
                     if action_id == mutation.ADD_ACTION:
                         action_categorical = torch.zeros(1, 8)
@@ -311,7 +309,9 @@ class KarelAgent:
                         raise ValueError(f"Invalid action id {action}. \
                         Action id must be in the range [0, {TOTAL_MUTATION_ACTIONS})")
 
-                return Action(action_id, params)
+                res_action = Action(action_id, params)
+                logger_task.info(f"Selected action: {res_action}")
+                return res_action
 
     def action_value(self, tasks, code):
         """ Determine the value of each action (without parameters)
@@ -449,10 +449,10 @@ class KarelAgent:
 
         _end_train = time.clock()
 
-        print(f"Building batch: {round(_checkpoint_train - _begin_train,3)}s")
-        print(f"Updating gradients: {round(_end_train - _checkpoint_train,3)}s")
-        print(f"Total time: {round(_end_train - _begin_train,3)}s")
-        print()
+        logger_train.info(f"Train on batch of size: {batch_size}")
+        logger_train.info(f"Building batch: {round(_checkpoint_train - _begin_train,3)}s")
+        logger_train.info(f"Updating gradients: {round(_end_train - _checkpoint_train,3)}s")
+        logger_train.info(f"Total time: {round(_end_train - _begin_train,3)}s")
 
     def update(self, other):
         self.model.load_state_dict(other.model.state_dict())
