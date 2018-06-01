@@ -1,4 +1,4 @@
-.karel# Code based on https://github.com/alts/karel
+# Code based on https://github.com/alts/karel
 #-*- coding: utf-8 -*-
 from __future__ import print_function
 
