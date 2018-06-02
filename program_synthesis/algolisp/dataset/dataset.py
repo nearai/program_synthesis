@@ -23,7 +23,7 @@ Schema = collections.namedtuple("Schema", ["args", "return_type"])
 
 
 def _basepath(path):
-    return os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), path)
+    return os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(__file__)))), path)
 
 
 def build_vocabs(data_, min_freq=50):
@@ -388,7 +388,7 @@ def get_dataset(args):
 
 
 def get_eval_dataset(args):
-    elif args.dataset == 'handcrafted':
+    if args.dataset == 'handcrafted':
         return get_metagen_handcrafted_dataset(args)
     elif args.dataset == 'metagen':
         return get_metagen_eval_dataset(args)

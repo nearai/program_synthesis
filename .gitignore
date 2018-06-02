@@ -1,4 +1,11 @@
-program_synthesis/datasets/karel/_parsetab.py
+# Datasets
+data/generated
+data/karel
+
+program_synthesis/karel/dataset/_parsetab.py
+
+# Mac artifacts
+.DS_Store
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

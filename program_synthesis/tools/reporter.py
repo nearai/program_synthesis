@@ -2,6 +2,7 @@
 
 import collections
 import six
+import sys
 import time
 
 try:
@@ -85,3 +86,23 @@ class Reporter(object):
 
             self._last_reported_time = time.time()
             self._last_reported_step = self._last_step
+
+
+class Tee(object):
+
+    def __init__(self, filename, mode='a'):
+        self.fout = open(filename, mode)
+        self.stdout = sys.stdout
+        sys.stdout = self
+
+    def close(self):
+        sys.stdout = self.stdout
+        self.fout.close()
+
+    def write(self, data):
+        self.fout.write(data)
+        self.stdout.write(data)
+
+    def flush(self):
+        self.fout.flush()
+        self.stdout.flush()
