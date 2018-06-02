@@ -11,10 +11,6 @@ from torch.autograd import Variable
 import torch.nn.functional as F
 
 
-# TODO: Make an argument (dataset arg?).
-MAX_DECODER_LENGTH = 100
-
-
 def expand_by_beam(v, beam_size):
     # v: batch size x ...
     # output: (batch size * beam size) x ...
@@ -53,8 +49,8 @@ def beam_search(batch_size,
                 masked_memory,
                 decode_fn,
                 beam_size,
+                max_decoder_length,
                 cuda=False,
-                max_decoder_length=MAX_DECODER_LENGTH,
                 return_attention=False,
                 return_beam_search_result=False,
                 volatile=True):

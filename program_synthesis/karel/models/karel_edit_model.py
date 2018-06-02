@@ -5,8 +5,9 @@ from pytorch_tools import torchfold
 import torch
 from torch.autograd import Variable
 
+from program_synthesis.common.models import beam_search
+
 from program_synthesis.karel.models import base
-from program_synthesis.karel.models import beam_search
 from program_synthesis.karel.models import karel_model
 from program_synthesis.karel.models import prepare_spec
 from program_synthesis.karel.models.modules import karel_common

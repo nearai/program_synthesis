@@ -5,12 +5,13 @@ import numpy as np
 import torch
 from torch.autograd import Variable
 
+from program_synthesis.common.models import beam_search
+
 from program_synthesis.karel.dataset import data
 from program_synthesis.karel.dataset import executor
 from program_synthesis.karel.dataset import karel_runtime
 from program_synthesis.karel.dataset import parser_for_synthesis
 from program_synthesis.karel.models import base
-from program_synthesis.karel.models import beam_search
 from program_synthesis.karel.models import karel_model
 from program_synthesis.karel.models import prepare_spec
 from program_synthesis.karel.models.modules import karel
@@ -130,8 +131,8 @@ class TracePredictionModel(karel_model.BaseKarelModel):
             memory,
             self.model.decode_token,
             self.args.max_beam_trees,
-            cuda=self.args.cuda,
-            max_decoder_length=self.args.max_decoder_length)
+            max_decoder_length=self.args.max_decoder_length,
+            cuda=self.args.cuda)
 
         sequences = [[[karel_trace.id_to_action[i] for i in seq]
                       for seq in item_sequences]
@@ -413,8 +414,8 @@ class CodeFromTracesModel(karel_model.BaseKarelModel):
             memory,
             self.model.decode_token,
             self.args.max_beam_trees,
-            cuda=self.args.cuda,
-            max_decoder_length=self.args.max_decoder_length)
+            max_decoder_length=self.args.max_decoder_length,
+            cuda=self.args.cuda)
 
         if filtered:
             return self._try_sequences(self.vocab, sequences,

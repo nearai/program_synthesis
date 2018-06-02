@@ -8,10 +8,11 @@ import torch
 from torch import nn
 from torch.autograd import Variable
 
+from program_synthesis.common.models import beam_search
+
 from program_synthesis.karel.dataset import data
 from program_synthesis.karel.dataset import dataset
 from program_synthesis.karel.dataset import executor
-from program_synthesis.karel.models import beam_search
 from program_synthesis.karel.models import prepare_spec
 from program_synthesis.karel.models.base import BaseCodeModel
 from program_synthesis.karel.models.base import InferenceResult
@@ -207,8 +208,8 @@ class KarelLGRLModel(BaseKarelModel):
             memory,
             self.model.decode_token,
             self.args.max_beam_trees,
-            cuda=self.args.cuda,
-            max_decoder_length=self.args.max_decoder_length)
+            max_decoder_length=self.args.max_decoder_length,
+            cuda=self.args.cuda)
 
         if filtered:
             return self._try_sequences(self.vocab, sequences, input_grids,
@@ -326,8 +327,8 @@ class KarelLGRLRefineModel(BaseKarelModel):
             memory,
             self.model.decode_token,
             self.args.max_beam_trees,
-            cuda=self.args.cuda,
-            max_decoder_length=self.args.max_decoder_length)
+            max_decoder_length=self.args.max_decoder_length,
+            cuda=self.args.cuda)
 
         sequences = self.model.decoder.postprocess_output(sequences, memory)
 

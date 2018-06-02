@@ -4,8 +4,8 @@ import torch
 from torch import nn
 from torch.autograd import Variable
 
-from program_synthesis.karel.models import beam_search
-from program_synthesis.karel.models.modules import attention
+from program_synthesis.common.modules import attention
+from program_synthesis.common.models import beam_search
 
 
 def default(value, if_none):

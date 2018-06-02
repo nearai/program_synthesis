@@ -6,7 +6,7 @@ from torch.autograd import Variable
 import torch.nn as nn
 import torch.nn.functional as F
 
-from program_synthesis.karel.models.modules.layer_norm import LayerNorm
+from program_synthesis.common.modules.layer_norm import LayerNorm
 
 
 def maybe_mask(attn, attn_mask):
