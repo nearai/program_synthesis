@@ -5,7 +5,8 @@ import struct
 
 import tqdm
 
-from program_synthesis.datasets import indexed_file
+from program_synthesis.tools import indexed_file
+
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()

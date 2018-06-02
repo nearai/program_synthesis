@@ -17,12 +17,12 @@ else:
 import numpy as np
 import torch.utils.data
 
-from program_synthesis.karel.datasets import data
-from program_synthesis.karel.datasets import executor
-from program_synthesis.karel.datasets import stats
-from program_synthesis.karel.datasets.karel.mutation import KarelExampleMutator
-from program_synthesis.karel.datasets.karel import refine_env
-from program_synthesis.karel.datasets.karel import edit_data_loader
+from program_synthesis.karel.dataset import data
+from program_synthesis.karel.dataset import executor
+from program_synthesis.karel.dataset import stats
+from program_synthesis.karel.dataset.mutation import KarelExampleMutator
+from program_synthesis.karel.dataset import refine_env
+from program_synthesis.karel.dataset import edit_data_loader
 from program_synthesis.tools import indexed_file
 from program_synthesis.tools import batch_creators
 

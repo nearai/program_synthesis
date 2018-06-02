@@ -8,9 +8,9 @@ import torch
 from torch import nn
 from torch.autograd import Variable
 
-from program_synthesis.karel.datasets import data
-from program_synthesis.karel.datasets import dataset
-from program_synthesis.karel.datasets import executor
+from program_synthesis.karel.dataset import data
+from program_synthesis.karel.dataset import dataset
+from program_synthesis.karel.dataset import executor
 from program_synthesis.karel.models import beam_search
 from program_synthesis.karel.models import prepare_spec
 from program_synthesis.karel.models.base import BaseCodeModel

@@ -6,7 +6,7 @@ import torch.nn.functional as F
 from torch.autograd import Variable
 import numpy as np
 
-from program_synthesis.karel.datasets import data
+from program_synthesis.karel.dataset import data
 from program_synthesis.karel.models import base
 from program_synthesis.karel.models import beam_search
 from program_synthesis.karel.models import prepare_spec

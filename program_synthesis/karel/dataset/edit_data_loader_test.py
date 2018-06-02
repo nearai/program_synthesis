@@ -4,9 +4,9 @@ import sys
 import mock
 import pytest
 
-from program_synthesis import arguments
-from program_synthesis.karel.datasets import dataset
-from program_synthesis.karel.datasets.karel import edit_data_loader
+from program_synthesis.karel import arguments
+from program_synthesis.karel.dataset import dataset
+from program_synthesis.karel.dataset import edit_data_loader
 from program_synthesis.karel.models import karel_edit_model
 
 

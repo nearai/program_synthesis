@@ -3,8 +3,8 @@ import unittest
 
 import numpy as np
 
-from program_synthesis.karel.datasets.karel import mutation
-from program_synthesis.karel.datasets.karel import parser_for_synthesis
+from program_synthesis.karel.dataset import mutation
+from program_synthesis.karel.dataset import parser_for_synthesis
 
 
 class MutationTest(unittest.TestCase):

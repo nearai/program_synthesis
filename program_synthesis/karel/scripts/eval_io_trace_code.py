@@ -12,12 +12,12 @@ import numpy as np
 import pandas as pd
 
 from program_synthesis.karel import arguments
-from program_synthesis.karel import datasets
+from program_synthesis.karel import dataset
 from program_synthesis.karel import models
 from program_synthesis.tools import saver
 
-from program_synthesis.karel.datasets.karel import parser_for_synthesis
-from program_synthesis.karel.datasets import executor
+from program_synthesis.karel.dataset import parser_for_synthesis
+from program_synthesis.karel.dataset import executor
 from program_synthesis.karel.models import karel_trace_model
 from program_synthesis.karel.models.modules import karel_common
 
@@ -117,7 +117,7 @@ def score_examples(
         batch = batch_processor(batch_examples)
         res = trace_pred_model.inference(batch)
         # new_batch_examples = trace_pred_model.process_infer_results(batch, res)
-        # batch = code_trace_batch_processor([datasets.dataset.KarelExample.from_dict(e) for e in new_batch_examples])
+        # batch = code_trace_batch_processor([dataset.dataset.KarelExample.from_dict(e) for e in new_batch_examples])
         any_correct = [False] * len(batch_examples)
         for new_batch_examples in process_traces_infer_results(
                 trace_pred_model.kr, trace_pred_model.tracer, batch, res,
@@ -146,9 +146,9 @@ def load_model(model_dir, model_type, step=None):
     args = saver.ArgsDict(model_dir=model_dir, model_type=model_type, step=step)
     saver.restore_args(args)
     arguments.backport_default_args(args)
-    datasets.set_vocab(args)
+    dataset.set_vocab(args)
     m = models.get_model(args)
-    eval_dataset = datasets.get_eval_dataset(args, m)
+    eval_dataset = dataset.get_eval_dataset(args, m)
     m.model.eval()
     the_executor = executor.get_executor(args)()
     return m, eval_dataset, the_executor

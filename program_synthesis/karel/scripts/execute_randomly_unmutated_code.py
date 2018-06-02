@@ -9,10 +9,10 @@ import sys
 import tqdm
 import numpy as np
 
-import arguments
-from tools import evaluation
-from datasets import executor, dataset
-from datasets.karel import mutation, parser_for_synthesis
+from program_sythnesis.karel import arguments
+from program_synthesis.tools import evaluation
+from program_synthesis.karel.dataset import executor, dataset
+from program_synthesis.karel.dataset import mutation, parser_for_synthesis
 
 
 class DummyModel(object):

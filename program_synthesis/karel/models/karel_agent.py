@@ -7,10 +7,10 @@ import torch
 import torch.nn as nn
 from torch import optim
 
-from program_synthesis import datasets
-from program_synthesis.karel.datasets import data
-from program_synthesis.karel.datasets.karel import refine_env
-from program_synthesis.karel.datasets.karel import mutation
+from program_synthesis.karel.dataset import dataset
+from program_synthesis.karel.dataset import data
+from program_synthesis.karel.dataset import refine_env
+from program_synthesis.karel.dataset import mutation
 
 from program_synthesis.karel.models import karel_model
 from program_synthesis.karel.models import prepare_spec
@@ -31,10 +31,10 @@ ALPHA = 0.7
 class KarelEditEnv(object):
 
     def __init__(self):
-        self.dataset = datasets.dataset.KarelTorchDataset(
-            datasets.dataset.relpath('../../data/karel/{}{}.pkl'.format('train', '')), lambda x: x)
+        self.dataset = dataset.KarelTorchDataset(
+            dataset.dataset.relpath('../../data/karel/{}{}.pkl'.format('train', '')), lambda x: x)
         self.vocab = data.PlaceholderVocab(
-            data.load_vocab(datasets.dataset.relpath('../../data/karel/word.vocab')), 0)
+            data.load_vocab(dataset.dataset.relpath('../../data/karel/word.vocab')), 0)
         self.dataset_loader = torch.utils.data.DataLoader(
             self.dataset,
             1, collate_fn=lambda x: x, num_workers=0, pin_memory=False, shuffle=True

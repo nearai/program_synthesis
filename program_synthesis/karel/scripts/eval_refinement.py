@@ -8,9 +8,9 @@ import os
 import re
 import sys
 
-from program_synthesis.karel.datasets import dataset
-from program_synthesis.karel.datasets import executor
-from program_synthesis.karel.datasets.karel.karel_runtime import KarelRuntime
+from program_synthesis.karel.dataset import dataset
+from program_synthesis.karel.dataset import executor
+from program_synthesis.karel.dataset.karel_runtime import KarelRuntime
 from program_synthesis.karel.models import karel_model
 from program_synthesis.tools import restore_args
 
