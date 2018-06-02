@@ -9,7 +9,7 @@ import sys
 import ray
 import tqdm
 
-from datasets import executor
+from program_synthesis.karel.dataset import executor
 
 # key: GUID
 # value: dict where

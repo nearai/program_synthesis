@@ -5,8 +5,8 @@ import numpy as np
 import torch
 import torch.utils.data
 
-from program_synthesis.karel.datasets.karel import refine_env
-from program_synthesis.karel.datasets import shuffle_queue
+from program_synthesis.karel.dataset import refine_env
+from program_synthesis.tools import shuffle_queue
 
 
 def queue_to_iter(queue):
@@ -18,7 +18,7 @@ def queue_to_iter(queue):
 
 
 def make_karel_edit_examples(karel_example, beam_size=None, rng=np.random):
-    from program_synthesis.datasets.dataset import KarelEditExample
+    from program_synthesis.karel.dataset.dataset import KarelEditExample
     goal_atree = refine_env.AnnotatedTree(code=karel_example.code_sequence)
     queue = collections.deque([('DEF', 'run', 'm(', 'm)')])
     closed = set()

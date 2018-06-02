@@ -7,9 +7,9 @@ import torch
 import tqdm
 
 from program_synthesis.karel import arguments
-from program_synthesis.karel import datasets
+from program_synthesis.karel import dataset
 from program_synthesis.karel import models
-from program_synthesis.karel.datasets import executor
+from program_synthesis.karel.dataset import executor
 from program_synthesis import tools
 from program_synthesis.tools import evaluation
 
@@ -23,14 +23,14 @@ def evaluate(args):
           (args.model_type, args.model_dir))
     tools.restore_args(args)
     arguments.backport_default_args(args)
-    datasets.set_vocab(args)
+    dataset.set_vocab(args)
     m = models.get_model(args)
     if args.eval_final:
-        eval_dataset = datasets.get_eval_final_dataset(args, m)
+        eval_dataset = dataset.get_eval_final_dataset(args, m)
     elif args.eval_train:
-        eval_dataset = datasets.get_train_dataset(args, m, for_eval=True)
+        eval_dataset = dataset.get_train_dataset(args, m, for_eval=True)
     else:
-        eval_dataset = datasets.get_eval_dataset(args, m)
+        eval_dataset = dataset.get_eval_dataset(args, m)
     if m.last_step == 0:
         raise ValueError('Attempting to evaluate on untrained model')
     m.model.eval()

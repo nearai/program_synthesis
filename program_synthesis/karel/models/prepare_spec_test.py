@@ -2,6 +2,7 @@ import unittest
 
 from program_synthesis.karel.models import prepare_spec
 
+
 class PackedSequenceTest(unittest.TestCase):
 
     @unittest.skip('TransposedPackedSequence is missing')

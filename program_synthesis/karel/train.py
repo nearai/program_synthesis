@@ -11,7 +11,7 @@ import torch
 import tqdm
 
 from program_synthesis.karel import arguments
-from program_synthesis.karel import datasets
+from program_synthesis.karel import dataset
 from program_synthesis.karel import models
 from program_synthesis import tools
 from program_synthesis.tools import timer
@@ -46,17 +46,17 @@ def get_sampler(train_data, args):
         def adaptive_size(res):
             max_size = max([len(example.code_sequence) for example in res])
             return max_size * len(res) > 400 * train_data.batch_size
-        sampler = datasets.dataset.BucketizedSampler(sampler, buckets, map_to_bucket, adaptive_size)
+        sampler = dataset.dataset.BucketizedSampler(sampler, buckets, map_to_bucket, adaptive_size)
     return sampler
 
 
 def train_start(args):
     print("\tModel type: %s\n\tModel path: %s" % (args.model_type, args.model_dir))
-    datasets.set_vocab(args)
+    dataset.set_vocab(args)
     m = models.get_model(args)
     m.model.train()
-    train_data = datasets.get_train_dataset(args, m, for_eval=False)
-    dev_data = datasets.get_eval_dataset(args, m)
+    train_data = dataset.get_train_dataset(args, m, for_eval=False)
+    dev_data = dataset.get_eval_dataset(args, m)
     dev_data.shuffle = True
     sampler = get_sampler(train_data, args)
     tools.save_args(args)

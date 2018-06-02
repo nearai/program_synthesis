@@ -4,9 +4,9 @@ import sys
 import numpy as np
 
 from program_synthesis.karel.models import karel_model
-from program_synthesis.karel.datasets import data
-from program_synthesis.karel.datasets import dataset
-from program_synthesis.karel.datasets import executor
+from program_synthesis.karel.dataset import data
+from program_synthesis.karel.dataset import dataset
+from program_synthesis.karel.dataset import executor
 
 
 def make_karel_example(code_sequence, input_value, ref_example=None):

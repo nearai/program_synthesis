@@ -6,10 +6,10 @@ import os
 import numpy as np
 import pytest
 
-from program_synthesis.karel.datasets.karel import mutation
-from program_synthesis.karel.datasets.karel import refine_env
-from program_synthesis.karel.datasets.karel import parser_for_synthesis
-from program_synthesis.karel.datasets import executor as executor_mod
+from program_synthesis.karel.dataset import mutation
+from program_synthesis.karel.dataset import refine_env
+from program_synthesis.karel.dataset import parser_for_synthesis
+from program_synthesis.karel.dataset import executor as executor_mod
 
 
 class RefineEnvTest(unittest.TestCase):

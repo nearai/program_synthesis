@@ -4,9 +4,9 @@ from cached_property import cached_property
 import gym
 import numpy as np
 
-from program_synthesis.karel.datasets import executor as executor_mod
-from program_synthesis.karel.datasets.karel import mutation
-from program_synthesis.karel.datasets.karel import parser_for_synthesis
+from program_synthesis.karel.dataset import executor as executor_mod
+from program_synthesis.karel.dataset import mutation
+from program_synthesis.karel.dataset import parser_for_synthesis
 
 
 class AnnotatedTree(object):

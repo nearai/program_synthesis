@@ -5,8 +5,8 @@ import struct
 
 import numpy as np
 
-from program_synthesis.karel.datasets import executor
-from program_synthesis.karel.datasets.karel import parser_for_synthesis
+from program_synthesis.karel.dataset import executor
+from program_synthesis.karel.dataset import parser_for_synthesis
 
 # Tree structure
 # - run: body

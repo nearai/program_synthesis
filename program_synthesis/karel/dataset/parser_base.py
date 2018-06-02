@@ -5,13 +5,13 @@ import ply.lex as lex
 from functools import wraps
 from collections import defaultdict
 
-from program_synthesis.karel.datasets.karel import yacc
-from program_synthesis.karel.datasets.karel.karel_runtime import KarelRuntime
-from program_synthesis.karel.datasets.karel.utils import TimeoutError
-from program_synthesis.karel.datasets.karel.utils import get_rng
-from program_synthesis.karel.datasets.karel.utils import pprint
-from program_synthesis.karel.datasets.karel.utils import str2bool
-from program_synthesis.karel.datasets.karel.utils import timeout
+from program_synthesis.karel.dataset import yacc
+from program_synthesis.karel.dataset.karel_runtime import KarelRuntime
+from program_synthesis.karel.dataset.utils import TimeoutError
+from program_synthesis.karel.dataset.utils import get_rng
+from program_synthesis.karel.dataset.utils import pprint
+from program_synthesis.karel.dataset.utils import str2bool
+from program_synthesis.karel.dataset.utils import timeout
 
 
 class Parser(object):

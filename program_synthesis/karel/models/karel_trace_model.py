@@ -5,10 +5,10 @@ import numpy as np
 import torch
 from torch.autograd import Variable
 
-from program_synthesis.karel.datasets import data
-from program_synthesis.karel.datasets import executor
-from program_synthesis.karel.datasets.karel import karel_runtime
-from program_synthesis.karel.datasets.karel import parser_for_synthesis
+from program_synthesis.karel.dataset import data
+from program_synthesis.karel.dataset import executor
+from program_synthesis.karel.dataset import karel_runtime
+from program_synthesis.karel.dataset import parser_for_synthesis
 from program_synthesis.karel.models import base
 from program_synthesis.karel.models import beam_search
 from program_synthesis.karel.models import karel_model

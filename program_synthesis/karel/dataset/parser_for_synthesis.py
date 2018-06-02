@@ -4,9 +4,9 @@ import six
 
 import ply.lex
 
-from program_synthesis.karel.datasets.karel.parser_base import parser_prompt
-from program_synthesis.karel.datasets.karel.parser_base import Parser
-from program_synthesis.karel.datasets.karel.utils import KarelSyntaxError
+from program_synthesis.karel.dataset.parser_base import parser_prompt
+from program_synthesis.karel.dataset.parser_base import Parser
+from program_synthesis.karel.dataset.utils import KarelSyntaxError
 
 
 def make_token(type, value=None):

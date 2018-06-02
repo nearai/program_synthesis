@@ -7,7 +7,7 @@ import sys
 import numpy as np
 import tqdm
 
-from program_synthesis.karel.datasets.karel.parser_for_synthesis import KarelForSynthesisParser, tree_to_tokens
+from program_synthesis.karel.dataset.parser_for_synthesis import KarelForSynthesisParser, tree_to_tokens
 
 
 def str_to_arr(s):

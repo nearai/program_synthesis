@@ -5,7 +5,7 @@ import torch
 import torch.nn as nn
 from torch.autograd import Variable
 
-from program_synthesis.karel.datasets.karel import karel_runtime
+from program_synthesis.karel.dataset import karel_runtime
 from program_synthesis.karel.models import base
 from program_synthesis.karel.models import beam_search
 from program_synthesis.karel.models import prepare_spec

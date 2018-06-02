@@ -10,12 +10,12 @@ import numpy as np
 import pandas as pd
 
 from program_synthesis.karel import arguments
-from program_synthesis.karel import datasets
+from program_synthesis.karel import dataset
 from program_synthesis.karel import models
 from program_synthesis.tools import saver
 
-from program_synthesis.karel.datasets.karel import parser_for_synthesis
-from program_synthesis.karel.datasets import executor
+from program_synthesis.karel.dataset import parser_for_synthesis
+from program_synthesis.karel.dataset import executor
 from program_synthesis.karel.models import karel_trace_model
 
 
@@ -23,9 +23,9 @@ def load_model(model_dir, model_type, step=None):
     args = saver.ArgsDict(model_dir=model_dir, model_type=model_type, step=step)
     saver.restore_args(args)
     arguments.backport_default_args(args)
-    datasets.set_vocab(args)
+    dataset.set_vocab(args)
     m = models.get_model(args)
-    eval_dataset = datasets.get_eval_dataset(args, m)
+    eval_dataset = dataset.get_eval_dataset(args, m)
     m.model.eval()
     the_executor = executor.get_executor(args)()
     return m, eval_dataset, the_executor

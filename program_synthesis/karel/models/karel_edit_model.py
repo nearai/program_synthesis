@@ -12,10 +12,10 @@ from program_synthesis.karel.models import prepare_spec
 from program_synthesis.karel.models.modules import karel_common
 from program_synthesis.karel.models.modules import karel_edit
 from program_synthesis.karel.models.modules import utils
-from program_synthesis.karel.datasets.karel import mutation
-from program_synthesis.karel.datasets.karel import refine_env
-from program_synthesis.karel.datasets import executor
-from program_synthesis.karel.datasets import data
+from program_synthesis.karel.dataset import mutation
+from program_synthesis.karel.dataset import refine_env
+from program_synthesis.karel.dataset import executor
+from program_synthesis.karel.dataset import data
 
 # 1. pick among one of the following 9:
 #      5 action types (ADD_ACTION)

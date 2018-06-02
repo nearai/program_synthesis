@@ -1,10 +1,10 @@
 from __future__ import print_function
 
-from program_synthesis.karel.datasets.karel.parser_base import dummy
-from program_synthesis.karel.datasets.karel.parser_base import get_hash
-from program_synthesis.karel.datasets.karel.parser_base import parser_prompt
-from program_synthesis.karel.datasets.karel.parser_base import Parser
-from program_synthesis.karel.datasets.karel.utils import KarelSyntaxError
+from program_synthesis.karel.dataset.parser_base import dummy
+from program_synthesis.karel.dataset.parser_base import get_hash
+from program_synthesis.karel.dataset.parser_base import parser_prompt
+from program_synthesis.karel.dataset.parser_base import Parser
+from program_synthesis.karel.dataset.utils import KarelSyntaxError
 
 
 class KarelWithCurlyParser(Parser):

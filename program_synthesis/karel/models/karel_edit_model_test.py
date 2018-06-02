@@ -4,8 +4,8 @@ import mock
 import pytest
 
 from program_synthesis.karel import arguments
-from program_synthesis.karel.datasets import dataset
-from program_synthesis.karel.datasets.karel import refine_env
+from program_synthesis.karel.dataset import dataset
+from program_synthesis.karel.dataset import refine_env
 from program_synthesis.karel.models import karel_edit_model
 
 
