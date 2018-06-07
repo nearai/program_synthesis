@@ -1,6 +1,6 @@
 # AlgoLisp
 
-This is work described in:
+This work is described in:
 * Paper: [Neural Program Search: Solving Programming Tasks from Description and Examples](https://arxiv.org/abs/1802.04335) (https://arxiv.org/abs/1802.04335)
 * Blog post: http://near.ai/articles/2018-05-07-Neural-Program-Search-Paper/
 
