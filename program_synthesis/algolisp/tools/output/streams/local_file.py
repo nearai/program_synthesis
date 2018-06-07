@@ -1,4 +1,4 @@
-from program_synthesis.tools.output.streams.base import OutputStream
+from program_synthesis.algolisp.tools.output.streams.base import OutputStream
 
 
 class LocalFileOutputStream(OutputStream):

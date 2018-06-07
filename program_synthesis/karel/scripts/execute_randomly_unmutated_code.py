@@ -9,8 +9,8 @@ import sys
 import tqdm
 import numpy as np
 
-from program_sythnesis.karel import arguments
-from program_synthesis.tools import evaluation
+from program_synthesis.karel import arguments
+from program_synthesis.algolisp.tools import evaluation
 from program_synthesis.karel.dataset import executor, dataset
 from program_synthesis.karel.dataset import mutation, parser_for_synthesis
 
@@ -83,5 +83,5 @@ if __name__ == '__main__':
             correct += correct_found
             match += match_found
 
-    print  'Gen', correct / float(total), correct, total
-    print  'Exact', match  / float(total), match, total
+    print('Gen', correct / float(total), correct, total)
+    print('Exact', match / float(total), match, total)

@@ -118,7 +118,7 @@ if __name__ == '__main__':
     for fn in sorted(
             #glob.glob('logdirs/20180211/karel-lgrl-ref-edit-m12-sgd-cl1-lr0.1-lds100k-ldr0.5/report-test-*.jsonl')):
             glob.glob('../text2code/models/20180115/karel-sgd-cl1-lr1-lds100k-ldr0.5/report-test-*.jsonl')):
-        print fn
+        print(fn)
         model_name = os.path.basename(os.path.dirname(fn))
         suffix = re.search('report-test-(.*).jsonl', fn).group(1)
         step = re.search(r'report-test.*?-(\d+).jsonl', fn).group(1)
@@ -136,7 +136,7 @@ if __name__ == '__main__':
 
     #for fn in sorted(
     #        glob.glob('logdirs/*/*/report-test-*.jsonl')):
-    #    print fn
+    #    print(fn)
     #    model_name = os.path.basename(os.path.dirname(fn))
     #    suffix = re.search('report-test-(.*).jsonl', fn).group(1)
     #    step = re.search(r'report-test-.*?(\d+).jsonl', fn).group(1)

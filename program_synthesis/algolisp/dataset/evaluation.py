@@ -1,6 +1,6 @@
 import numpy as np
 
-from program_synthesis.tools import bleu
+from program_synthesis.algolisp.tools import bleu
 from program_synthesis.algolisp.dataset import executor
 
 

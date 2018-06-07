@@ -15,7 +15,7 @@ from pytorch_tools import torchfold
 
 from program_synthesis.karel.dataset import data
 from program_synthesis.karel.dataset import executor
-from program_synthesis.tools import saver
+from program_synthesis.algolisp.tools import saver
 
 
 class InferenceResult(object):

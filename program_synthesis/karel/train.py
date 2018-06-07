@@ -14,7 +14,7 @@ from program_synthesis.karel import arguments
 from program_synthesis.karel import dataset
 from program_synthesis.karel import models
 from program_synthesis import tools
-from program_synthesis.tools import timer
+from program_synthesis.algolisp.tools import timer
 
 
 def loop_iterable(x):

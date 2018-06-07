@@ -12,7 +12,7 @@ from program_synthesis.karel.dataset import dataset
 from program_synthesis.karel.dataset import executor
 from program_synthesis.karel.dataset.karel_runtime import KarelRuntime
 from program_synthesis.karel.models import karel_model
-from program_synthesis.tools import restore_args
+from program_synthesis.algolisp.tools import restore_args
 
 BASE_DIR = ""
 

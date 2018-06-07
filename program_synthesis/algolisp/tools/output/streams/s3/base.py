@@ -2,7 +2,7 @@ import time
 
 import boto3
 
-from program_synthesis.tools.output.streams.base import OutputStream
+from program_synthesis.algolisp.tools.output.streams.base import OutputStream
 
 
 class S3OutputStream(OutputStream):

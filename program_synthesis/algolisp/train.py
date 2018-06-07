@@ -5,8 +5,8 @@ import multiprocessing as mp
 
 import torch
 
-from program_synthesis.tools import reporter as reporter_lib
-from program_synthesis.tools import saver
+from program_synthesis.algolisp.tools import reporter as reporter_lib
+from program_synthesis.algolisp.tools import saver
 
 from program_synthesis.algolisp import arguments
 from program_synthesis.algolisp import models

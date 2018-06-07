@@ -15,8 +15,8 @@ import torch.nn as nn
 from torch import optim
 import torch.nn.functional as F
 
-from program_synthesis.tools import saver
-from program_synthesis.tools import bleu
+from program_synthesis.algolisp.tools import saver
+from program_synthesis.algolisp.tools import bleu
 
 from program_synthesis.algolisp.dataset import data
 from program_synthesis.algolisp.dataset import executor

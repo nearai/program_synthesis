@@ -17,7 +17,7 @@ from program_synthesis.karel.models import prepare_spec
 from program_synthesis.karel.models.base import BaseCodeModel
 from program_synthesis.karel.models.base import InferenceResult
 from program_synthesis.karel.models.modules import karel
-from program_synthesis.tools import edit
+from program_synthesis.algolisp.tools import edit
 
 
 def code_to_tokens(seq, vocab):

@@ -71,8 +71,8 @@ if __name__ == '__main__':
 
             if (not np.all(full_state == str_to_arr(ex['outgrid_tensor'])) or
                     actions != ex['actions']):
-                print zip(*np.where(
-                    full_state != str_to_arr(ex['outgrid_tensor'])))
+                print(zip(*np.where(
+                    full_state != str_to_arr(ex['outgrid_tensor']))))
                 import IPython
                 IPython.embed()
                 sys.exit()

@@ -6,7 +6,7 @@ import torch
 import torch.utils.data
 
 from program_synthesis.karel.dataset import refine_env
-from program_synthesis.tools import shuffle_queue
+from program_synthesis.algolisp.tools import shuffle_queue
 
 
 def queue_to_iter(queue):

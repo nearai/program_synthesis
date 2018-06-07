@@ -155,7 +155,7 @@ def run_eval(tag, dataset, inference, do_execute, show_info=True,
             start = time.time()
             results = inference(batch)
             for res, example in zip(results, batch.orig_examples):
-                #print res.code_tree
+                #print(res.code_tree)
                 stats = executor.evaluate_code(
                     res.code_tree if res.code_tree else res.code_sequence, example.schema.args, example.tests, do_execute)
                 report.add_example(example, res, stats)

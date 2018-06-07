@@ -11,7 +11,7 @@ from program_synthesis.karel import dataset
 from program_synthesis.karel import models
 from program_synthesis.karel.dataset import executor
 from program_synthesis import tools
-from program_synthesis.tools import evaluation
+from program_synthesis.algolisp.tools import evaluation
 
 
 def evaluate(args):

@@ -23,8 +23,8 @@ from program_synthesis.karel.dataset import stats
 from program_synthesis.karel.dataset.mutation import KarelExampleMutator
 from program_synthesis.karel.dataset import refine_env
 from program_synthesis.karel.dataset import edit_data_loader
-from program_synthesis.tools import indexed_file
-from program_synthesis.tools import batch_creators
+from program_synthesis.algolisp.tools import indexed_file
+from program_synthesis.algolisp.tools import batch_creators
 
 Schema = collections.namedtuple("Schema", ["args", "return_type"])
 
