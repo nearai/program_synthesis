@@ -40,3 +40,9 @@ class Compose(Pipe):
 
     def __copy__(self):
         return Compose([copy.copy(p) for p in self._pipes])
+
+    def __getitem__(self, item):
+        return self._pipes[-1][item]
+
+    def __len__(self):
+        return len(self._pipes[-1])

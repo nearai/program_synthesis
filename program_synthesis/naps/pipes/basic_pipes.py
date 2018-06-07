@@ -15,6 +15,12 @@ class JsonLoader(Pipe):
                 pass
         return
 
+    def __len__(self):
+        return len(self.input)
+
+    def __getitem__(self, item):
+        return json.loads(self.input[item])
+
 
 class JsonDumper(Pipe):
     def __iter__(self):
@@ -64,6 +70,9 @@ class KeepKeys(Pipe):
     def __getitem__(self, item):
         return {k: v for k, v in self.input[item].items() if k in self.keys_to_include}
 
+    def __len__(self):
+        return len(self.input)
+
 
 class DropKeys(Pipe):
     def __init__(self, keys_to_exclude=None):
@@ -76,6 +85,9 @@ class DropKeys(Pipe):
 
     def __getitem__(self, item):
         return {k: v for k, v in self.input[item].items() if k not in self.keys_to_exclude}
+
+    def __len__(self):
+        return len(self.input)
 
 
 class Cycle(Pipe):
@@ -99,19 +111,57 @@ class Cycle(Pipe):
                 yield self.input[idx]
         return
 
+    def __len__(self):
+        return len(self.input)*self.times
 
-class WeightedMerge(Pipe):
-    def __init__(self, input_pipes, weights):
+
+class RandomAccessFile(Pipe):
+    """
+    Provides random access to a file.
+    """
+    def __init__(self, filename):
+        self.filename = filename
+
+    def enter(self):
+        self.offsets = []
+        with open(self.filename) as f:
+            while True:
+                offset = f.tell()
+                if f.readline():
+                    self.offsets.append(offset)
+                else:
+                    break
+        self.f = open(self.filename)
+
+    def exit(self):
+        self.offsets.clear()
+        self.f.close()
+
+    def __getitem__(self, item):
+        self.f.seek(self.offsets[item])
+        if item < len(self) - 1:
+            return self.f.readline().rstrip('\n')  # Remove the newline character.
+        else:
+            return self.f.readline()
+
+    def __len__(self):
+        return len(self.offsets)
+
+    def __iter__(self):
+        self.f.seek(0)
+        return iter(self.f)
+
+
+class Merge(Pipe):
+    def __init__(self, input_pipes, mode='random'):
         """
-        Randomly reads from the pipes according to their weight.
+        Merges the input form several pipes.
         :param input_pipes: (list of Pipe objects): pipes to merge;
-        :param weights:
+        :param mode: if `random` will randomly read from pipes that were not yet exhausted. If `rotate` will rotate
+        through the given pipes.
         """
         self.input_pipes = input_pipes
-        self.weights = weights
-
-    def normalize(self, weights):
-        return np.array(weights, dtype=np.float) / sum(weights)
+        self.mode = mode
 
     def __enter__(self):
         for pipe in self.input_pipes:
@@ -124,19 +174,27 @@ class WeightedMerge(Pipe):
     def __iter__(self):
         input_pipes = [iter(p) for p in self.input_pipes]
         pipeline_indices = list(range(len(input_pipes)))
-        weights = self.normalize(self.weights)
+        idx = -1
         while True:
-            idx = np.random.choice(pipeline_indices, p=weights)
+            if self.mode == 'random':
+                idx = random.choice(pipeline_indices)
+            elif self.mode == 'rotate':
+                while True:
+                    idx += 1
+                    idx %= len(pipeline_indices)
+                    if idx in pipeline_indices:
+                        break
             pipe = input_pipes[idx]
             try:
                 yield next(pipe)
             except StopIteration:
-                self.pipeline_indices.pop(idx)
-                self.weights.pop(idx)
+                pipeline_indices.pop(idx)
                 if not self.input_pipes:
-                    # All input pipes have ended.
+                    # All input pipes have been exhausted.
                     return
-                weights = self.normalize(weights)
+
+    def __len__(self):
+        return sum(len(p) for p in self.input_pipes)
 
 
 class Batch(Pipe):
@@ -159,3 +217,10 @@ class Batch(Pipe):
         if batch and not self.drop_last:
             yield batch
         return
+
+    def __len__(self):
+        num_batches = len(self.input) // self.batch_size
+        last_batch = len(self.input) % self.batch_size
+        if last_batch and not self.drop_last:
+            num_batches += 1
+        return num_batches

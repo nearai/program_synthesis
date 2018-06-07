@@ -34,6 +34,7 @@ setup(
         'python-Levenshtein~=0.12.0',
         'prompt_toolkit~=1.0.15',
         'tensorflow~=1.5.0',
+        'tqdm~=4.23.4',
     ],
     project_urls={
         'Source': "https://github.com/nearai/program_synthesis",

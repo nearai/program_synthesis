@@ -1,9 +1,9 @@
 import os
 import random
+import tqdm
 
-
-from text2code.pipes.compose import Compose
-from text2code.pipes.basic_pipes import JsonLoader, Cache, Cycle, WeightedMerge, Batch, DropKeys
+from program_synthesis.naps.pipes.compose import Compose
+from program_synthesis.naps.pipes.basic_pipes import JsonLoader, RandomAccessFile, Cycle, Merge, Batch, DropKeys
 
 
 SelectPseudocode = lambda d: {**d, **{"text": random.choice(d["texts"])}}
@@ -36,40 +36,40 @@ def read_naps_dataset():
     return trainA, trainB, test
 
 
-def read_naps_dataset_cached_batched(batch_size=100, num_epochs=3, trainB_weight=10):
+def read_naps_dataset_batched(batch_size=100, num_epochs=300, trainB_weight=10):
     trainA = Compose([
-        open(TRAIN_A_PATH),
+        RandomAccessFile(TRAIN_A_PATH),
         JsonLoader(),
-        Cache(),
         Cycle(shuffle=True, times=num_epochs),
         SelectPseudocode,
         DropKeys(["texts", "is_training"])
     ])
 
     trainB = Compose([
-        open(TRAIN_B_PATH),
+        RandomAccessFile(TRAIN_B_PATH),
         JsonLoader(),
-        Cache(),
         Cycle(shuffle=True, times=num_epochs*trainB_weight)
     ])
 
     train = Compose([
-        WeightedMerge(input_pipes=[trainA, trainB], weights=[1, 1]),
+        Merge(input_pipes=[trainA, trainB], mode='random'),
         Batch(batch_size=batch_size)
     ])
 
     test = Compose([
-        open(TEST_PATH),
+        RandomAccessFile(TEST_PATH),
         JsonLoader(),
         Batch(batch_size=batch_size)
     ])
     return train, test
 
 
+# Example of iterating over the batched pipeline.
 if __name__ == "__main__":
-    train_dataset, test_dataset = read_naps_dataset_cached_batched()
+    train_dataset, test_dataset = read_naps_dataset_batched()
     with train_dataset, test_dataset:
-        for batch in train_dataset:
-            pass
-        for batch in test_dataset:
-            pass
+        with tqdm.tqdm(total=len(train_dataset)+len(test_dataset)) as pbar:
+            for batch in train_dataset:
+                pbar.update(1)
+            for batch in test_dataset:
+                pbar.update(1)
