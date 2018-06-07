@@ -37,3 +37,4 @@ pip install -e .
 ## Models and datasets
 - [AlgoLisp](program_synthesis/algolisp)
 - [Karel](program_synthesis/karel)
+- [NAPS](program_synthesis/naps)
