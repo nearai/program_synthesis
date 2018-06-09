@@ -2,13 +2,6 @@
 
 Universal AST.
 
-## Generating dataset
-
-Materialize current version from the dataset:
-
-    python materialize_dataset.py
-
-
 ## Executing a UAST
 
     executor = Executor(uast)
