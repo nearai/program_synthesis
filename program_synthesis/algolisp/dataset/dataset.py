@@ -359,14 +359,14 @@ class NearDataset(object):
 def get_metagen_dataset(args):
     args.code_vocab = args.word_vocab = _basepath('data/generated/word.vocab')
     train_data = NearDataset(
-        _basepath('data/generated/metaset5.train.jsonl'),
+        _basepath('data/generated/metaset3.train.jsonl'),
         args, shuffle=True, max_code_length=getattr(args, 'dataset_max_code_length', 0),
         filter_code_length=getattr(args, 'dataset_filter_code_length', 0),
         is_training=True)
     if not os.path.exists(args.word_vocab):
         data.save_vocab(args.word_vocab, train_data.build_vocab(min_freq=args.vocab_min_freq))
     dev_data = NearDataset(
-        _basepath('data/generated/metaset5.dev.jsonl'),
+        _basepath('data/generated/metaset3.dev.jsonl'),
         args, shuffle=False,
         is_training=False)
     return train_data, dev_data
@@ -375,7 +375,7 @@ def get_metagen_dataset(args):
 def get_metagen_eval_dataset(args):
     args.code_vocab = args.word_vocab = _basepath('data/generated/word.vocab')
     return NearDataset(
-        _basepath('data/generated/metaset5.dev.jsonl'),
+        _basepath('data/generated/metaset3.dev.jsonl'),
         args, shuffle=True,
         is_training=False)
 
