@@ -23,87 +23,14 @@ from program_synthesis.karel.dataset import stats
 from program_synthesis.karel.dataset.mutation import KarelExampleMutator
 from program_synthesis.karel.dataset import refine_env
 from program_synthesis.karel.dataset import edit_data_loader
-from program_synthesis.algolisp.tools import indexed_file
-from program_synthesis.algolisp.tools import batch_creators
+from program_synthesis.karel.tools import indexed_file
+from program_synthesis.karel.tools import batch_creators
 
 Schema = collections.namedtuple("Schema", ["args", "return_type"])
 
 
 def relpath(path):
     return os.path.join(os.path.dirname(os.path.dirname(__file__)), path)
-
-
-class CodeFunc(object):
-
-    def __init__(
-            self, name, schema,
-            code_tree, code_sequence):
-        self.name = name
-        self.schema = schema
-        self.code_tree = code_tree
-        self.code_sequence = code_sequence
-
-    def to_dict(self):
-        return {
-            'name': self.name,
-            'return_type': self.schema.return_type,
-            'args': self.schema.args,
-            'code_tree': self.code_tree,
-        }
-
-    @classmethod
-    def from_dict(cls, d):
-        # TODO: Don't pass None for code_sequence
-        return cls(d['name'],
-                   Schema(d['args'], d['return_type']), d['short_tree'], None)
-
-
-class CodeExample(object):
-
-    def __init__(
-            self, text, schema, input_tests,
-            code_tree, code_sequence, funcs, tests,
-            candidate_code_sequence=None,
-            task_types=[], tags=[], language='lisp'):
-        self.text = text
-        self.schema = schema
-        self.input_tests = input_tests
-        self.code_tree = code_tree
-        self.code_sequence = code_sequence
-        self.funcs = funcs
-        self.tests = tests
-        # Add candidate_code_tree in the future
-        self.candidate_code_sequence = candidate_code_sequence
-        self.task_types = task_types
-        self.tags = tags
-        self.language = language
-
-    def to_dict(self):
-        return {
-            'text': self.text,
-            'return_type': self.schema.return_type,
-            'args': self.schema.args,
-            'code_sequence': self.code_sequence,
-            'code_tree': self.code_tree,
-            'funcs': [f.to_dict() for f in self.funcs],
-            'tests': self.input_tests + self.tests,
-            'tags': self.tags,
-            'nodes': self.task_types,
-            'language': self.language
-        }
-
-    @classmethod
-    def from_dict(cls, d, input_test_ratio=0.7):
-        input_test_count = int(len(d['tests']) * input_test_ratio)
-        return cls(
-            d['text'],
-            Schema(d['args'], d['return_type']),
-            d['tests'][:input_test_count],
-            d['short_tree'],
-            d['code_sequence'], [CodeFunc.from_dict(f) for f in d['funcs']],
-            d['tests'][input_test_count:],
-            task_types=d['nodes'],
-            tags=d['tags'])
 
 
 class KarelExample(object):
@@ -362,88 +289,6 @@ class DynamicDataset(object):
         return bool(self.items)
 
 
-class NearDataset(Dataset):
-
-    def __init__(
-            self, filename, batch_size, shuffle=False, max_size=0, max_code_length=0,
-            filter_code_length=0):
-        tasks = []
-        with open(filename) as f:
-            for line in f:
-                try:
-                    line = json.loads(line)
-                except ValueError:
-                    continue
-                args = line['args']
-                if not isinstance(args, dict):
-                    args = collections.OrderedDict(args)
-                return_type = line.get('return_type', None)
-                language = line['language'] if 'language' in line else 'lisp'
-                if 'text' in line:
-                    text = line['text']
-                    if not isinstance(text, list):
-                        try:
-                            text = data.tokenize_text_line(text)
-                        except Exception as e:
-                            print("Exception while tokenizing %s" % text)
-                            print(e)
-                            continue
-                else:
-                    try:
-                        text = data.tokenize_text_line(line['statement'])
-                    except Exception as e:
-                        print("Exception while tokenizing %s" % line['statement'])
-                        print(e)
-                        continue
-                funcs = [
-                    CodeFunc(
-                        name=func['name'],
-                        schema=Schema(func['args'], func['return_type']),
-                        code_tree=func['short_tree'],
-                        code_sequence=data.flatten_code(func['short_tree']))
-                    for func in line['funcs']
-                ] if 'funcs' in line else []
-
-                code_tree = code_sequence = None
-                if 'short_tree' in line and line['short_tree']:
-                    code_tree = line['short_tree']
-                    code_sequence = data.flatten_code(code_tree, language)
-                elif 'code_tree' in line and line['code_tree']:
-                    code_tree = line['code_tree']
-                    if 'code_sequence' in line and line['code_sequence']:
-                        code_sequence = line['code_sequence']
-                    else:
-                        code_sequence = data.flatten_code(code_tree, language)
-                elif 'code_sequence' in line:
-                    code_sequence = line['code_sequence']
-                if not isinstance(code_sequence, list):
-                    code_sequence = data.tokenize_code_line(line['code_sequence'])
-                if filter_code_length > 0 and len(code_sequence) > filter_code_length:
-                    continue
-                if max_code_length > 0 and code_sequence is not None:
-                    code_sequence = code_sequence[:max_code_length]
-
-                if not code_tree and not code_sequence:
-                    print("Found no code in record: %s" % line)
-                    continue
-
-                tasks.append(CodeExample(
-                    text=text,
-                    schema=Schema(args, return_type),
-                    code_sequence=code_sequence,
-                    code_tree=code_tree,
-                    funcs=funcs,
-                    input_tests=line['tests'][:3],
-                    tests=line['tests'][3:],
-                    task_types=line['nodes'] if 'nodes' in line else [],
-                    tags=line['tags'] if 'tags' in line else [],
-                    language=language
-                ))
-                if max_size > 0 and len(tasks) >= max_size:
-                    break
-        super(NearDataset, self).__init__(batch_size, tasks, shuffle)
-
-
 class KarelTorchDataset(torch.utils.data.Dataset):
 
     def __init__(self, filename, mutator=lambda x: x):
@@ -505,14 +350,6 @@ class KarelDataset(object):
         return data.get_vocab(tokens, 1)
 
 
-
-def get_algolisp_train_dataset(args, model, for_eval=False):
-    return  NearDataset(
-        relpath('../../data/algolisp/dataset.train.jsonl'),
-        args.batch_size, shuffle=True, max_size=args.dataset_max_size,
-        max_code_length=args.dataset_max_code_length)
-
-
 def get_karel_dataset(args, model, section, for_eval, num_async_workers,
                       shuffle, alt_path, batch_creator_spec):
     suffix = args.dataset[5:]
@@ -569,12 +406,6 @@ def get_karel_train_dataset(args, model, for_eval=False):
         batch_creator_spec=args.batch_create_train)
 
 
-def get_algolisp_eval_dataset(args, _):
-    return NearDataset(
-        relpath('../../data/algolisp/dataset.dev.jsonl'),
-        args.batch_size, shuffle=True, max_size=args.dataset_max_size)
-
-
 def get_karel_eval_dataset(args, model):
     return get_karel_dataset(
         args,
@@ -600,86 +431,28 @@ def get_karel_eval_final_dataset(args, model):
 
 
 def set_vocab(args):
-    if args.dataset == 'algolisp':
-        args.word_vocab = relpath('../../data/algolisp/word.vocab')
-    elif args.dataset.startswith('karel'):
+    if args.dataset.startswith('karel'):
         args.word_vocab = relpath('../../data/karel/word.vocab')
     else:
         raise ValueError("Unknown dataset %s" % args.dataset)
 
 
 def get_train_dataset(args, model, for_eval):
-    if args.dataset == 'algolisp':
-        return get_algolisp_train_dataset(args, model, for_eval)
-    elif args.dataset.startswith('karel'):
+    if args.dataset.startswith('karel'):
         return get_karel_train_dataset(args, model, for_eval)
     else:
         raise ValueError("Unknown dataset %s" % args.dataset)
 
 
 def get_eval_dataset(args, model):
-    if args.dataset == 'algolisp':
-        return get_algolisp_eval_dataset(args, model)
-    elif args.dataset.startswith('karel'):
+    if args.dataset.startswith('karel'):
         return get_karel_eval_dataset(args, model)
     else:
         raise ValueError("Unknown dataset %s" % args.dataset)
 
 
 def get_eval_final_dataset(args, model):
-    if args.dataset == 'algolisp':
-        return get_algolisp_eval_final_dataset(args, model)
-    elif args.dataset.startswith('karel'):
+    if args.dataset.startswith('karel'):
         return get_karel_eval_final_dataset(args, model)
     else:
         raise ValueError("Unknown dataset %s" % args.dataset)
-
-
-def dataset_split(args, dataset, filenames, proportions):
-    def _renormalize(lst):
-        total = sum(lst)
-        return [float(x) / total for x in lst]
-    datastats = [stats.DatasetStats(args) for _ in filenames]
-    files = [open(filename, 'w') for filename in filenames]
-    real_proportions = [x for x in proportions]
-    candidates = range(len(proportions))
-    expected_size = [len(dataset.data) * p for p in proportions]
-    for example in dataset.data:
-        fidx = -1
-        for i, s in enumerate(datastats):
-            if str(example.code_sequence) in s.code_map or str(example.text) in s.text_map:
-                fidx = i
-        if fidx == -1:
-            fidx = np.random.choice(candidates, p=proportions)
-        datastats[fidx].update(example)
-        files[fidx].write(json.dumps(example.to_dict()) + "\n")
-        if datastats[fidx].stats['total'] >= expected_size[fidx] and fidx in candidates:
-            idx = candidates.index(fidx)
-            candidates.pop(idx)
-            proportions.pop(idx)
-            proportions = _renormalize(proportions)
-
-    for f in files:
-        f.close()
-    for i, ds in enumerate(datastats):
-        print("=== %.2f%% ===" % real_proportions[i])
-        ds.display()
-
-
-if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description='')
-    parser.add_argument('--train-test-split', action='store_true', default=False)
-    parser.add_argument('--train-dev-split', action='store_true', default=False)
-    parser.add_argument('--original', type=str, default=None)
-    parser.add_argument('--show_tags', action='store_true', default=False)
-    parsed_args, _ = parser.parse_known_args(sys.argv)
-
-    if parsed_args.train_test_split:
-        d = NearDataset(parsed_args.original, batch_size=1, shuffle=False)
-        print("Loaded dataset from %s" % parsed_args.original)
-        dataset_split(
-            parsed_args, d,
-            ["../data/algolisp/dataset.train.jsonl",
-            "../data/algolisp/dataset.dev.jsonl",
-            "../data/algolisp/dataset.test.jsonl"],
-            [0.8, 0.1, 0.1])

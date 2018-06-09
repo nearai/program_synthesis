@@ -12,7 +12,7 @@ import torch.nn as nn
 from torch import optim
 import torch.nn.functional as F
 
-from pytorch_tools import torchfold
+import torchfold
 
 from program_synthesis.common.models import beam_search
 from program_synthesis.common.modules import decoders

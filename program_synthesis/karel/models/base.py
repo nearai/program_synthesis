@@ -11,11 +11,12 @@ import torch.nn as nn
 from torch import optim
 import torch.nn.functional as F
 
-from pytorch_tools import torchfold
+import torchfold
+
+from program_synthesis.common.tools import saver
 
 from program_synthesis.karel.dataset import data
 from program_synthesis.karel.dataset import executor
-from program_synthesis.algolisp.tools import saver
 
 
 class InferenceResult(object):

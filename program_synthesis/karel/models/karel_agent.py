@@ -7,6 +7,8 @@ import torch
 import torch.nn as nn
 from torch import optim
 
+from program_synthesis.common.tools import saver
+
 from program_synthesis.karel.dataset import dataset
 from program_synthesis.karel.dataset import data
 from program_synthesis.karel.dataset import refine_env
@@ -17,8 +19,6 @@ from program_synthesis.karel.models import prepare_spec
 from program_synthesis.karel.models.modules import karel
 from program_synthesis.karel.models.modules import karel_common
 from program_synthesis.karel.models.modules import karel_edit
-
-from program_synthesis.algolisp.tools import saver
 
 
 DISCOUNT = 0.9

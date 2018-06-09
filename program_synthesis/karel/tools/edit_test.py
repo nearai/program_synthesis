@@ -1,6 +1,6 @@
 import unittest
 
-from program_synthesis.algolisp.tools import edit
+from program_synthesis.karel.tools import edit
 
 
 class EditTest(unittest.TestCase):

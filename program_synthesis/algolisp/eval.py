@@ -7,7 +7,7 @@ import multiprocessing as mp
 import torch
 import tqdm
 
-from program_synthesis.algolisp.tools import saver
+from program_synthesis.common.tools import saver
 
 from program_synthesis.algolisp import arguments
 from program_synthesis.algolisp import models

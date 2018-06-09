@@ -1,9 +1,10 @@
 import collections
 
 import numpy as np
-from pytorch_tools import torchfold
 import torch
 from torch.autograd import Variable
+
+import torchfold
 
 from program_synthesis.common.models import beam_search
 

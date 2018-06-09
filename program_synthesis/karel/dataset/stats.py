@@ -111,7 +111,7 @@ def report_stats(args, dataset):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Data Statistics')
-    parser.add_argument('--dataset', type=str, default='algolisp')
+    parser.add_argument('--dataset', type=str, default='karel')
     parser.add_argument('--dataset_max_size', type=int, default=0)
     parser.add_argument('--dataset_max_code_length', type=int, default=0)
     parser.add_argument('--show-tags', action='store_true', default=False)

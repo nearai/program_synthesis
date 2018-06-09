@@ -5,7 +5,7 @@ import struct
 
 import tqdm
 
-from program_synthesis.algolisp.tools import indexed_file
+from program_synthesis.karel.tools import indexed_file
 
 
 if __name__ == '__main__':
