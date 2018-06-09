@@ -13,7 +13,8 @@ import tqdm
 from program_synthesis.karel import arguments
 from program_synthesis.karel import dataset
 from program_synthesis.karel import models
-from program_synthesis import tools
+from program_synthesis.common.tools import saver
+from program_synthesis.common.tools import reporter as reporter_lib
 from program_synthesis.algolisp.tools import timer
 
 
@@ -59,14 +60,14 @@ def train_start(args):
     dev_data = dataset.get_eval_dataset(args, m)
     dev_data.shuffle = True
     sampler = get_sampler(train_data, args)
-    tools.save_args(args)
+    saver.save_args(args)
     return train_data, dev_data, m, sampler
 
 
 def train(args):
     print("Training:")
     train_data, dev_data, m, sampler = train_start(args)
-    reporter = tools.Reporter(
+    reporter = reporter_lib.Reporter(
         log_interval=args.log_interval,
         logdir=args.model_dir, smooth_interval=args.log_interval)
     for epoch in range(args.num_epochs):

@@ -9,12 +9,12 @@ import tqdm
 from program_synthesis.karel import arguments
 from program_synthesis.karel import dataset
 from program_synthesis.karel import models
-from program_synthesis import tools
+from program_synthesis.common.tools import saver
 
 
 def infer(args):
     print("\tModel type: %s\n\tModel path: %s" % (args.model_type, args.model_dir))
-    tools.restore_args(args)
+    saver.restore_args(args)
     arguments.backport_default_args(args)
     dataset.set_vocab(args)
     m = models.get_model(args)
