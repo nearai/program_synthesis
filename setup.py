@@ -15,7 +15,7 @@ setup(
     description='NEAR Program Synthesis: models, tools, and datasets for program synthesis tasks',
     long_description=long_description,
     long_description_content_type='text/markdown',
-    packages=find_packages(exclude=["*_test.py"]),
+    packages=find_packages(exclude=["*_test.py", "test_*.py"]),
     author='NEAR Inc and Contributors',
     author_email='contact@near.ai',
     install_requires=[
