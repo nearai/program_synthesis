@@ -69,6 +69,8 @@ def compute_metrics(all_stats):
     programs_num = 0
     bleu_acc = 0.0
     correct_program_acc = 0
+    # Almost correct programs are those that were executed on more than one test and passed at least 50% tests.
+    almost_correct_program_acc = 0
     exact_code_match_acc = 0
     syntax_error_acc = 0
     runtime_exception_acc = 0
@@ -78,16 +80,24 @@ def compute_metrics(all_stats):
         programs_num += 1
         bleu_acc += stats['bleu']
         correct_program_acc += stats['correct-program']
+        if (stats['correct-program'] != 0 or
+                stats['tests-executed'] > 1 and stats['tests-passed']/stats['tests-executed'] >= 0.5):
+            almost_correct_program_acc += 1
         exact_code_match_acc += stats['exact-code-match']
         syntax_error_acc += stats['syntax-error']
         runtime_exception_acc += stats['runtime-exception']
         other_exception_acc += len(stats['exceptions'])
-    return {'bleu': bleu_acc/programs_num,
-            'accuracy': correct_program_acc/programs_num,
-            'exact_match_accuracy': exact_code_match_acc/programs_num,
-            'syntax_error_freq': syntax_error_acc/tests_num,
-            'runtime_exception_freq': runtime_exception_acc/tests_num,
-            'other_exception_freq': other_exception_acc/tests_num,
+
+    return {'bleu': (bleu_acc/programs_num) if programs_num else 0.0,
+            'accuracy': (correct_program_acc/programs_num) if programs_num else 0.0,
+            '50p_accuracy': (almost_correct_program_acc/programs_num) if programs_num else 0.0,
+            'exact_match_accuracy': (exact_code_match_acc/programs_num) if programs_num else 0.0,
+            'syntax_error_freq': (syntax_error_acc/tests_num) if tests_num else 0.0,
+            'runtime_exception_freq': (runtime_exception_acc/tests_num) if tests_num else 0.0,
+            'other_exception_freq': (other_exception_acc/tests_num) if tests_num else 0.0,
             'programs_num': programs_num,
-            'tests_num': tests_num
+            'tests_num': tests_num,
+            'correct_program_num': correct_program_acc,
+            'almost_correct_program_num': almost_correct_program_acc,
+            'exact_code_match_num': exact_code_match_acc,
             }
