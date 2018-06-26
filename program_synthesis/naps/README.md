@@ -17,7 +17,7 @@ func char** __main__(char* var0, char* var1)
   var3 = 0
   var4 = 0
   if (len(var0) != len(var1))
-    var6 = array_concat(var6, string_split("NO", " \t"))
+    var6 = array_concat(var6, "NO")
     return var6
   var5 = 0
   for(; (var5 < len(var0)); var5 = (var5 + 1))
@@ -26,15 +26,15 @@ func char** __main__(char* var0, char* var1)
     if (var1[var5] == 49)
       var4 = 1
   if (var3 == var4)
-    var6 = array_concat(var6, string_split("YES", " \t"))
+    var6 = array_concat(var6, "YES")
   else
-    var6 = array_concat(var6, string_split("NO", " \t"))
+    var6 = array_concat(var6, "NO")
   return var6
 ```
 
 ---
 
-Solution description: `given integers var0, var1. if var0 does not exceed var1 then return var0. let var2 be the smallest value such that ans * ( ans + 1 ) / 2 is not less than n - m. return var2 plus var1.`
+Solution description: `given integers var0, var1. if var0 does not exceed var1 then return var0. let var2 be the smallest value such that var2 * ( var2 + 1 ) / 2 is not less than var0 - var1. return var2 plus var1.`
 
 Pretty print of UAST:
 ```
