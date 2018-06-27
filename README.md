@@ -1,3 +1,4 @@
+[![PyPi version](https://pypip.in/v/program-synthesis/badge.png)](https://pypi.org/project/program-synthesis/)
 # Program Synthesis
 NEAR Program Synthesis provides a set of models, tools, and datasets for program synthesis tasks.
 
