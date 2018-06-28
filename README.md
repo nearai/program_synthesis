@@ -1,4 +1,4 @@
-[![PyPi version](https://pypip.in/v/program-synthesis/badge.png)](https://pypi.org/project/program-synthesis/)
+[![PyPi version](https://pypip.in/v/program-synthesis/badge.png)](https://pypi.org/project/program-synthesis/) [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.1299382.svg)](https://doi.org/10.5281/zenodo.1299382)
 # Program Synthesis
 NEAR Program Synthesis provides a set of models, tools, and datasets for program synthesis tasks.
 
@@ -39,3 +39,16 @@ pip install -e .
 - [AlgoLisp](program_synthesis/algolisp)
 - [Karel](program_synthesis/karel)
 - [NAPS](program_synthesis/naps)
+
+To cite this repository in publications:
+
+    @misc{illia_polosukhin_2018_1299382,
+      author       = {Illia Polosukhin and
+                      Maksym Zavershynskyi and
+                      Richard Shin},
+      title        = {nearai/program_synthesis: v0.1.2},
+      month        = jun,
+      year         = 2018,
+      doi          = {10.5281/zenodo.1299382},
+      url          = {https://doi.org/10.5281/zenodo.1299382}
+    }
