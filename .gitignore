@@ -1,4 +1,13 @@
 program_synthesis/datasets/karel/_parsetab.py
+# Datasets
+data/generated
+data/karel
+data/naps
+
+program_synthesis/karel/dataset/_parsetab.py
+
+# Mac artifacts
+.DS_Store
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
@@ -103,6 +112,10 @@ ENV/
 .mypy_cache/
 
 .idea/
+
+# Data files
+*.pkl
+*.pkl.index
 
 # logs
 program_synthesis/logdirs

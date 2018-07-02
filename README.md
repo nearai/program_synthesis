@@ -1,33 +1,54 @@
-# Setup
+[![PyPi version](https://pypip.in/v/program-synthesis/badge.png)](https://pypi.org/project/program-synthesis/) [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.1299382.svg)](https://doi.org/10.5281/zenodo.1299382)
+# Program Synthesis
+NEAR Program Synthesis provides a set of models, tools, and datasets for program synthesis tasks.
 
-This codebase uses Python 2.
+This repository will make it easier for the community to compare and reuse program synthesis algorithms across different
+datasets.
 
-1. (optionally) Create a virtualenv.
-2. Install PyTorch from https://pytorch.org
-3. Install packages from `requirements.txt`: `pip install -r requirements.txt`
-4. Install program_synthesis as package for development: `pip install -e .`
+## Prerequisites
+Python 3 (>=3.5) is required to run the code. We also recommend using
+[virtualenv](https://virtualenv.pypa.io/en/stable/) for isolated Python environments and
+[pip](https://pypi.org/project/pip/) for package management. Note, to create a Python 3 environment you need to run:
 
-# Training models
-
-## Karel
-Download the preproessed dataset:
 ```
-cd data
-wget https://s3.us-east-2.amazonaws.com/karel-dataset/karel.tar.gz
-tar xf karel.tar.gz
+virtualenv .env --python=python3
+source .env/bin/activate
 ```
 
-Train a model with SGD:
+The code also assumes that [PyTorch](https://pytorch.org/) is already installed.
+
+## Installation
 ```
-python train.py --dataset karel --model_type karel-lgrl \
-  --debug_every_n=10000 --eval_every_n=10000 --keep_every_n=50000 \
-  --log_interval=1000 --batch_size 128 --num_epochs 100 --max_beam_trees 1 \
-  --optimizer sgd --gradient-clip 1 --lr 1 --lr_decay_steps 100000 --lr_decay_rate 0.5 \
-  --model_dir logdirs/karel-sgd-cl1-lr1-lds100k-ldr0.5
+pip install program-synthesis
 ```
 
-Evaluate on the validation set:
+## Development installation
+
+For development installation you need to clone the repository:
 ```
-python eval.py --model_type=karel-lgrl --dataset karel --max_beam_trees 64 --max_eval_trials 1 \
-  --model_dir logdirs/karel-sgd-cl1-lr1-lds100k-ldr0.5
+git clone https://github.com/nearai/program_synthesis.git
+cd program_synthesis
 ```
+
+Install program-synthesis in editable mode:
+```
+pip install -e .
+```
+
+## Models and datasets
+- [AlgoLisp](program_synthesis/algolisp)
+- [Karel](program_synthesis/karel)
+- [NAPS](program_synthesis/naps)
+
+To cite this repository in publications:
+
+    @misc{illia_polosukhin_2018_1299382,
+      author       = {Illia Polosukhin and
+                      Maksym Zavershynskyi and
+                      Richard Shin},
+      title        = {nearai/program_synthesis: v0.1.2},
+      month        = jun,
+      year         = 2018,
+      doi          = {10.5281/zenodo.1299382},
+      url          = {https://doi.org/10.5281/zenodo.1299382}
+    }
