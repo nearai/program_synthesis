@@ -7,7 +7,6 @@ Current implementation description of the karel environment.
 + Prioritized Experience Replay
 + Meta learning (MAML, Reptile)
 + Hierarchical methods
-+ (Use two different neural network that improves at different rates) Mnih et al.
 
 #### Reference:
 + [Deep RL in parametrized action space](https://arxiv.org/pdf/1511.04143.pdf)
