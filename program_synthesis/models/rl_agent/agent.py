@@ -51,30 +51,32 @@ class KarelAgent:
         self.task_enc = self.model.encode_task(task)
 
     @staticmethod
-    def policy_from_value(action_value, mode='softmax'):
+    def policy_from_value(action_value, mode='greedy'):
+        if not isinstance(action_value, np.ndarray):
+            action_value = action_value.numpy()
+
         if mode == "linear":
             act_dist = action_value / action_value.sum()
         elif mode == "softmax":
-            if isinstance(action_value, np.ndarray):
-                act_dist = np.exp(action_value)
-            else:
-                act_dist = torch.exp(action_value)
+            act_dist = np.exp(action_value)
             act_dist /= act_dist.sum()
+        elif mode == 'greedy':
+            act_dist = np.zeros(action_value.shape)
+            act_dist.ravel()[action_value.argmax()] = 1.
         else:
             raise ValueError('Mode {mode} is invalid'.format(mode=mode))
 
         return act_dist
 
     @staticmethod
-    def choice(reward, mask=None, mode='softmax'):
+    def choice(reward, mask=None, mode='greedy'):
         """
         :param reward: np.ndarray
         :param mask: np.ndarray
-        :param mode: ('linear', 'softmax')
+        :param mode: ('linear', 'softmax', 'greedy')
         """
         if not isinstance(reward, np.ndarray):
             reward = reward.numpy()
-        assert sum([1 for x in reward.shape if x > 1]) <= 1
 
         reward = reward.reshape(-1)
         dist = KarelAgent.policy_from_value(reward, mode=mode)
@@ -117,6 +119,11 @@ class KarelAgent:
                 act_dist = self.policy_from_value(action_value)
 
                 act_dist = act_dist * implemented_actions
+
+                # Pick random action if current action is not available
+                if act_dist.sum() < 1e-9:
+                    act_dist += np.ones(act_dist.shape) * 1e-4
+
                 act_dist /= act_dist.sum()
 
                 # <DEBUG ACTION_TYPE>
@@ -166,47 +173,43 @@ class KarelAgent:
                         action_categorical.reshape(-1)[action_id] = 1.
 
                         if len(self.env.atree.remove_action_locs) == 0:
-                            continue
+                            # Select location
+                            location_mask = torch.zeros(code.shape[-1], 1)
+                            location_mask.reshape(-1)[list(self.env.atree.remove_action_locs)] = 1.
 
-                        # Select location
-                        location_mask = torch.zeros(code.shape[-1], 1)
-                        location_mask.reshape(-1)[list(self.env.atree.remove_action_locs)] = 1.
+                            location_embedding = self.model.location(action_categorical, self.model.state_enc,
+                                                                     self.model.code_token_embed)
 
-                        location_embedding = self.model.location(action_categorical, self.model.state_enc,
-                                                                 self.model.code_token_embed)
+                            location_reward = self.model.single_location(location_embedding)
 
-                        location_reward = self.model.single_location(location_embedding)
+                            selected_location = self.choice(location_reward, location_mask)
 
-                        selected_location = self.choice(location_reward, location_mask)
-
-                        params = ActionRemoveParameters(selected_location)
+                            params = ActionRemoveParameters(selected_location)
 
                     elif action_id == mutation.REPLACE_ACTION:
                         action_categorical = torch.zeros(1, 8)
                         action_categorical.reshape(-1)[action_id] = 1.
 
-                        if len(self.env.atree.replace_action_locs) == 0:
-                            continue
+                        if len(self.env.atree.replace_action_locs) != 0:
+                            # Select location
+                            location_mask = torch.zeros(code.shape[-1], 1)
+                            location_mask.reshape(-1)[list(self.env.atree.replace_action_locs)] = 1.
 
-                        # Select location
-                        location_mask = torch.zeros(code.shape[-1], 1)
-                        location_mask.reshape(-1)[list(self.env.atree.replace_action_locs)] = 1.
+                            location_embedding = self.model.location(action_categorical, self.model.state_enc,
+                                                                     self.model.code_token_embed)
 
-                        location_embedding = self.model.location(action_categorical, self.model.state_enc,
-                                                                 self.model.code_token_embed)
+                            location_reward = self.model.single_location(location_embedding)
 
-                        location_reward = self.model.single_location(location_embedding)
+                            selected_location = self.choice(location_reward, location_mask)
+                            selected_location_embed = location_embedding[0][selected_location].view(1, -1)
 
-                        selected_location = self.choice(location_reward, location_mask)
-                        selected_location_embed = location_embedding[0][selected_location].view(1, -1)
+                            # Select karel token
+                            karel_token_reward = self.model.karel_token(action_categorical, self.model.state_enc,
+                                                                        selected_location_embed)
 
-                        # Select karel token
-                        karel_token_reward = self.model.karel_token(action_categorical, self.model.state_enc,
-                                                                    selected_location_embed)
+                            selected_action_type = self.choice(karel_token_reward)
 
-                        selected_action_type = self.choice(karel_token_reward)
-
-                        params = ActionReplaceParameters(selected_location, ACTION_NAMES[selected_action_type])
+                            params = ActionReplaceParameters(selected_location, ACTION_NAMES[selected_action_type])
 
                     elif action_id == mutation.UNWRAP_BLOCK:
 
@@ -215,21 +218,19 @@ class KarelAgent:
                         action_categorical = torch.zeros(1, 8)
                         action_categorical.reshape(-1)[action_id] = 1.
 
-                        if len(self.env.atree.unwrap_block_locs) == 0:
-                            continue
+                        if len(self.env.atree.unwrap_block_locs) != 0:
+                            # Select location
+                            location_mask = np.zeros(code.shape[-1])
+                            location_mask[list(self.env.atree.unwrap_block_locs)] = 1.
 
-                        # Select location
-                        location_mask = np.zeros(code.shape[-1])
-                        location_mask[list(self.env.atree.unwrap_block_locs)] = 1.
+                            location_embedding = self.model.location(action_categorical,
+                                                                     self.model.state_enc,
+                                                                     self.model.code_token_embed)
 
-                        location_embedding = self.model.location(action_categorical,
-                                                                 self.model.state_enc,
-                                                                 self.model.code_token_embed)
+                            location_reward = self.model.single_location(location_embedding)
+                            selected_location = self.choice(location_reward, location_mask)
 
-                        location_reward = self.model.single_location(location_embedding)
-                        selected_location = self.choice(location_reward, location_mask)
-
-                        params = ActionUnwrapBlockParameters(selected_location)
+                            params = ActionUnwrapBlockParameters(selected_location)
 
                     elif action_id == mutation.WRAP_BLOCK:
                         action_categorical = torch.zeros(1, 8)
@@ -257,15 +258,14 @@ class KarelAgent:
                             loc0_embed.append(location_embedding[0, loc0:loc0 + 1])
                             loc1_embed.append(location_embedding[0, loc1:loc1 + 1])
 
-                        if len(loc_pair) == 0:
-                            continue
+                        if len(loc_pair) != 0:
+                            loc_pair_reward = self.model.double_location(torch.cat(loc0_embed), torch.cat(loc1_embed))
+                            selected_loc_pair = self.choice(loc_pair_reward)
 
-                        loc_pair_reward = self.model.double_location(torch.cat(loc0_embed), torch.cat(loc1_embed))
-                        selected_loc_pair = self.choice(loc_pair_reward)
+                            start, end = loc_pair[selected_loc_pair]
 
-                        start, end = loc_pair[selected_loc_pair]
-
-                        params = ActionWrapBlockParameters(BLOCK_TYPE[selected_block_type], condition_id, start, end)
+                            params = ActionWrapBlockParameters(BLOCK_TYPE[selected_block_type], condition_id, start,
+                                                               end)
 
                     elif action_id == mutation.WRAP_IFELSE:
                         action_categorical = torch.zeros(1, 8)
@@ -287,17 +287,15 @@ class KarelAgent:
                             loc1_embed.append(location_embedding[0, loc1:loc1 + 1])
                             loc2_embed.append(location_embedding[0, loc2:loc2 + 1])
 
-                        if len(loc_tuple) == 0:
-                            continue
+                        if len(loc_tuple) != 0:
+                            loc_pair_reward = self.model.triple_location(torch.cat(loc0_embed),
+                                                                         torch.cat(loc1_embed),
+                                                                         torch.cat(loc2_embed))
+                            selected_loc_pair = self.choice(loc_pair_reward)
 
-                        loc_pair_reward = self.model.triple_location(torch.cat(loc0_embed),
-                                                                     torch.cat(loc1_embed),
-                                                                     torch.cat(loc2_embed))
-                        selected_loc_pair = self.choice(loc_pair_reward)
+                            if_start, else_start, end = loc_tuple[selected_loc_pair]
 
-                        if_start, else_start, end = loc_tuple[selected_loc_pair]
-
-                        params = ActionWrapIfElseParameters(condition_id, if_start, else_start, end)
+                            params = ActionWrapIfElseParameters(condition_id, if_start, else_start, end)
 
                     elif action_id == mutation.REPLACE_COND:
                         raise NotImplementedError()
@@ -308,6 +306,11 @@ class KarelAgent:
                     else:
                         raise ValueError(f"Invalid action id {action}. \
                         Action id must be in the range [0, {TOTAL_MUTATION_ACTIONS})")
+
+                    if params is None:
+                        # Add randomness
+                        act_dist += np.ones(act_dist.shape) * 1e-1
+                        act_dist /= action_value.sum()
 
                 res_action = Action(action_id, params)
                 logger_task.info(f"Selected action: {res_action}")

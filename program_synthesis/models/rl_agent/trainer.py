@@ -57,8 +57,6 @@ class PolicyTrainer(object):
 
         self.critic.train(tasks, states, actions, targets)
 
-        # Train action network
-
     def train(self):
         replay_buffer = ReplayBuffer(self.args.replay_buffer_size, self.args.erase_factor)
         for epoch in range(self.args.num_epochs):

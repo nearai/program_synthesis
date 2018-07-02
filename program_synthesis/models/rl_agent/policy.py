@@ -77,7 +77,7 @@ class ActionTypeModel(nn.Module):
 
     def forward(self, embed):
         hidden = F.relu(self.dense0(embed))
-        out = F.sigmoid(self.dense1(hidden))
+        out = self.dense1(hidden)
         return out
 
 
@@ -133,7 +133,7 @@ class SingleLocationModel(nn.Module):
     def forward(self, loc_embed):
         shape = loc_embed.shape
         loc_embed = loc_embed.contiguous().view(-1, LOCATION_EMBED_SIZE)
-        reward = F.sigmoid(self.dense_reward(loc_embed)).view(*shape[:-1], -1)
+        reward = self.dense_reward(loc_embed).view(*shape[:-1], -1)
 
         return reward
 
@@ -162,7 +162,7 @@ class DoubleLocationModel(nn.Module):
 
         L = torch.cat([loc0_embed, loc1_embed], dim=1)
 
-        reward = F.sigmoid(self.dense_reward(L)).view(*shape[:-1], -1)
+        reward = self.dense_reward(L).view(*shape[:-1], -1)
 
         return reward
 
@@ -193,7 +193,7 @@ class TripleLocationModel(nn.Module):
 
         L = torch.cat([loc_embed0, loc_embed1, loc_embed2], dim=1)
 
-        reward = F.sigmoid(self.dense_reward(L)).view(*shape[:-1], -1)
+        reward = self.dense_reward(L).view(*shape[:-1], -1)
 
         return reward
 
@@ -227,7 +227,7 @@ class KarelTokenParameterModel(nn.Module):
         repr = torch.cat([action, embed, loc_embed], dim=1)
         hidden = F.relu(self.dense0(repr))
         hidden = F.relu(self.dense1(hidden))
-        output = F.softmax(self.dense2(hidden), dim=1)
+        output = self.dense2(hidden)
         return output
 
 
@@ -255,7 +255,7 @@ class BlockTypeModel(nn.Module):
     def forward(self, state_embed):
         hidden = F.relu(self.dense0(state_embed))
         hidden = F.relu(self.dense1(hidden))
-        out = F.sigmoid(self.dense2(hidden))
+        out = self.dense2(hidden)
         return out
 
 
@@ -288,7 +288,7 @@ class ConditionIdModel(nn.Module):
         inp = torch.cat([state_embed, block_type], dim=1)
         hidden = F.relu(self.dense0(inp))
         hidden = F.relu(self.dense1(hidden))
-        out = F.sigmoid(self.dense2(hidden))
+        out = self.dense2(hidden)
         return out
 
 
@@ -317,5 +317,5 @@ class RepeatCountModel(nn.Module):
     def forward(self, embed):
         hidden = F.relu(self.dense0(embed))
         hidden = F.relu(self.dense1(hidden))
-        out = F.sigmoid(self.dense2(hidden))
+        out = self.dense2(hidden)
         return out
