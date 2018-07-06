@@ -1,4 +1,4 @@
-from program_synthesis.datasets.karel.mutation import ACTION_NAMES, BLOCK_TYPE, CONDS, REPEAT_COUNTS
+from program_synthesis.karel.dataset.mutation import ACTION_NAMES, BLOCK_TYPE, CONDS, REPEAT_COUNTS
 
 DISCOUNT = 0.99
 EPSILON = 0.1

@@ -2,7 +2,7 @@ import torch
 import torch.nn.functional as F
 from torch import nn as nn
 
-from program_synthesis.models.modules import karel_common, karel
+from program_synthesis.karel.models.modules import karel_common, karel
 from program_synthesis.models.rl_agent.config import TOTAL_MUTATION_ACTIONS, LOCATION_EMBED_SIZE, \
     STATE_EMBED_SIZE, KAREL_STATIC_TOKEN, TOKEN_EMBED_SIZE, BLOCK_TYPE_SIZE, CONDITION_SIZE, REPEAT_COUNT_SIZE
 

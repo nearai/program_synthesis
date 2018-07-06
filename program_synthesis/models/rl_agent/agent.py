@@ -11,11 +11,11 @@ import torch
 import torch.utils.data
 from torch import optim
 
-from program_synthesis.datasets.karel import mutation
-from program_synthesis.datasets.karel.mutation import ACTION_NAMES, BLOCK_TYPE, Action, ActionAddParameters, \
+from program_synthesis.karel.dataset import mutation
+from program_synthesis.karel.dataset.mutation import ACTION_NAMES, BLOCK_TYPE, Action, ActionAddParameters, \
     ActionRemoveParameters, ActionReplaceParameters, ActionUnwrapBlockParameters, ActionWrapBlockParameters, \
     ActionWrapIfElseParameters
-from program_synthesis.datasets.karel.refine_env import MutationActionSpace
+from program_synthesis.karel.dataset.refine_env import MutationActionSpace
 from program_synthesis.models.rl_agent.config import VOCAB_SIZE, TOTAL_MUTATION_ACTIONS, \
     LOCATION_EMBED_SIZE, KAREL_STATIC_TOKEN, BLOCK_TYPE_SIZE, CONDITION_SIZE, REPEAT_COUNT_SIZE
 from program_synthesis.models.rl_agent.logger import logger_train, logger_task
