@@ -1,6 +1,8 @@
 # NAPS -- Natural Program Synthesis Dataset
 The structure of the NAPS dataset is thoroughly described in the paper: [NAPS: Neural Program Synthesis Dataset](https://arxiv.org/abs/1807.03168)
 
+Checkout [current leaderboard](http://near.ai/research/naps) to see the most recent results.
+
 ## Download the dataset
 Use the link to download the dataset: https://goo.gl/WaBdbb
 
