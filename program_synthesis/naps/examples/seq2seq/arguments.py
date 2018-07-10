@@ -1,0 +1,28 @@
+import argparse
+
+
+def parse_args():
+    parser = argparse.ArgumentParser(description="Seq2Seq")
+    parser.add_argument('--no-cuda', action='store_true', default=False)
+    parser.add_argument('--model_dir', type=str, default=None)
+    parser.add_argument('--max_code_length', type=int, default=500)
+    parser.add_argument('--num_units', type=int, default=500)
+    parser.add_argument('--max_oov_size', type=int, default=50)
+    parser.add_argument('--encoder_dropout', type=float, default=0.2)
+    parser.add_argument('--decoder_dropout', type=float, default=0.2)
+    parser.add_argument('--num_decoder_layers', type=int, default=1)
+    parser.add_argument('--num_encoder_layers', type=int, default=2)
+    parser.add_argument('--num_att_heads', type=int, default=1)
+    parser.add_argument('--vocab_min_occurrences', type=int, default=50)
+    parser.add_argument('--shuffle_variables', action='store_true', default=False)
+    parser.add_argument('--optimizer_weight_decay', type=float, default=0.0)
+    parser.add_argument('--lr', type=float, default=0.00025)
+    parser.add_argument('--lr_decay_steps', type=int, default=5000)
+    parser.add_argument('--lr_decay_rate', type=float, default=0.5)
+    parser.add_argument('--saver_keep_every_n', type=int, default=5000)
+    parser.add_argument('--saver_save_every_n', type=int, default=100)
+    parser.add_argument('--restore_map_to_cpu', action='store_true', default=False)
+    parser.add_argument('--batch_size', type=int, default=100)
+    parser.add_argument('--bidirectional', action='store_true', default=False)
+    parser.add_argument('--gradient_clip', type=float, default=0.5)
+    return parser.parse_args()
