@@ -146,8 +146,8 @@ class BaseModel(object):
             self.debug(batch)
         if self.last_step % self.save_every_n == 0:
             self.saver.save(self.model_dir, self.last_step)
-        self.last_loss = loss.data[0]
-        return {'loss': loss.data[0], 'lr': self.lr}
+        self.last_loss = loss.item()
+        return {'loss': loss.item(), 'lr': self.lr}
 
     def update_eval_metrics(self, example, res, result):
         if (example.code_sequence == res.code_sequence or 

@@ -29,7 +29,7 @@ from program_synthesis.algolisp.models.modules import seq2seq
 class Seq2SeqModel(Seq2CodeModel):
 
     def __init__(self, args):
-        self.vocab = data.load_vocabs(args.word_vocab, args.code_vocab, args.num_placeholders)
+        self.vocab = data.load_vocabs(args.word_vocab, args.code_vocab, args.num_placeholders, getattr(args, 'vocab_mapping', True))
         self.model = seq2seq.Seq2SeqAttn(
             self.vocab.word_vocab_size, self.vocab.code_vocab_size, args)
         self._executor = None

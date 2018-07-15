@@ -66,8 +66,8 @@ def load_vocab(filename, mapping=True):
     return vocab
 
 
-def load_vocabs(word_filename, code_filename, num_placeholders):
-    return WordCodeVocab(load_vocab(word_filename), load_vocab(code_filename), num_placeholders)
+def load_vocabs(word_filename, code_filename, num_placeholders, mapping=True):
+    return WordCodeVocab(load_vocab(word_filename, mapping), load_vocab(code_filename, mapping), num_placeholders)
 
 
 def save_vocab(filename, vocab):
