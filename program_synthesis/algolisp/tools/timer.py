@@ -5,7 +5,7 @@ import time
 def _print_tags(tags, counts={}):
     result = ', '.join([
         "%s=%.5f (%d)" % (tag, value, counts.get(tag, 0))
-        for tag, value in tags.iteritems()
+        for tag, value in tags.items()
     ])
     print(result)
 
