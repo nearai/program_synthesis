@@ -122,7 +122,7 @@ class BaseModel(object):
         if res[0].info:
             print("Info:   %s" % res[0].info)
 
-        if hasattr(self, 'last_vocab') and hasattr(self.last_vocab, 'unks') and len(self.last.vocab.unks) > 0:
+        if hasattr(self, 'last_vocab') and hasattr(self.last_vocab, 'unks') and len(self.last_vocab.unks) > 0:
             unks = sorted(self.last_vocab.unks.items(), key=lambda x: -x[1])
             print("Unks:  %d %s" % (len(unks), unks[:5]))
 
@@ -133,9 +133,9 @@ class BaseModel(object):
             loss = self.compute_loss(batch)
         except RuntimeError:
             raise
-        if self.last_loss is not None and self.last_step > 1000 and loss.data[0] > self.last_loss * 3:
+        if self.last_loss is not None and self.last_step > 1000 and loss.item() > self.last_loss * 3:
             print("Loss exploded: %f to %f. Skipping batch." % 
-                (self.last_loss, loss.data[0]))
+                (self.last_loss, loss.item()))
             return {'loss': self.last_loss, 'lr': self.lr}
 
         loss.backward()
@@ -192,6 +192,10 @@ class BaseModel(object):
 class BaseCodeModel(BaseModel):
 
     def __init__(self, args):
+        if args.cuda:
+            self.model.cuda()
+        print(self.model)
+        
         self.criterion = nn.CrossEntropyLoss(ignore_index=-1)
         if args.optimizer == 'adam':
             self.optimizer = optim.Adam(self.model.parameters(), lr=args.lr,
@@ -202,9 +206,6 @@ class BaseCodeModel(BaseModel):
             raise ValueError(args.optimizer)
 
         super(BaseCodeModel, self).__init__(args)
-        if args.cuda:
-            self.model.cuda()
-        print(self.model)
 
     def reset_vocab(self):
         if isinstance(self.vocab, data.WordCodeVocab):

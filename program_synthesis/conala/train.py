@@ -114,7 +114,6 @@ def main(args):
     with train, tqdm.tqdm(smoothing=0.1) as pbar:
         for step, batch in enumerate(train):
             metrics = model.train(batch)
-            model.debug(batch)
             pbar.update(1)
             if step % args.log_interval == 0:
                 pbar.write("loss: {loss:.6f};\tlr: {lr:.8f}".format(**metrics))
