@@ -134,5 +134,5 @@ class Seq2SeqModel(Seq2CodeModel):
                 max_decoder_length=self.args.max_decoder_length)
             return self._try_sequences([vocab.itocode]*len(sequences), sequences, batch, beam_size)
         else:
-            result_ids = self.model.sample(hidden, memory)
+            result_ids = self.model.decoder.sample(hidden, memory)
             return [InferenceResult(code_sequence=[vocab.itocode(idx.item()) for idx in ids]) for ids in result_ids]
