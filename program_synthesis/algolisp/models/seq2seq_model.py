@@ -54,7 +54,7 @@ class Seq2SeqModel(Seq2CodeModel):
     def decode(self, vocab, batch, hidden, memory, volatile):
         outputs = prepare_spec.encode_output_code_seq(
             vocab.codetoi, batch, self.args.cuda, volatile)
-        logits, _ = self.model.decode(hidden, memory, outputs[:, :-1])
+        logits = self.model.decode(hidden, memory, outputs[:, :-1])
         return logits.view(-1, logits.size(2)), outputs[:, 1:].contiguous().view(-1)
 
     def compute_loss(self, batch, volatile=False):

@@ -162,7 +162,7 @@ class BaseSeqDecoderAttn(nn.Module):
             prev_output = output
         preds = torch.stack(preds, dim=1)
         preds = F.dropout(preds, self.args.decoder_dropout)
-        return self.out(preds), embed
+        return self.out(preds)
 
     def decode_token(self, token, hidden, memory, attentions=None):
         enc = self.embed(token)
@@ -222,7 +222,7 @@ class SeqDecoderAttnLuong(BaseSeqDecoderAttn):
         super(SeqDecoderAttnLuong, self).__init__(
             vocab_size, args, embed=embed, input_size=args.num_units * 2)
         self.attention = attention.DotProductAttention(
-            args.num_units, mem_dim)
+            args.num_units, mem_dim, args.num_heads)
 
     def step(self, enc, hidden, memory, prev_output):
         memory, attn_mask = memory
