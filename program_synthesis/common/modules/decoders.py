@@ -270,3 +270,20 @@ class SeqDecoderPastAttn(SeqDecoderMultiAttn):
             attn_mask = torch.cat([attn_mask, torch.zeros(
                 attn_mask.size(0), 1).type(torch.ByteTensor)], dim=1)
         return memory, attn_mask 
+
+
+_DECODERS = {
+    'decoder': SeqDecoder,
+    'attn_decoder': SeqDecoderAttn,
+    'multi_attn_decoder': SeqDecoderMultiAttn,
+    'past_attn_decoder': SeqDecoderPastAttn,
+    'luong_attn_decoder': SeqDecoderAttnLuong,
+}
+
+
+def get_decoder_cls(type_):
+    if type_ not in _DECODERS:
+        raise ValueError(
+            "Unknown decoder type: %s, available decoders: %s" % (
+                type_, ','.join(_DECODERS.keys())))
+    return _DECODERS[type_]

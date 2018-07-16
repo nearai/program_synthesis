@@ -7,6 +7,8 @@ import numpy as np
 import torch
 from torch.autograd import Variable
 
+from program_synthesis.common.tools.packed_sequence import PackedSequencePlus
+
 
 def lengths(lsts):
     return [len(lst) for lst in lsts]
@@ -35,40 +37,22 @@ def numpy_to_float_tensor(arr, cuda, volatile):
     return Variable(t, volatile=volatile)
 
 
-class PackedSequencePlus(collections.namedtuple('PackedSequencePlus',
-        ['ps', 'lengths', 'sort_to_orig'])):
-
-    def apply(self, fn):
-        return PackedSequencePlus(
-            torch.nn.utils.rnn.PackedSequence(
-                fn(self.ps.data), self.ps.batch_sizes), self.lengths,
-            self.sort_to_orig)
-
-    def with_new_ps(self, ps):
-        return PackedSequencePlus(ps, self.lengths, self.sort_to_orig)
-
-    def pad(self, batch_first, others_to_unsort=()):
-        padded, seq_lengths = torch.nn.utils.rnn.pad_packed_sequence(
-            self.ps, batch_first=batch_first)
-        results = padded[
-            self.sort_to_orig], [seq_lengths[i] for i in self.sort_to_orig]
-        return results + tuple(t[self.sort_to_orig] for t in others_to_unsort)
-
-
 def sort_lists_by_length(lists):
     # lists_sorted: lists sorted by length of each element, descending
     # orig_to_sort: tuple of integers, satisfies the following:
     #   tuple(lists[i] for i in orig_to_sort) == lists_sorted
+    #   lists[orig_to_sort[sort_idx]] == lists_sorted[sort_idx]
     orig_to_sort, lists_sorted = zip(*sorted(
         enumerate(lists), key=lambda x: len(x[1]), reverse=True))
     # sort_to_orig: list of integers, satisfies the following:
     #   [lists_sorted[i] for i in sort_to_orig] == lists
+    #   lists_sorted[sort_to_orig[orig_idx]] == lists[orig_idx]
     sort_to_orig = [
         x[0] for x in sorted(
             enumerate(orig_to_sort), key=operator.itemgetter(1))
     ]
 
-    return lists_sorted, sort_to_orig
+    return lists_sorted, sort_to_orig, orig_to_sort
 
 
 def batch_bounds_for_packing(lengths):
@@ -107,13 +91,15 @@ def lists_to_packed_sequence(lists, stoi, cuda, volatile):
     sort_to_orig = [x[0] for x in sorted(
             enumerate(orig_to_sort), key=operator.itemgetter(1))]
 
+    lists_sorted, sort_to_orig, orig_to_sort = sort_lists_by_length(lists)
+
     v = numpy_to_tensor(lists_to_numpy(lists_sorted, stoi, 0), cuda, volatile)
     lens = lengths(lists_sorted)
     return PackedSequencePlus(
         torch.nn.utils.rnn.pack_padded_sequence(
             v, lens, batch_first=True),
         lens,
-        sort_to_orig)
+        sort_to_orig, orig_to_sort)
 
 
 def encode_io(stoi, batch, cuda, volatile=False):

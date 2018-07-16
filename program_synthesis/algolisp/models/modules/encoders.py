@@ -8,6 +8,7 @@ import torch.nn.functional as F
 from torch.autograd import Variable
 
 from program_synthesis.common.modules import slicing_joining
+from program_synthesis.common.modules import encoders
 
 
 def remove_none(ls):
@@ -79,50 +80,14 @@ class IOMixer(nn.Module):
         return F.relu(self.mixer(inp_out))
 
 
-class SeqEncoder(nn.Module):
-
-    def __init__(self, args):
-        super(SeqEncoder, self).__init__()
-        self.num_units = args.num_units
-        self.num_encoder_layers = args.num_encoder_layers
-        self.bidirectional = args.bidirectional
-        self._cuda = args.cuda
-        self.encoder = nn.GRU(
-            self.num_units, self.num_units, args.num_encoder_layers, batch_first=True,
-            dropout=args.encoder_dropout, bidirectional=self.bidirectional)
-        directions = 2 if self.bidirectional else 1
-        if directions * args.num_encoder_layers > 1:
-            self.encoder_proj = nn.Linear(directions * args.num_encoder_layers * self.num_units, self.num_units)
-
-    def forward(self, inp_embed):
-        num_directions = 2 if self.bidirectional else 1
-        batch_size = inp_embed.ps.batch_sizes[0]
-        init = Variable(torch.zeros(
-            num_directions * self.num_encoder_layers, batch_size, self.num_units))
-        if self._cuda:
-            init = init.cuda()
-        # memory: torch.nn.utils.rnn.PackedSequence
-        # [bsz x len x (dim * num_directions)]
-        memory, hidden = self.encoder(inp_embed.ps, init)
-        memory = inp_embed.with_new_ps(memory)
-        if num_directions * self.num_encoder_layers > 1:
-            # Make batch-first
-            hidden = hidden.transpose(0, 1).contiguous()
-            # Project to num_units units
-            hidden = self.encoder_proj(hidden.view(hidden.shape[0], -1))
-        else:
-            hidden = hidden.squeeze(0)
-        return hidden, memory
-
-
 class SpecEncoder(nn.Module):
 
-    def __init__(self, args):
+    def __init__(self, vocab_size, args, embed=None):
         super(SpecEncoder, self).__init__()
         self.num_units = args.num_units
         proj_inputs = 0
         if args.read_text:
-            self.text_encoder = SeqEncoder(args)
+            self.text_encoder = encoders.SequenceEncoder(vocab_size, args, embed=embed)
             proj_inputs += 1
         if args.read_io:
             self.io_encoder = IOMixer(args)
@@ -143,3 +108,7 @@ class SpecEncoder(nn.Module):
             seq_lengths = [1] * io_enc.shape[0]
 
         return self.proj(hidden), memory, seq_lengths
+
+    @property
+    def output_dim(self):
+        return self.num_units
