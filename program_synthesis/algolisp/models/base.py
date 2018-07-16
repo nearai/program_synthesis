@@ -102,7 +102,9 @@ class BaseModel(object):
                     ['\t%s: %s' % (code_func.name, ' '.join(code_func.code_sequence))
                      for code_func in batch[0].funcs])
                 print(funcs)
-            print("Schema: %s" % ', '.join(batch[0].schema.args))
+
+            if batch[0].schema:
+                print("Schema: %s" % ', '.join(batch[0].schema.args))
 
             if hasattr(batch[0], 'candidate_code_sequence') and batch[0].candidate_code_sequence is not None:
                 print("Cand:   %s" % self.format_code_seq(
@@ -120,9 +122,9 @@ class BaseModel(object):
         if res[0].info:
             print("Info:   %s" % res[0].info)
 
-        if hasattr(self, 'last_vocab') and hasattr(self.last_vocab, 'unks'):
+        if hasattr(self, 'last_vocab') and hasattr(self.last_vocab, 'unks') and len(self.last.vocab.unks) > 0:
             unks = sorted(self.last_vocab.unks.items(), key=lambda x: -x[1])
-            print("Unks:  %d (%s)" % (len(unks), unks[:5]))
+            print("Unks:  %d %s" % (len(unks), unks[:5]))
 
     def train(self, batch):
         self.update_lr()

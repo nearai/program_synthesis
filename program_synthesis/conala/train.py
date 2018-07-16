@@ -80,7 +80,7 @@ def read_conala(batch_size=100, num_epochs=300):
     return train
     
 
-def create_vocabs(code_vocab_filepath, text_vocab_filepath, min_occurencies=50):
+def create_vocabs(text_vocab_filepath, code_vocab_filepath, min_occurencies=50):
     ds = Compose([
         OpenJsonFile(CONALA_TRAIN), 
         ToCodeExample()])
@@ -93,28 +93,31 @@ def create_vocabs(code_vocab_filepath, text_vocab_filepath, min_occurencies=50):
                 codes[token] += 1
 
     def f(l): return sorted(k for k, v in l.items() if v >= min_occurencies)
-    code_vocab = f(codes)
     text_vocab = f(words)
+    code_vocab = f(codes)
     def dump_to_file(filepath, vocab):
         with open(filepath, "w") as f:
+            f.write("<S>\n</S>\n<UNK>\n|||\n")
             f.write("\n".join(vocab))
-    dump_to_file(code_vocab_filepath, code_vocab)
     dump_to_file(text_vocab_filepath, text_vocab)
+    dump_to_file(code_vocab_filepath, code_vocab)
 
 
 def main(args):
     if not os.path.exists(CONALA_WORD_VOCAB):
-        create_vocabs(CONALA_CODE_VOCAB, CONALA_WORD_VOCAB)
+        create_vocabs(CONALA_WORD_VOCAB, CONALA_CODE_VOCAB)
     train = read_conala()
     args.word_vocab = CONALA_WORD_VOCAB
     args.code_vocab = CONALA_CODE_VOCAB
     args.vocab_mapping = False
     model = seq2seq_model.Seq2SeqModel(args)
     with train, tqdm.tqdm(smoothing=0.1) as pbar:
-        for batch in train:
+        for step, batch in enumerate(train):
             metrics = model.train(batch)
+            model.debug(batch)
             pbar.update(1)
-            pbar.write("loss: {loss:.6f};\tlr: {lr:.8f}".format(**metrics))
+            if step % args.log_interval == 0:
+                pbar.write("loss: {loss:.6f};\tlr: {lr:.8f}".format(**metrics))
 
 
 if __name__ == "__main__":
