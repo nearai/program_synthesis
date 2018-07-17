@@ -86,11 +86,12 @@ class BeamSearchState(beam_search.BeamSearchState):
         batch size: int
         indices: 2 x batch size * beam size LongTensor
         '''
+        indices = indices if not isinstance(indices, torch.Tensor) else indices.data.numpy()
         return BeamSearchState([
-            v.view(batch_size, -1, v.size(1))[
-                indices.data.numpy()] for v in self.value],
-                prev_output=self.prev_output.view(batch_size, -1,
-                self.prev_output.size(1))[indices.data.numpy()])
+            v.view(batch_size, v.size(1))[
+                indices] for v in self.value],
+                prev_output=self.prev_output.view(batch_size,
+                self.prev_output.size(1))[indices])
 
 
 class StackedGRU(nn.Module):
@@ -106,6 +107,7 @@ class StackedGRU(nn.Module):
             input_size = num_units
 
     def forward(self, inp, hidden):
+        assert (isinstance(hidden, list) or len(hidden.size()) == 3) and hidden[0].size(0) == inp.size(0)
         hiddens = []
         current = inp
         for i, layer in enumerate(self.layers):
