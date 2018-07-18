@@ -1386,8 +1386,6 @@ class Executor(object):
 
     @watchable("expression")
     def compute_expression(self, context, expr, read_store=None):
-        if time.time() - self.start_time > self.timeout:
-            raise UASTTimeLimitExceeded()
         is_lhs = read_store is not None and read_store[1]
 
         if is_lhs and not is_assigneable(expr):
