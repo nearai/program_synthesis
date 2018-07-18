@@ -3,6 +3,7 @@ from __future__ import print_function
 import functools
 import six
 import sys
+import time
 import math
 import numpy as np
 import re
@@ -1326,15 +1327,15 @@ def get_default_funcs(executor):
 
 
 class Executor(object):
-    def __init__(self, data, max_total_ops=20000):
+    def __init__(self, data, timeout=600):
         super(Executor, self).__init__()
         self.funcs = {get_func_name(func): func for func in data['funcs']}
         self.types = {get_record_name(record): record for record in data['types']}
 
         self.watchers = []
 
-        self.max_total_ops = max_total_ops
-        self.total_ops = 0
+        self.timeout = timeout
+        self.start_time = time.time()
 
         self.funcs.update(get_default_funcs(self))
 
@@ -1385,6 +1386,8 @@ class Executor(object):
 
     @watchable("expression")
     def compute_expression(self, context, expr, read_store=None):
+        if time.time() - self.start_time > self.timeout:
+            raise UASTTimeLimitExceeded()
         is_lhs = read_store is not None and read_store[1]
 
         if is_lhs and not is_assigneable(expr):
@@ -1566,10 +1569,9 @@ class Executor(object):
 
     @watchable("statement")
     def execute_statement(self, context, stmt):
-        context._instructions_count += 1
-        self.total_ops += 1
-        if self.total_ops >= self.max_total_ops:
+        if time.time() - self.start_time > self.timeout:
             raise UASTTimeLimitExceeded()
+        context._instructions_count += 1
         if DEBUG_INFO and context._instructions_count >= 10000 and hasattr(stmt, 'position'):
             context._instructions_count = 0
             print("DEBUG INFO: pos:", stmt.position, 'vars:', context._vals, file=sys.stderr)
