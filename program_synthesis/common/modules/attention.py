@@ -141,6 +141,7 @@ class MultiHeadAttention(nn.Module):
         # batch x num queries x num_units
         outputs = self.proj(outputs)
         outputs = self.dropout(outputs)
+        # Though for transformer it is the same, shouldn't it be outputs + values ?
         return self.layer_norm(outputs + query), attns
 
 

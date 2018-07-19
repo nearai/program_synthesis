@@ -27,7 +27,7 @@ class TransformerEmbedding(nn.Module):
         # put cosine on odd position
         position_enc[:, 1::2] = np.cos(position_enc[:, 1::2])
 
-        result = Parameter(torch.from_numpy(position_enc))
+        result = Parameter(torch.from_numpy(position_enc))  # Why is this a parameter?
         if next(self.embed.parameters()).is_cuda:
             result = result.cuda()
         return result
