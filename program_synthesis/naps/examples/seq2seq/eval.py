@@ -112,7 +112,7 @@ def evaluate(args):
 
 
 if __name__ == "__main__":
-    parser = arguments.get_arg_parser('Evaluating Text2Code', 'eval')
+    parser = arguments.get_arg_parser('Evaluating', 'eval')
 
     args = parser.parse_args()
     args.cuda = not args.no_cuda and torch.cuda.is_available()

@@ -3,8 +3,8 @@ import numpy as np
 import torch
 from torch.autograd import Variable
 
-from text2code.neural_search.pointer_net.data import PAD_TOKEN, GO_TOKEN, END_TOKEN
-from text2code.neural_search.pointer_net.pointer_vocab import WordCodePlaceholdersVocab
+from program_synthesis.naps.examples.seq2seq.data import PAD_TOKEN, GO_TOKEN, END_TOKEN
+from program_synthesis.naps.examples.seq2seq.pointer_vocab import WordCodePlaceholdersVocab
 
 
 def texts_to_numpy(texts, word_code_vocab, num_placeholders):
