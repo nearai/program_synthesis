@@ -9,4 +9,5 @@ class CPPLibs(Enum):
     memory = 5
     math = 6
     locale = 7
-    special = 8  # Our own lib.
+    algorithm = 8
+    special = 9  # Our own lib.

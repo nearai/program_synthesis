@@ -48,10 +48,10 @@ def to_cpp_invoke(expr, libs):
                 'ceil', 'abs'):
         libs.add(CPPLibs.math)
         return "%s(%s)" % (op, to_cpp_expr(args[0], libs))
-    elif op in ('atan2', 'pow', 'min', 'max', ):
+    elif op in ('atan2', 'pow', 'min', 'max'):
         pass
     elif op == 'clear':
-        return "(%s).clear()" % to_cpp_expr(args[0], libs)
+        return "(%s)->clear()" % to_cpp_expr(args[0], libs)
     elif op == 'reverse':
         return "reverse(%s)" % to_cpp_expr(args[0], libs)
     elif op == 'lower':
@@ -61,5 +61,22 @@ def to_cpp_invoke(expr, libs):
         libs.add(CPPLibs.locale)
         return "toupper(%s)" % to_cpp_expr(args[0], libs)
     elif op == 'sort':
+        libs.add(CPPLibs.special)
+        return "sort(%s)" % to_cpp_expr(args[0], libs)
+    elif op == 'sort_cmp':
+        # We need to expand UAST syntax to include sort_cmp. It is not used in the test set though.
+        libs.add(CPPLibs.special)
+        return "sort_cmp(%s, &%s)" % (to_cpp_expr(args[0], libs), to_cpp_expr(args[1], libs))
+    elif op == 'fill':
+        libs.add(CPPLibs.special)
+        return "fill(%s, %s)" % (to_cpp_expr(args[0], libs), to_cpp_expr(args[1], libs))
+    elif op == 'copy_range':
+        libs.add(CPPLibs.special)
+        return "copy_range(%s, %s, %s)" % (to_cpp_expr(args[0], libs), to_cpp_expr(args[1], libs),
+                                           to_cpp_expr(args[2], libs))
+    elif op == 'array_index':
+        libs.add(CPPLibs.vector)
+        return "(%s)->at(%s)" % (to_cpp_expr(args[0], libs), to_cpp_expr(args[1], libs))
+
 
 
