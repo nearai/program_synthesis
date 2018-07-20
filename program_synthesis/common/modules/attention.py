@@ -11,10 +11,9 @@ from program_synthesis.common.modules.layer_norm import LayerNorm
 
 def maybe_mask(attn, attn_mask):
     if attn_mask is not None:
-        assert attn_mask.size() == attn.size(), \
-            'Attention mask shape {} mismatch ' \
-            'with Attention logit tensor shape ' \
-            '{}.'.format(attn_mask.size(), attn.size())
+        assert all(a == 1 or b == 1 or a == b for a, b in zip(attn.shape[::-1], attn_mask.shape[::-1])), \
+            'Attention mask shape {} should be broadcastable with attention shape {}'.format(attn_mask.shape,
+                                                                                             attn.shape)
 
         attn.data.masked_fill_(attn_mask, -float('inf'))
 
