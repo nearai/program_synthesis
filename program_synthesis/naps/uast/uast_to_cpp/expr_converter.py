@@ -75,8 +75,31 @@ def to_cpp_invoke(expr, libs):
         return "copy_range(%s, %s, %s)" % (to_cpp_expr(args[0], libs), to_cpp_expr(args[1], libs),
                                            to_cpp_expr(args[2], libs))
     elif op == 'array_index':
-        libs.add(CPPLibs.vector)
         return "(%s)->at(%s)" % (to_cpp_expr(args[0], libs), to_cpp_expr(args[1], libs))
+    elif op == 'contains':
+        return "({container})->find({element})!=({container})->end()".format(container=to_cpp_expr(args[0], libs),
+                                                                             element=to_cpp_expr(args[1], libs))
+    elif op == 'string_find':
+        libs.add(CPPLibs.special)
+        return "string_find(%s, %s)" % (to_cpp_expr(args[0], libs), to_cpp_expr(args[1], libs))
+    elif op == 'string_find_last':
+        libs.add(CPPLibs.special)
+        return "string_find_last(%s, %s)" % (to_cpp_expr(args[0], libs), to_cpp_expr(args[1], libs))
+    elif op == 'string_replace_one':
+        libs.add(CPPLibs.special)
+        return "string_replace_one(%s, %s, %s)" % (to_cpp_expr(args[0], libs),
+                                                   to_cpp_expr(args[1], libs),
+                                                   to_cpp_expr(args[2], libs))
+    elif op == 'string_replace_all':
+        libs.add(CPPLibs.special)
+        return "string_replace_all(%s, %s, %s)" % (to_cpp_expr(args[0], libs),
+                                                   to_cpp_expr(args[1], libs),
+                                                   to_cpp_expr(args[2], libs))
+    elif op == 'concat':
+        libs.add(CPPLibs.special)
+        return "concat(%s, %s)" % (to_cpp_expr(args[0], libs), to_cpp_expr(args[1], libs))
+    elif op == 'array_concat':
+        
 
 
 

@@ -6,6 +6,8 @@
 #include <memory>
 //#include <initializer_list>
 #include <utility>
+#include <type_traits>
+#include <stdexcept>
 
 using namespace std;
 
@@ -84,4 +86,61 @@ shared_ptr<vector<T> > copy_range(shared_ptr<vector<T> > c, int from, int to) {
     to = min(to, c.size());
     from = max(0, from);
     return make_shared<vector<T> >(c->begin()+from, c->begin()+to);
+}
+
+// String operations.
+template<typename T>
+int string_find(string str, T sub) {
+    const size_t pos = str.find(sub);
+    return (pos == string::npos)?-1:pos;
+}
+
+template<typename T>
+int string_find_last(string str, T sub) {
+    const size_t pos = str.rfind(sub);
+    return (pos == string::npos)?-1:pos;
+}
+
+template<typename T>
+string to_str(T x) {
+    if (is_convertible<O, string>::value)
+        old_sub = static_cast<string>(old_sub_);
+    else if (is_convertible<O, char>::value)
+        old_sub = string(1, static_cast<char>(old_sub_));
+    else throw invalid_argument("Expected string.")
+}
+
+template<typename O, typename N>
+string string_replace_one(string str, O old_sub_, N new_sub_) {
+    string old_sub = to_str(old_sub_);
+    string new_sub = to_str(new_sub_);
+    auto pos = str.find(old_sub)
+    if (pos == string::npos) return str;
+    string res = str;
+    return res.replace(res.begin()+pos, res.begin()+pos+old_sub.length(),
+        new_sub.begin(), new_sub.end());
+}
+
+template<typename O, typename N>
+string string_replace_all(string str, O old_sub_, N new_sub_) {
+    string old_sub = to_str(old_sub_);
+    string new_sub = to_str(new_sub_);
+
+    size_t pos = -1;
+    string res = str;
+    while((pos = res.find(old_sub, pos+1)) != string::npos) {
+        res = res.replace(res.begin()+pos, res.begin()+pos+old_sub.length(),
+        new_sub.begin(), new_sub.end());
+    }
+    return res;
+}
+
+template<typename A, typename B>
+string concat(A a, B b) {
+    return to_str(a) + to_str(b);
+}
+
+template<typename T>
+shared_ptr<vector<T> > array_concat(shared_ptr<vector<T> > a, shared_ptr<vector<T> > b) {
+    shared_ptr<vector<T> > res =
 }
