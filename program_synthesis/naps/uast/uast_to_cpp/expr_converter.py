@@ -31,6 +31,13 @@ def to_cpp_expr(expr, libs):
         return to_cpp_invoke(expr, libs)
 
 
+def to_cpp_args(libs, *args):
+    res = []
+    for arg in args:
+        res.append(to_cpp_expr(arg, libs))
+    return tuple(res)
+
+
 def to_cpp_invoke(expr, libs):
     op = expr[2]
     args = expr[3]
@@ -66,40 +73,65 @@ def to_cpp_invoke(expr, libs):
     elif op == 'sort_cmp':
         # We need to expand UAST syntax to include sort_cmp. It is not used in the test set though.
         libs.add(CPPLibs.special)
-        return "sort_cmp(%s, &%s)" % (to_cpp_expr(args[0], libs), to_cpp_expr(args[1], libs))
+        return "sort_cmp(%s, &%s)" % to_cpp_args(libs, args[0], args[1])
     elif op == 'fill':
         libs.add(CPPLibs.special)
-        return "fill(%s, %s)" % (to_cpp_expr(args[0], libs), to_cpp_expr(args[1], libs))
+        return "fill(%s, %s)" % to_cpp_args(libs, args[0], args[1])
     elif op == 'copy_range':
         libs.add(CPPLibs.special)
-        return "copy_range(%s, %s, %s)" % (to_cpp_expr(args[0], libs), to_cpp_expr(args[1], libs),
-                                           to_cpp_expr(args[2], libs))
+        return "copy_range(%s, %s, %s)" % to_cpp_args(libs, args[0], args[1], args[2])
     elif op == 'array_index':
-        return "(%s)->at(%s)" % (to_cpp_expr(args[0], libs), to_cpp_expr(args[1], libs))
+        return "(%s)->at(%s)" % to_cpp_args(libs, args[0], args[1])
     elif op == 'contains':
         return "({container})->find({element})!=({container})->end()".format(container=to_cpp_expr(args[0], libs),
                                                                              element=to_cpp_expr(args[1], libs))
     elif op == 'string_find':
         libs.add(CPPLibs.special)
-        return "string_find(%s, %s)" % (to_cpp_expr(args[0], libs), to_cpp_expr(args[1], libs))
+        return "string_find(%s, %s)" % to_cpp_args(libs, args[0], args[1])
     elif op == 'string_find_last':
         libs.add(CPPLibs.special)
-        return "string_find_last(%s, %s)" % (to_cpp_expr(args[0], libs), to_cpp_expr(args[1], libs))
+        return "string_find_last(%s, %s)" % to_cpp_args(libs, args[0], args[1])
     elif op == 'string_replace_one':
         libs.add(CPPLibs.special)
-        return "string_replace_one(%s, %s, %s)" % (to_cpp_expr(args[0], libs),
-                                                   to_cpp_expr(args[1], libs),
-                                                   to_cpp_expr(args[2], libs))
+        return "string_replace_one(%s, %s, %s)" % to_cpp_args(libs, args[0], args[1], args[2])
     elif op == 'string_replace_all':
         libs.add(CPPLibs.special)
-        return "string_replace_all(%s, %s, %s)" % (to_cpp_expr(args[0], libs),
-                                                   to_cpp_expr(args[1], libs),
-                                                   to_cpp_expr(args[2], libs))
+        return "string_replace_all(%s, %s, %s)" % to_cpp_args(libs, args[0], args[1], args[2])
     elif op == 'concat':
         libs.add(CPPLibs.special)
-        return "concat(%s, %s)" % (to_cpp_expr(args[0], libs), to_cpp_expr(args[1], libs))
+        return "concat(%s, %s)" % to_cpp_args(libs, args[0], args[1])
     elif op == 'array_concat':
-        
-
+        libs.add(CPPLibs.special)
+        return "array_concat(%s, %s)" % to_cpp_args(libs, args[0], args[1])
+    elif op == 'string_insert':
+        libs.add(CPPLibs.special)
+        return "string_insert(%s, %s, %s)" % to_cpp_args(libs, args[0], args[1], args[2])
+    elif op == 'string_split':
+        libs.add(CPPLibs.special)
+        return "string_split(%s, %s)" % to_cpp_args(libs, args[0], args[1])
+    elif op == 'string_trim':
+        libs.add(CPPLibs.special)
+        return "string_trim(%s)" % to_cpp_expr(args[0], libs)
+    elif op == 'substring':
+        libs.add(CPPLibs.special)
+        return "substring(%s, %s, %s)" % to_cpp_args(libs, args[0], args[1], args[2])
+    elif op == 'substring_end':
+        libs.add(CPPLibs.special)
+        return "substring_end(%s, %s)" % to_cpp_args(libs, args[0], args[1])
+    elif op == 'array_push':
+        libs.add(CPPLibs.special)
+        return "array_push(%s, %s)" % to_cpp_args(libs, args[0], args[1])
+    elif op == 'array_pop':
+        libs.add(CPPLibs.special)
+        return "array_pop(%s)" % to_cpp_expr(args[0], libs)
+    elif op == 'array_insert':
+        libs.add(CPPLibs.special)
+        return "array_insert(%s, %s, %s)" % to_cpp_args(libs, args[0], args[1], args[2])
+    elif op == 'array_remove_idx':
+        libs.add(CPPLibs.special)
+        return "array_remove_idx(%s, %s)" % to_cpp_args(libs, args[0], args[1])
+    elif op == 'array_remove_value':
+        libs.add(CPPLibs.special)
+        return "array_remove_value(%s, %s)" % to_cpp_args(libs, args[0], args[1])
 
 

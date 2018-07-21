@@ -1,9 +1,11 @@
+#include <cctype>
 #include <string>
 #include <algorithm>
 #include <map>
 #include <set>
 #include <tuple>
 #include <memory>
+#include <regex>
 //#include <initializer_list>
 #include <utility>
 #include <type_traits>
@@ -142,5 +144,101 @@ string concat(A a, B b) {
 
 template<typename T>
 shared_ptr<vector<T> > array_concat(shared_ptr<vector<T> > a, shared_ptr<vector<T> > b) {
-    shared_ptr<vector<T> > res =
+    shared_ptr<vector<T> > res = make_shared<vector<T> >(a->begin(), a->end());
+    res.insert(res->end(), b->begin(), b->end());
+    return res;
+}
+
+template<typename T>
+string string_insert(string str, int pos, T sub_) {
+    string sub = to_str(sub_);
+    string res = str;
+    res = res.insert(pos, sub);
+    return res;
+}
+
+shared_ptr<vector<string> > string_split(string str, string delimiters) {
+    if (delimiters == '') {
+        // Note, this code might need more work to mimic the behavior of the equivalent Python function.
+        shared_ptr<vector<string> > res = make_shared<vector<string> >();
+        for (auto c : str)
+            res->push_back(to_str(c));
+        return res;
+    }
+    // Following https://www.quora.com/How-do-I-split-a-string-by-space-into-an-array-in-c++
+    string regex_delimiters;
+    for (size_t i = 0; i < delimiters.size(); ++i) {
+        const char c = delimiters[i];
+        if (c == '|' || c == '\\' || c == '+' || c == '(' || c == ')' || c == ',' || c == '[' || c == ']')
+            regex_delimiters += "\\" + to_str(c);
+        else:
+            regex_delimiters += to_str(c);
+        if (i != delimiters.size()-1)
+            regex_delimiters += "|";
+    }
+    regex re(regex_delimiters);
+    shared_ptr<vector<string> > res = make_shared<vector<string> >();
+    for (auto sub: sregex_token_iterator(str.begin(), str.end(), re, -1))
+        res->push_back(sub);
+    return res;
+}
+
+string string_trim(string s) {
+    string res = s;
+    res.erase(find_if(res.rbegin(), res.rend(), [](int ch) {
+        return !isspace(ch);
+    }).base(), res.end());
+    return res;
+}
+
+string substring(string s, int from, int to) {
+    // Fix indices to match the behavior of the Python function.
+    from = max(0, from);
+    if (to < 0) to = s.size() + to;
+    to = min(s.size(), to);
+    to = max(from, to);
+    int len = to - from;
+    return s.substr(from, len);
+}
+
+string substring_end(string s, int from) {
+    return substring(s, from, s.size());
+}
+
+template<typename T>
+shared_ptr<vector<T> > array_push(shared_ptr<vector<T> > v, T a) {
+    v.push_back(a);
+    return v;
+}
+
+template<typename T>
+shared_ptr<vector<T> > array_pop(shared_ptr<vector<T> > v) {
+    v.pop_back();
+    return v;
+}
+
+template<typename T>
+shared_ptr<vector<T> > array_insert(shared_ptr<vector<T> > v, int pos, T a) {
+    v.insert(v.begin()+pos, a);
+    return v;
+}
+
+template<typename T>
+T array_remove_idx(shared_ptr<vector<T> > v, int pos) {
+    T res = v->at(pos);
+    v.erase(v->begin()+pos);
+    return res;
+}
+
+template<typename T>
+T array_remove_value(shared_ptr<vector<T> > v, T value) {
+    T res = value;
+    for (size_t pos = 0; pos < v->size(); ++pos) {
+        auto& el = v->at(pos);
+        if (!special_comparator(el, value) && !special_comparator(value, el)) {
+            v.erase(v->begin()+pos);
+            return res;
+        }
+    }
+    return res;
 }
