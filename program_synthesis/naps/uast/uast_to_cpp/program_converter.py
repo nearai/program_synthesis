@@ -6,11 +6,13 @@ from program_synthesis.naps.uast import uast
 
 
 def convert_libs(libs):
-    if not libs or CPPLibs.special in libs:
+    if not libs:
         return ""
+    if CPPLibs.special in libs:
+        return "include 'special_lib.h'\nusing namespace std;"
     result = []
     for lib in libs:
-        result.append("include<%s>" % str[lib].split('.')[0])
+        result.append("include<%s>" % str(lib).split('.')[1])
     result.append('using namespace std;')
     return "\n".join(result)
 
@@ -36,15 +38,15 @@ def records_to_cpp(code_tree, libs):
             if func[0] == 'ctor' and uast.is_record_type(func[1]) and uast.type_to_record_name(func[1]) == record[1]:
                 body += "\n" + get_ctor_decl(func, libs) + ";"
                 ctors.append("""
-                {definition} \{
+                {definition} {{
                 {ctor_body}
-                \}
+                }}
                 """.format(definition=get_ctor_decl(func, libs, definition=True),
                            ctor_body=func_body_to_cpp(func, libs)))
                 break
-        result += """{decl} \{
+        result += """{decl} {{
         {body}
-        \};
+        }};
         """.format(decl=get_class_decl(record, libs), body=body)
     result += "\n".join(ctors)
     return result
@@ -70,9 +72,9 @@ def program_to_cpp(code_tree):
         if func[0] == 'ctor':
             continue
         result += """
-                {definition} \{
+                {definition} {{
                 {ctor_body}
-                \}\n
+                }}\n
                 """.format(definition=get_func_decl(func, libs),
                            ctor_body=func_body_to_cpp(func, libs))
 

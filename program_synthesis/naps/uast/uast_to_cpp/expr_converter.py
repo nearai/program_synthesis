@@ -161,3 +161,6 @@ def to_cpp_invoke(expr, libs):
     elif op == 'array_initializer':
         libs.add(CPPLibs.special)
         return 'array_initializer({%s})' % (', '.join(to_cpp_expr(arg, libs) for arg in args))
+    elif op == '_ctor':
+        return 'make_shared<%s >(%s)' % (to_cpp_type(expr[1], libs, wrap_shared=False),
+                                         ', '.join(to_cpp_expr(arg, libs) for arg in args))

@@ -17,7 +17,7 @@ class UnknownUASTType(Exception):
         Exception.__init__(self, *args, **kwargs)
 
 
-def to_cpp_type(t, libs):
+def to_cpp_type(t, libs, wrap_shared=True):
     std = _STANDARD_TYPES.get(t, None)
     if std is not None:
         if std == "string":
@@ -28,19 +28,31 @@ def to_cpp_type(t, libs):
         libs.add(CPPLibs.memory)
         t_key = uast.get_map_key_type(t)
         t_value = uast.get_map_value_type(t)
-        return "shared_ptr<map< %s, %s > >" % (to_cpp_type(t_key, libs), to_cpp_type(t_value, libs))
+        res = "map< %s, %s >" % (to_cpp_type(t_key, libs), to_cpp_type(t_value, libs))
+        if wrap_shared:
+            res = "shared_ptr<%s >" % res
+        return res
     elif uast.is_set_type(t):
         libs.add(CPPLibs.set)
         libs.add(CPPLibs.memory)
         t_sub = uast.get_set_subtype(t)
-        return "shared_ptr<set< %s > >" % to_cpp_type(t_sub, libs)
+        res = "set< %s >" % to_cpp_type(t_sub, libs)
+        if wrap_shared:
+            res = "shared_ptr<%s >" % res
+        return res
     elif uast.is_array(t):
         libs.add(CPPLibs.vector)
         libs.add(CPPLibs.memory)
         t_sub = uast.get_array_subtype(t)
-        return "shared_ptr<vector< %s > >" % to_cpp_type(t_sub, libs)
+        res = "vector< %s >" % to_cpp_type(t_sub, libs)
+        if wrap_shared:
+            res = "shared_ptr<%s >" % res
+        return res
     elif uast.is_record_type(t):
         libs.add(CPPLibs.memory)
-        return "shared_ptr< %s >" % uast.type_to_record_name(t)
+        res = uast.type_to_record_name(t)
+        if wrap_shared:
+            res = "shared_ptr<%s >" % res
+        return res
     else:
         raise UnknownUASTType(t)

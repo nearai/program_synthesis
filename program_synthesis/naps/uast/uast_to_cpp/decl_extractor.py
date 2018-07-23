@@ -9,7 +9,7 @@ def get_func_decl(uast_func, libs):
     for a in uast_func[3]:
         arguments.append("%s %s" % (to_cpp_type(a[1], libs), a[2]))
     arguments = ", ".join(arguments)
-    return "{cpp_return_type} {name}({arguments)".format(cpp_return_type=cpp_return_type,
+    return "{cpp_return_type} {name}({arguments})".format(cpp_return_type=cpp_return_type,
                                                          name=name,
                                                          arguments=arguments)
 
