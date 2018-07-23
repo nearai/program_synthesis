@@ -9,10 +9,10 @@ def convert_libs(libs):
     if not libs:
         return ""
     if CPPLibs.special in libs:
-        return "include 'special_lib.h'\nusing namespace std;"
+        return "#include <special_lib.h>\nusing namespace std;"
     result = []
     for lib in libs:
-        result.append("include<%s>" % str(lib).split('.')[1])
+        result.append("#include<%s>" % str(lib).split('.')[1])
     result.append('using namespace std;')
     return "\n".join(result)
 

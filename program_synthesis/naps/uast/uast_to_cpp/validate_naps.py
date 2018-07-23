@@ -6,7 +6,7 @@ from itertools import chain
 from program_synthesis.naps.pipelines.read_naps import read_naps_dataset
 from program_synthesis.naps.pipes.compose import Compose
 from program_synthesis.naps.pipes.pipe import Pipe
-from program_synthesis.naps.uast.uast_to_cpp.program_converter import program_to_cpp
+from program_synthesis.naps.uast.uast_to_cpp.cpp_executor import execute_program
 
 
 class FilterPartial(Pipe):
@@ -29,5 +29,4 @@ if __name__ == "__main__":
     ])
     with trainA, trainB, test:
         for d in chain(trainA, trainB, test):
-            cpp = program_to_cpp(d['code_tree'])
-            pass
+            execute_program(d['code_tree'], d['tests'])

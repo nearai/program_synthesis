@@ -7,7 +7,7 @@ class CPPLibs(Enum):
     set = 3
     map = 4
     memory = 5
-    math = 6
+    cmath = 6
     locale = 7
     algorithm = 8
     special = 9  # Our own lib.

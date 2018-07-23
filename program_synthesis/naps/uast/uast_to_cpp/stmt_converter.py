@@ -1,4 +1,6 @@
 from program_synthesis.naps.uast.uast_to_cpp.expr_converter import to_cpp_expr
+from program_synthesis.naps.uast.uast_to_cpp.libs_to_include import CPPLibs
+from program_synthesis.naps.uast import uast
 
 
 def to_cpp_block(block, libs):
@@ -29,11 +31,25 @@ def to_cpp_stmt(stmt, libs, semicolon=True):
             }
             """ % (to_cpp_expr(stmt[2], libs), to_cpp_block(stmt[3], libs))
     elif op == 'foreach':
+        it = stmt[3]
+        if uast.is_set_type(it[1]) or uast.is_array(it[1]):
+            return """
+                    for(auto %s : *(%s)) {
+                    %s
+                    }
+                    """ % (to_cpp_expr(stmt[2], libs), to_cpp_expr(it, libs), to_cpp_block(stmt[4], libs))
+        if uast.is_map_type(it[1]):
+            libs.add(CPPLibs.special)
+            return """
+                    for(auto %s : *map_keys(%s)) {
+                    %s
+                    }
+                    """ % (to_cpp_expr(stmt[2], libs), to_cpp_expr(it, libs), to_cpp_block(stmt[4], libs))
         return """
-        foreach(auto %s : %s) {
+        for(auto %s : %s) {
         %s
         }
-        """ % (to_cpp_expr(stmt[2], libs), to_cpp_expr(stmt[3], libs), to_cpp_block(stmt[4], libs))
+        """ % (to_cpp_expr(stmt[2], libs), to_cpp_expr(it, libs), to_cpp_block(stmt[4], libs))
     elif op == 'while':
         if stmt[4]:  # Increment block is present.
             increment_block = [to_cpp_stmt(sub, libs, semicolon=False) for sub in stmt[4]]

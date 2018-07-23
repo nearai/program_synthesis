@@ -75,17 +75,17 @@ shared_ptr<vector<T> > sort_cmp(shared_ptr<vector<T> > c, Compare comp) {
     return res;
 }
 
-template<typename T>
-void fill(shared_ptr<vector<T> > c, const T& val) {
-    fill(c->begin(), c->end(), val);
+template<typename T, typename E>
+void fill(shared_ptr<vector<T> > c, const E& val) {
+    fill(c->begin(), c->end(), static_cast<T>(val));
 }
 
 template<typename T>
 shared_ptr<vector<T> > copy_range(shared_ptr<vector<T> > c, int from, int to) {
     if (from >= to)
         return make_shared<vector<T> >();
-    if (to < 0) to = c.size() + to;
-    to = min(to, c.size());
+    if (to < 0) to = c->size() + to;
+    to = min(to, c->size());
     from = max(0, from);
     return make_shared<vector<T> >(c->begin()+from, c->begin()+to);
 }
@@ -103,20 +103,24 @@ int string_find_last(string str, T sub) {
     return (pos == string::npos)?-1:pos;
 }
 
+// SFINAE, see https://stackoverflow.com/questions/25284499/how-does-stdenable-if-work
 template<typename T>
-string to_str(T x) {
-    if (is_convertible<O, string>::value)
-        old_sub = static_cast<string>(old_sub_);
-    else if (is_convertible<O, char>::value)
-        old_sub = string(1, static_cast<char>(old_sub_));
-    else throw invalid_argument("Expected string.")
+typename enable_if<is_convertible<T, string>::value, string>::type
+to_str(T x) {
+    return static_cast<string>(x);
+}
+
+template<typename T>
+typename enable_if<is_convertible<T, char>::value, string>::type
+to_str(T x) {
+    return string(1, static_cast<char>(x));
 }
 
 template<typename O, typename N>
 string string_replace_one(string str, O old_sub_, N new_sub_) {
     string old_sub = to_str(old_sub_);
     string new_sub = to_str(new_sub_);
-    auto pos = str.find(old_sub)
+    auto pos = str.find(old_sub);
     if (pos == string::npos) return str;
     string res = str;
     return res.replace(res.begin()+pos, res.begin()+pos+old_sub.length(),
@@ -145,7 +149,7 @@ string concat(A a, B b) {
 template<typename T>
 shared_ptr<vector<T> > array_concat(shared_ptr<vector<T> > a, shared_ptr<vector<T> > b) {
     shared_ptr<vector<T> > res = make_shared<vector<T> >(a->begin(), a->end());
-    res.insert(res->end(), b->begin(), b->end());
+    res->insert(res->end(), b->begin(), b->end());
     return res;
 }
 
@@ -158,7 +162,7 @@ string string_insert(string str, int pos, T sub_) {
 }
 
 shared_ptr<vector<string> > string_split(string str, string delimiters) {
-    if (delimiters == '') {
+    if (delimiters == "") {
         // Note, this code might need more work to mimic the behavior of the equivalent Python function.
         shared_ptr<vector<string> > res = make_shared<vector<string> >();
         for (auto c : str)
@@ -169,17 +173,18 @@ shared_ptr<vector<string> > string_split(string str, string delimiters) {
     string regex_delimiters;
     for (size_t i = 0; i < delimiters.size(); ++i) {
         const char c = delimiters[i];
-        if (c == '|' || c == '\\' || c == '+' || c == '(' || c == ')' || c == ',' || c == '[' || c == ']')
+        if (c == '|' || c == '\\' || c == '+' || c == '(' || c == ')' || c == ',' || c == '[' || c == ']') {
             regex_delimiters += "\\" + to_str(c);
-        else:
+        } else {
             regex_delimiters += to_str(c);
+        }
         if (i != delimiters.size()-1)
             regex_delimiters += "|";
     }
     regex re(regex_delimiters);
-    shared_ptr<vector<string> > res = make_shared<vector<string> >();
-    for (auto sub: sregex_token_iterator(str.begin(), str.end(), re, -1))
-        res->push_back(sub);
+    shared_ptr<vector<string> > res = make_shared<vector<string> >(
+        sregex_token_iterator(str.begin(), str.end(), re, -1),
+        sregex_token_iterator());
     return res;
 }
 
@@ -191,42 +196,42 @@ string string_trim(string s) {
     return res;
 }
 
-string substring(string s, int from, int to) {
+string substring(string s, long from, long to) {
     // Fix indices to match the behavior of the Python function.
-    from = max(0, from);
+    from = max(0L, from);
     if (to < 0) to = s.size() + to;
-    to = min(s.size(), to);
+    to = min(static_cast<long>(s.size()), to);
     to = max(from, to);
-    int len = to - from;
+    long len = to - from;
     return s.substr(from, len);
 }
 
-string substring_end(string s, int from) {
+string substring_end(string s, long from) {
     return substring(s, from, s.size());
 }
 
 template<typename T>
 shared_ptr<vector<T> > array_push(shared_ptr<vector<T> > v, T a) {
-    v.push_back(a);
+    v->push_back(a);
     return v;
 }
 
 template<typename T>
 shared_ptr<vector<T> > array_pop(shared_ptr<vector<T> > v) {
-    v.pop_back();
+    v->pop_back();
     return v;
 }
 
 template<typename T>
-shared_ptr<vector<T> > array_insert(shared_ptr<vector<T> > v, int pos, T a) {
-    v.insert(v.begin()+pos, a);
+shared_ptr<vector<T> > array_insert(shared_ptr<vector<T> > v, long pos, T a) {
+    v->insert(v.begin()+pos, a);
     return v;
 }
 
 template<typename T>
-T array_remove_idx(shared_ptr<vector<T> > v, int pos) {
+T array_remove_idx(shared_ptr<vector<T> > v, long pos) {
     T res = v->at(pos);
-    v.erase(v->begin()+pos);
+    v->erase(v->begin()+pos);
     return res;
 }
 
@@ -236,7 +241,7 @@ T array_remove_value(shared_ptr<vector<T> > v, T value) {
     for (size_t pos = 0; pos < v->size(); ++pos) {
         auto& el = v->at(pos);
         if (!special_comparator(el, value) && !special_comparator(value, el)) {
-            v.erase(v->begin()+pos);
+            v->erase(v->begin()+pos);
             return res;
         }
     }

@@ -1,6 +1,5 @@
 from program_synthesis.naps.uast.uast_to_cpp.type_converter import to_cpp_type
 from program_synthesis.naps.uast.uast_to_cpp.libs_to_include import CPPLibs
-from program_synthesis.naps.uast import uast
 
 
 def to_cpp_expr(expr, libs):
@@ -17,7 +16,9 @@ def to_cpp_expr(expr, libs):
             return 'static_cast<double>(%s)' % expr[2]
         elif expr[1] == 'char*':
             return '"%s"' % expr[2]
-        return expr[2]
+        elif expr[1] == 'bool':
+            return "true" if expr[2] == "True" else "false"
+        return str(expr[2])
     elif car == '?:':
         expr1 = to_cpp_expr(expr[2], libs)
         expr2 = to_cpp_expr(expr[3], libs)
@@ -50,13 +51,17 @@ def to_cpp_invoke(expr, libs):
         libs.add(CPPLibs.string)
         return "to_string(%s)" % to_cpp_expr(args[0], libs)
     elif op == 'len':
-        return "(%s).size()" % to_cpp_expr(args[0], libs)
+        if args[0][1] == "char*":
+            return "(%s).size()" % to_cpp_expr(args[0], libs)
+        else:
+            return "(%s)->size()" % to_cpp_expr(args[0], libs)
     elif op in ('sqrt', 'log', 'sin', 'cos', 'round', 'floor',
                 'ceil', 'abs'):
-        libs.add(CPPLibs.math)
+        libs.add(CPPLibs.cmath)
         return "%s(%s)" % (op, to_cpp_expr(args[0], libs))
     elif op in ('atan2', 'pow', 'min', 'max'):
-        pass
+        libs.add(CPPLibs.cmath)
+        return "%s(%s, %s)" % (op, to_cpp_expr(args[0], libs), to_cpp_expr(args[1], libs))
     elif op == 'clear':
         return "(%s)->clear()" % to_cpp_expr(args[0], libs)
     elif op == 'reverse':
@@ -164,3 +169,5 @@ def to_cpp_invoke(expr, libs):
     elif op == '_ctor':
         return 'make_shared<%s >(%s)' % (to_cpp_type(expr[1], libs, wrap_shared=False),
                                          ', '.join(to_cpp_expr(arg, libs) for arg in args))
+    else:
+        return '%s(%s)' % (op, ', '.join(to_cpp_expr(arg, libs) for arg in args))
