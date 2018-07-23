@@ -133,5 +133,31 @@ def to_cpp_invoke(expr, libs):
     elif op == 'array_remove_value':
         libs.add(CPPLibs.special)
         return "array_remove_value(%s, %s)" % to_cpp_args(libs, args[0], args[1])
-
-
+    elif op == 'array_find':
+        libs.add(CPPLibs.special)
+        return "array_find(%s, %s)" % to_cpp_args(libs, args[0], args[1])
+    elif op == 'array_find_next':
+        libs.add(CPPLibs.special)
+        return "array_find_next(%s, %s, %s)" % to_cpp_args(libs, args[0], args[1], args[2])
+    elif op == 'set_push':
+        return "(%s)->insert(%s)" % to_cpp_args(libs, args[0], args[1])
+    elif op == 'set_remove':
+        return "(%s)->erase(%s)" % to_cpp_args(libs, args[0], args[1])
+    elif op == 'map_has_key':
+        return '({container})->find({key})!=({container})->end()'.format(container=to_cpp_expr(args[0], libs),
+                                                                         key=to_cpp_expr(args[1], libs))
+    elif op == 'map_put':
+        return '(*(%s))[%s]=(%s)' % to_cpp_args(libs, args[0], args[1], args[2])
+    elif op == 'map_get':
+        return '(*(%s))[%s]' % to_cpp_args(libs, args[0], args[1])
+    elif op == 'map_keys':
+        libs.add(CPPLibs.special)
+        return "map_keys(%s)" % to_cpp_expr(args[0], libs)
+    elif op == 'map_values':
+        libs.add(CPPLibs.special)
+        return "map_values(%s)" % to_cpp_expr(args[0], libs)
+    elif op == 'map_remove_key':
+        return '(%s)->erase(%s)' % to_cpp_args(libs, args[0], args[1])
+    elif op == 'array_initializer':
+        libs.add(CPPLibs.special)
+        return 'array_initializer({%s})' % (', '.join(to_cpp_expr(arg, libs) for arg in args))

@@ -242,3 +242,42 @@ T array_remove_value(shared_ptr<vector<T> > v, T value) {
     }
     return res;
 }
+
+template<typename T>
+int array_find(shared_ptr<vector<T> > v, T value) {
+    for (size_t pos = 0; pos < v->size(); ++pos) {
+        auto& el = v->at(pos);
+        if (!special_comparator(el, value) && !special_comparator(value, el))
+            return pos;
+    }
+    return -1;
+}
+
+template<typename T>
+int array_find(shared_ptr<vector<T> > v, T value, int start_pos) {
+    for (size_t pos = start_pos; pos < v->size(); ++pos) {
+        auto& el = v->at(pos);
+        if (!special_comparator(el, value) && !special_comparator(value, el))
+            return pos;
+    }
+    return -1;
+}
+
+template<typename K, typename V>
+shared_ptr<vector<K> > map_keys(const shared_ptr<map<K, V> >& v) {
+    shared_ptr<vector<K> > res = make_shared<vector<K> >();
+    for (auto& el : v) res->push_back(el.first);
+    return res;
+}
+
+template<typename K, typename V>
+shared_ptr<vector<V> > map_values(const shared_ptr<map<K, V> >& v) {
+    shared_ptr<vector<V> > res = make_shared<vector<V> >();
+    for (auto& el : v) res->push_back(el.second);
+    return res;
+}
+
+template<typename T>
+shared_ptr<vector<T> > array_initializer(initializer_list<T> elements) {
+    return make_shared<vector<T> >(elements);
+}
