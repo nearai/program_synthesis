@@ -48,11 +48,12 @@ def to_cpp_type(t, libs, wrap_shared=True):
         if wrap_shared:
             res = "shared_ptr<%s >" % res
         return res
-    elif uast.is_record_type(t):
+    elif t == 'void':
+        return 'void'
+    else:
+        # Record type is a fallback type.
         libs.add(CPPLibs.memory)
-        res = uast.type_to_record_name(t)
+        res = uast.type_to_record_name(t) if uast.is_record_type(t) else t
         if wrap_shared:
             res = "shared_ptr<%s >" % res
         return res
-    else:
-        raise UnknownUASTType(t)

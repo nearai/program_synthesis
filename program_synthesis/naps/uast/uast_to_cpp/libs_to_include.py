@@ -10,4 +10,5 @@ class CPPLibs(Enum):
     cmath = 6
     locale = 7
     algorithm = 8
-    special = 9  # Our own lib.
+    cstdlib = 9
+    special = 10  # Our own lib.

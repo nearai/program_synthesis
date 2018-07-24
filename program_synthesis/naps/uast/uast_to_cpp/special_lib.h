@@ -6,6 +6,8 @@
 #include <tuple>
 #include <memory>
 #include <regex>
+#include <cmath>
+#include <locale>
 //#include <initializer_list>
 #include <utility>
 #include <type_traits>
@@ -91,6 +93,20 @@ shared_ptr<vector<T> > copy_range(shared_ptr<vector<T> > c, int from, int to) {
 }
 
 // String operations.
+string tolower(string str) {
+    string res = str;
+    for (size_t i = 0; i< str.length(); ++i) {
+        res[i] = tolower(res[i]);
+    }
+}
+
+string toupper(string str) {
+    string res = str;
+    for (size_t i = 0; i< str.length(); ++i) {
+        res[i] = toupper(res[i]);
+    }
+}
+
 template<typename T>
 int string_find(string str, T sub) {
     const size_t pos = str.find(sub);
@@ -210,20 +226,32 @@ string substring_end(string s, long from) {
     return substring(s, from, s.size());
 }
 
-template<typename T>
-shared_ptr<vector<T> > array_push(shared_ptr<vector<T> > v, T a) {
+template<typename T> struct is_shared_ptr : std::false_type {};
+template<typename T> struct is_shared_ptr<std::shared_ptr<T>> : std::true_type {};
+
+template<typename T, typename E>
+typename enable_if<is_shared_ptr<E>::value, shared_ptr<vector<T> > >::type
+array_push(shared_ptr<vector<T> > v, E a) {
+    v->push_back(move(a));
+    return v;
+}
+
+template<typename T, typename E>
+typename enable_if<!is_shared_ptr<E>::value, shared_ptr<vector<T> > >::type
+array_push(shared_ptr<vector<T> > v, E a) {
     v->push_back(a);
     return v;
 }
 
 template<typename T>
-shared_ptr<vector<T> > array_pop(shared_ptr<vector<T> > v) {
+T array_pop(shared_ptr<vector<T> > v) {
+    T res = v->back();
     v->pop_back();
-    return v;
+    return res;
 }
 
-template<typename T>
-shared_ptr<vector<T> > array_insert(shared_ptr<vector<T> > v, long pos, T a) {
+template<typename T, typename E>
+shared_ptr<vector<T> > array_insert(shared_ptr<vector<T> > v, long pos, E a) {
     v->insert(v.begin()+pos, a);
     return v;
 }
@@ -235,8 +263,9 @@ T array_remove_idx(shared_ptr<vector<T> > v, long pos) {
     return res;
 }
 
-template<typename T>
-T array_remove_value(shared_ptr<vector<T> > v, T value) {
+template<typename T, typename E>
+T array_remove_value(shared_ptr<vector<T> > v, E value_) {
+    T value = static_cast<T>(value_);
     T res = value;
     for (size_t pos = 0; pos < v->size(); ++pos) {
         auto& el = v->at(pos);
@@ -248,8 +277,9 @@ T array_remove_value(shared_ptr<vector<T> > v, T value) {
     return res;
 }
 
-template<typename T>
-int array_find(shared_ptr<vector<T> > v, T value) {
+template<typename T, typename E>
+int array_find(shared_ptr<vector<T> > v, E value_) {
+    T value = static_cast<T>(value_);
     for (size_t pos = 0; pos < v->size(); ++pos) {
         auto& el = v->at(pos);
         if (!special_comparator(el, value) && !special_comparator(value, el))
@@ -258,8 +288,9 @@ int array_find(shared_ptr<vector<T> > v, T value) {
     return -1;
 }
 
-template<typename T>
-int array_find(shared_ptr<vector<T> > v, T value, int start_pos) {
+template<typename T, typename E>
+int array_find(shared_ptr<vector<T> > v, E value_, int start_pos) {
+    T value = static_cast<T>(value_);
     for (size_t pos = start_pos; pos < v->size(); ++pos) {
         auto& el = v->at(pos);
         if (!special_comparator(el, value) && !special_comparator(value, el))
@@ -268,21 +299,75 @@ int array_find(shared_ptr<vector<T> > v, T value, int start_pos) {
     return -1;
 }
 
+template<typename T, typename E>
+bool contains(shared_ptr<vector<T> > v, E value) {
+    return array_find(v, value) != 1;
+}
+
+template<typename K, typename V, typename E>
+bool contains(const shared_ptr<map<K, V> >& v, E value) {
+    return v->find(value) != v->end();
+}
+
+template<typename T, typename E>
+bool contains(const shared_ptr<set<T> >& v, E value) {
+    return v->find(value) != v->end();
+}
+
 template<typename K, typename V>
 shared_ptr<vector<K> > map_keys(const shared_ptr<map<K, V> >& v) {
     shared_ptr<vector<K> > res = make_shared<vector<K> >();
-    for (auto& el : v) res->push_back(el.first);
+    for (auto& el : *v) res->push_back(el.first);
     return res;
 }
 
 template<typename K, typename V>
 shared_ptr<vector<V> > map_values(const shared_ptr<map<K, V> >& v) {
     shared_ptr<vector<V> > res = make_shared<vector<V> >();
-    for (auto& el : v) res->push_back(el.second);
+    for (auto& el : *v) res->push_back(el.second);
     return res;
 }
 
 template<typename T>
 shared_ptr<vector<T> > array_initializer(initializer_list<T> elements) {
     return make_shared<vector<T> >(elements);
+}
+
+
+// SFINAE with variadic templates for array initialization.
+template<typename T, typename D>
+typename enable_if<is_same<T, vector<typename T::value_type,
+                                     typename T::allocator_type > >::value,
+                                     shared_ptr<T> >::type
+init_darray(D dim) {
+    return make_shared<T>(dim);
+}
+
+template<typename T, typename D, typename... Dims>
+typename enable_if<is_same<T, vector<typename T::value_type,
+                                     typename T::allocator_type > >::value,
+                                     shared_ptr<T> >::type
+init_darray(D dim, Dims... dims) {
+    auto res = make_shared<T>(dim);
+    for (size_t i = 0; i<res->size(); ++i)
+        res->at(i) = init_darray<typename T::value_type::element_type>(dims...);
+    return res;
+}
+
+
+template<typename T>
+typename enable_if<is_shared_ptr<T>::value, long >::type
+size(T c) {
+    return c->size();
+}
+
+template<typename T>
+typename enable_if<!is_shared_ptr<T>::value, long >::type
+size(T c) {
+    return c.size();
+}
+
+template<typename T, typename O>
+shared_ptr<T> from_iterable(O orig) {
+    return make_shared<T>(orig->begin(), orig->end());
 }
