@@ -49,7 +49,7 @@ def records_to_cpp(code_tree, libs):
                 {ctor_body}
                 }}
                 """.format(definition=get_ctor_decl(func, libs, definition=True),
-                           ctor_body=to_cpp_record_ctor_block(func[5], libs)))
+                           ctor_body=to_cpp_record_ctor_block(func, libs)))
                 ctors.append("""
                 {definition} {{
                     return make_shared<{type} >({args});

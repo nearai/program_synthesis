@@ -1,10 +1,13 @@
-from program_synthesis.naps.uast.uast_to_cpp.expr_converter import to_cpp_expr
+from program_synthesis.naps.uast.uast_to_cpp.expr_converter import to_cpp_expr, to_cpp_type
 from program_synthesis.naps.uast.uast_to_cpp.libs_to_include import CPPLibs
 from program_synthesis.naps.uast import uast
 
 
-def to_cpp_record_ctor_block(block, libs):
+def to_cpp_record_ctor_block(func, libs):
+    block = func[5]
     res = []
+    for v in func[4]:
+        res.append("%s %s;" % (to_cpp_type(v[1], libs), v[2]))
     for stmt in block:
         if stmt[0] != 'return':
             s = to_cpp_stmt(stmt, libs)

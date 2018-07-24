@@ -36,18 +36,18 @@ if __name__ == "__main__":
     ])
     pool = mp.Pool()
     map_fn = pool.imap_unordered
-    # map_fn = map  # For debugging.
-    failed = []
+    #map_fn = map  # For debugging.
+    failed = []  # Rate 99%.
     total_num = 0
     with trainA, trainB, test, tqdm.tqdm(smoothing=0.001) as pbar:
-        for program_idx, is_success in pool.imap_unordered(
+        for program_idx, is_success in map_fn(
                 compile_program_worker,
-                ((program_idx, d['code_tree']) for program_idx, d in enumerate(chain(trainA, trainB, test)))):
+                ((program_idx, d['code_tree']) for program_idx, d in enumerate(chain(trainA, trainB, test))
+                 )):
             total_num += 1
             if not is_success:
                 failed.append(program_idx)
             if total_num % 50 == 0:
-                pbar.write("Compilation success rate %.6f%% (failed: %d/%d)" % (100.0*(total_num-len(failed))/total_num,
-                                                                                len(failed), total_num))
+                pbar.write("Compilation success rate %.6f%% (failed: %d/%d)" % (100.0*(total_num-len(failed))/total_num,                                                               len(failed), total_num))
             pbar.update(1)
     print("Failed programs %s" % failed)

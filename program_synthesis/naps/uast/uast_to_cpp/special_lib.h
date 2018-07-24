@@ -28,6 +28,23 @@ string reverse(string c) {
   return res;
 }
 
+// More flexible min, max, pow operations.
+// Note, current C++ min/max ops have some deficiencies that make them more limited than Python
+// variants, see:
+// https://www.reddit.com/r/cpp/comments/5p81eq/why_dont_stdminmaxclamp_use_common_type_to_work/
+// http://www.open-std.org/jtc1/sc22/wg21/docs/papers/2007/n2199.html
+template<typename T1, typename T2>
+typename std::common_type<T1,T2>::type
+min_(T1 t1, T2 t2){ return (t1 < t2) ? t1 : t2; }
+
+template<typename T1, typename T2>
+typename std::common_type<T1,T2>::type
+max_(T1 t1, T2 t2){ return (t1 > t2) ? t1 : t2; }
+
+template<typename T1, typename T2>
+typename std::common_type<T1,T2>::type
+pow_(T1 t1, T2 t2){ return static_cast<typename std::common_type<T1,T2>::type >(pow(t1, t2)); }
+
 // Special comparators for containers that make them behave like those in Python. Allows comparing vectors, sets, maps,
 // vectors of vectors, vectors of sets of maps, etc.
 template<typename T>
@@ -51,6 +68,15 @@ bool special_comparator(const shared_ptr<set<T> >& a, const shared_ptr<set<T> >&
     static_cast<bool(*)(T, T)>(&special_comparator<T>));
 }
 
+string to_string(string str) {
+    return str;
+}
+
+string sort(string str) {
+    string res = str;
+    stable_sort(res.begin(), res.end());
+    return res;
+}
 
 template<typename T>
 shared_ptr<vector<T> > sort(shared_ptr<vector<T> > c) {
@@ -98,6 +124,7 @@ string tolower(string str) {
     for (size_t i = 0; i< str.length(); ++i) {
         res[i] = tolower(res[i]);
     }
+    return res;
 }
 
 string toupper(string str) {
@@ -105,6 +132,7 @@ string toupper(string str) {
     for (size_t i = 0; i< str.length(); ++i) {
         res[i] = toupper(res[i]);
     }
+    return res;
 }
 
 template<typename T>
@@ -222,6 +250,10 @@ string substring(string s, long from, long to) {
     return s.substr(from, len);
 }
 
+string copy_range(string s, int from, int to) {
+    return substring(s, from, to);
+}
+
 string substring_end(string s, long from) {
     return substring(s, from, s.size());
 }
@@ -252,7 +284,7 @@ T array_pop(shared_ptr<vector<T> > v) {
 
 template<typename T, typename E>
 shared_ptr<vector<T> > array_insert(shared_ptr<vector<T> > v, long pos, E a) {
-    v->insert(v.begin()+pos, a);
+    v->insert(v->begin()+pos, a);
     return v;
 }
 

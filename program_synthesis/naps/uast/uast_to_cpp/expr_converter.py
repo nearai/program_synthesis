@@ -19,12 +19,14 @@ def to_cpp_expr(expr, libs):
         if expr[1] == 'real':
             return 'static_cast<double>(%s)' % expr[2]
         elif expr[1] == 'char*':
+            libs.add(CPPLibs.string)
             return 'static_cast<string>("%s")' % expr[2]
         elif expr[1] == 'int':
             return "%sL" % expr[2]
         elif expr[1] == 'bool':
             return "true" if expr[2] == "True" else "false"
-        elif (uast.is_array(expr[1]) or uast.is_set_type(expr[1]) or uast.is_map_type(expr[1])) and expr[2] is None:
+        elif (uast.is_array(expr[1]) or uast.is_set_type(expr[1]) or uast.is_map_type(expr[1]) or
+              uast.is_record_type(expr[1])) and expr[2] is None:
             return "make_shared<%s >()" % to_cpp_type(expr[1], libs, wrap_shared=False)
         return str(expr[2])
     elif car == '?:':
@@ -61,6 +63,7 @@ def to_cpp_invoke(expr, libs):
         return "%s (%s)" % (op, to_cpp_expr(args[0], libs))
     elif op == 'str':
         libs.add(CPPLibs.string)
+        libs.add(CPPLibs.special)
         return "to_string(%s)" % to_cpp_expr(args[0], libs)
     elif op == 'len':
         libs.add(CPPLibs.special)
@@ -73,14 +76,16 @@ def to_cpp_invoke(expr, libs):
             libs.add(CPPLibs.cmath)
         return "%s(%s)" % (op, to_cpp_expr(args[0], libs))
     elif op in ('atan2', 'pow', 'min', 'max'):
-        if op in ('min', 'max'):
-            libs.add(CPPLibs.algorithm)
+        if op in ('min', 'max', 'pow'):
+            libs.add(CPPLibs.special)
+            return "%s_(%s, %s)" % (op, to_cpp_expr(args[0], libs), to_cpp_expr(args[1], libs))
         else:
             libs.add(CPPLibs.cmath)
-        return "%s(%s, %s)" % (op, to_cpp_expr(args[0], libs), to_cpp_expr(args[1], libs))
+            return "%s(%s, %s)" % (op, to_cpp_expr(args[0], libs), to_cpp_expr(args[1], libs))
     elif op == 'clear':
         return "(%s)->clear()" % to_cpp_expr(args[0], libs)
     elif op == 'reverse':
+        libs.add(CPPLibs.special)
         return "reverse(%s)" % to_cpp_expr(args[0], libs)
     elif op == 'lower':
         libs.add(CPPLibs.special)
@@ -171,9 +176,9 @@ def to_cpp_invoke(expr, libs):
         return '({container})->find({key})!=({container})->end()'.format(container=to_cpp_expr(args[0], libs),
                                                                          key=to_cpp_expr(args[1], libs))
     elif op == 'map_put':
-        return '(*(%s))[%s]=(%s)' % to_cpp_args(libs, args[0], args[1], args[2])
+        return '(%s)->at(%s)=(%s)' % to_cpp_args(libs, args[0], args[1], args[2])
     elif op == 'map_get':
-        return '(*(%s))[%s]' % to_cpp_args(libs, args[0], args[1])
+        return '(%s)->at(%s)' % to_cpp_args(libs, args[0], args[1])
     elif op == 'map_keys':
         libs.add(CPPLibs.special)
         return "map_keys(%s)" % to_cpp_expr(args[0], libs)
