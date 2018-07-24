@@ -50,3 +50,4 @@ if __name__ == "__main__":
                 pbar.write("Compilation success rate %.6f%% (failed: %d/%d)" % (100.0*(total_num-len(failed))/total_num,
                                                                                 len(failed), total_num))
             pbar.update(1)
+    print("Failed programs %s" % failed)
