@@ -41,7 +41,7 @@ if __name__ == "__main__":
     total_num = 0
     with trainA, trainB, test, tqdm.tqdm(smoothing=0.001) as pbar:
         for program_idx, is_success in pool.imap_unordered(
-                compile_program_worker,ß
+                compile_program_worker,
                 ((program_idx, d['code_tree']) for program_idx, d in enumerate(chain(trainA, trainB, test)))):
             total_num += 1
             if not is_success:
