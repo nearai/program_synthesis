@@ -24,7 +24,7 @@ def to_cpp_expr(expr, libs):
         elif expr[1] == 'int':
             return "%sL" % expr[2]
         elif expr[1] == 'bool':
-            return "true" if expr[2] == "True" else "false"
+            return "true" if str(expr[2]) == "True" else "false"
         elif (uast.is_array(expr[1]) or uast.is_set_type(expr[1]) or uast.is_map_type(expr[1]) or
               uast.is_record_type(expr[1])) and expr[2] is None:
             return "make_shared<%s >()" % to_cpp_type(expr[1], libs, wrap_shared=False)

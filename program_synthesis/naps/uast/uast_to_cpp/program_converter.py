@@ -4,24 +4,12 @@ https://stackoverflow.com/a/402918
 """
 
 import copy
-from program_synthesis.naps.uast.uast_to_cpp.libs_to_include import CPPLibs
+from program_synthesis.naps.uast.uast_to_cpp.libs_to_include import convert_libs
 from program_synthesis.naps.uast.uast_to_cpp.decl_extractor import get_class_decl, get_func_decl, get_ctor_decl
 from program_synthesis.naps.uast.uast_to_cpp.type_converter import to_cpp_type
 from program_synthesis.naps.uast.uast_to_cpp.stmt_converter import to_cpp_block, to_cpp_record_ctor_block, to_cpp_stmt
 from program_synthesis.naps.uast.uast_to_cpp.expr_converter import to_cpp_expr
 from program_synthesis.naps.uast import uast
-
-
-def convert_libs(libs):
-    if not libs:
-        return ""
-    if CPPLibs.special in libs:
-        return "#include <special_lib.h>\nusing namespace std;"
-    result = []
-    for lib in libs:
-        result.append("#include<%s>" % str(lib).split('.')[1])
-    result.append('using namespace std;')
-    return "\n".join(result)
 
 
 def func_body_to_cpp(func, libs):
@@ -103,6 +91,7 @@ def try_repair_types(code_tree):
 
 def program_to_cpp(code_tree):
     result = ""
+    header_result = ""
     libs = set()
     # Copy functions and records because we will prune static variables.
     code_tree = copy.deepcopy(code_tree)
@@ -143,6 +132,7 @@ def program_to_cpp(code_tree):
                     %s
                 }
                 """ % '\n'.join(global_init_body)
+                header_result += "extern void __globals__init__();\n"
             code_tree["funcs"].pop(i)
             break
 
@@ -164,6 +154,9 @@ def program_to_cpp(code_tree):
                 }}\n
                 """.format(definition=get_func_decl(func, libs),
                            ctor_body=func_body_to_cpp(func, libs))
+        if func[2] == '__main__':
+            header_result += "extern %s;\n" % get_func_decl(func, libs)
 
-    result = convert_libs(libs) + result
-    return result, CPPLibs.special in libs
+    result = '#include "lib_program.h"\n' + convert_libs(libs) + result
+    header_result = convert_libs(libs) + header_result
+    return result, header_result

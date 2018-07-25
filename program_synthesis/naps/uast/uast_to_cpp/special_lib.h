@@ -1,3 +1,6 @@
+#ifndef _SPECIAL_LIB_H_
+#define _SPECIAL_LIB_H_
+
 #include <cctype>
 #include <string>
 #include <algorithm>
@@ -229,6 +232,9 @@ shared_ptr<vector<string> > string_split(string str, string delimiters) {
     shared_ptr<vector<string> > res = make_shared<vector<string> >(
         sregex_token_iterator(str.begin(), str.end(), re, -1),
         sregex_token_iterator());
+
+    // Remove empty strings.
+    res->erase(remove(res->begin(), res->end(), ""), res->end());
     return res;
 }
 
@@ -403,3 +409,4 @@ template<typename T, typename O>
 shared_ptr<T> from_iterable(O orig) {
     return make_shared<T>(orig->begin(), orig->end());
 }
+#endif
