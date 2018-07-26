@@ -201,6 +201,11 @@ def get_array_subtype(tp):
     return tp[:-1]
 
 
+def get_set_subtype(tp):
+    assert tp[-1] == '%', tp
+    return tp[:-1]
+
+
 def get_map_key_type(tp):
     assert tp[0] == '<', tp
     assert tp[-1] == '>'
