@@ -26,14 +26,18 @@ class FilterPartial(Pipe):
 def compile_program_worker(args):
     program_idx, code_tree, tests = args
     total_num_tests = len(tests)
-    sucessful_tests = 0
+    sucessful_tests, test_compilation_errors, test_runtime_errors = [0]*3
     try:
-        sucessful_tests = cpp_executor.compile_run_program_and_tests(code_tree, tests,
-                                                                     #debug_info=True, cleanup=False
-                                                                     )
-    except (cpp_executor.ProgramCompilationError, cpp_executor.ProgramSourceGenerationError, cpp_executor.TestCompilationError,
-            cpp_executor.TestRuntimeError) as e:
-        return program_idx, 0, str(type(e))
+        sucessful_tests, test_compilation_errors, test_runtime_errors = cpp_executor.compile_run_program_and_tests(
+            code_tree, tests,
+            # debug_info=True, cleanup=False
+        )
+    except (cpp_executor.ProgramCompilationError, cpp_executor.ProgramSourceGenerationError) as e:
+        return program_idx, False, str(type(e))
+    if test_compilation_errors:
+        return program_idx, False, "test_compilation_errors"
+    if test_runtime_errors:
+        return program_idx, False, "test_runtime_errors"
     return program_idx, sucessful_tests == total_num_tests, "no exception"
 
 
@@ -45,17 +49,17 @@ if __name__ == "__main__":
     ])
     pool = mp.Pool()
     map_fn = pool.imap_unordered
-    #map_fn = map  # For debugging.
+    # map_fn = map  # For debugging.
     # Compilation success rate 99%.
     failed = dict()
     failed_num = 0
     total_num = 0
 
-    with trainA, trainB, test, tqdm.tqdm(smoothing=0.001) as pbar:
+    with trainA, trainB, test, tqdm.tqdm(smoothing=0.1) as pbar:
         for program_idx, is_success, e in map_fn(
                 compile_program_worker,
-                ((program_idx, d['code_tree'], d['tests']) for program_idx, d in enumerate(chain(trainA, trainB, test))
-                    #if program_idx in [13, 14, 19, 20, 26, 30, 32, 34, 39, 40, 45, 50, 56]
+                ((d['solution_id'], d['code_tree'], d['tests'])
+                 for program_idx, d in enumerate(chain(trainA, trainB, test))
                  )):
             total_num += 1
             if not is_success:

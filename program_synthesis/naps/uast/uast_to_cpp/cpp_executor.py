@@ -20,14 +20,6 @@ class ProgramCompilationError(Exception):
     pass
 
 
-class TestCompilationError(Exception):
-    pass
-
-
-class TestRuntimeError(Exception):
-    pass
-
-
 @contextmanager
 def get_tempdir(cleanup):
     tmpdir = tempfile.mkdtemp()
@@ -45,7 +37,7 @@ def timeout_cmd(test_timeout):
 
 def compile_run_program_and_tests(code_tree, tests, debug_info=False, cleanup=True, test_timeout=60):
     # Try to compile the program.
-    passing_tests = 0
+    passing_tests, test_compilation_errors, test_runtime_errors = [0]*3
     try:
         program_cpp, program_h = program_to_cpp(code_tree)
     except Exception as e:
@@ -101,7 +93,13 @@ def compile_run_program_and_tests(code_tree, tests, debug_info=False, cleanup=Tr
                                                  '-o', test_file, test_cpp_filepath], cwd=tmpdir,
                                            stdout=subprocess.PIPE, stderr=subprocess.PIPE)
             if test_comp_res.returncode != 0:
-                raise TestCompilationError(test_comp_res.stderr.decode("utf-8"))
+                if debug_info:
+                    print(test_comp_res.stderr.decode("utf-8"))
+                    print(program_cpp_filepath + ":1")
+                    print(program_h_filepath + ":1")
+                    print(test_cpp_filepath + ":1")
+                test_compilation_errors += 1
+                continue
 
             subprocess.run(args=["chmod", "+x", test_file], cwd=tmpdir)
             env = os.environ
@@ -115,7 +113,8 @@ def compile_run_program_and_tests(code_tree, tests, debug_info=False, cleanup=Tr
             if test_run_res.returncode != 0:
                 if debug_info:
                     print("%s\n%s" % (test_run_res.returncode, test_run_res.stderr.decode("utf-8")))
-                raise TestRuntimeError("%s\n%s" % (test_run_res.returncode, test_run_res.stderr.decode("utf-8")))
+                test_runtime_errors += 1
+                continue
             if test_run_res.stdout[:9] == b'INCORRECT':
                 if debug_info:
                     print(test_run_res.stderr.decode("utf-8"))
@@ -124,4 +123,4 @@ def compile_run_program_and_tests(code_tree, tests, debug_info=False, cleanup=Tr
                     print(program_h_filepath+":1")
                     print(test_cpp_filepath+":1")
             passing_tests += 1
-    return passing_tests
+    return passing_tests, test_compilation_errors, test_runtime_errors

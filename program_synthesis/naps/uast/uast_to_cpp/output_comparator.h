@@ -42,13 +42,13 @@ bool same_output(string a, string b) {
     return true; \
 }
 
-bool same_output(shared_ptr<vector<int> > a, shared_ptr<vector<int> > b) COMPARE_VECTORS(a, b)
+bool same_output(shared_ptr<vector<long> > a, shared_ptr<vector<long> > b) COMPARE_VECTORS(a, b)
 
 bool same_output(shared_ptr<vector<double> > a, shared_ptr<vector<double> > b) COMPARE_VECTORS(a, b)
 
 bool same_output(shared_ptr<vector<string> > a, shared_ptr<vector<string> > b) COMPARE_VECTORS(a, b)
 
-bool same_output(shared_ptr<vector<shared_ptr<vector<int> > > > a, shared_ptr<vector<shared_ptr<vector<int> > > >  b) COMPARE_VECTORS(a, b)
+bool same_output(shared_ptr<vector<shared_ptr<vector<long> > > > a, shared_ptr<vector<shared_ptr<vector<long> > > >  b) COMPARE_VECTORS(a, b)
 
 bool same_output(shared_ptr<vector<shared_ptr<vector<double> > > > a, shared_ptr<vector<shared_ptr<vector<double> > > >  b) COMPARE_VECTORS(a, b)
 
@@ -70,10 +70,10 @@ void print_output(string a) {cout << '"' << a << '"';}
 
 void print_output(double a) {cout << a;}
 
-void print_output(shared_ptr<vector<int> > a) PRINT_VECTOR
+void print_output(shared_ptr<vector<long> > a) PRINT_VECTOR
 void print_output(shared_ptr<vector<double> > a) PRINT_VECTOR
 void print_output(shared_ptr<vector<string> > a) PRINT_VECTOR
-void print_output(shared_ptr<vector<shared_ptr<vector<int> > > >a) PRINT_VECTOR
+void print_output(shared_ptr<vector<shared_ptr<vector<long> > > >a) PRINT_VECTOR
 void print_output(shared_ptr<vector<shared_ptr<vector<double> > > >a) PRINT_VECTOR
 void print_output(shared_ptr<vector<shared_ptr<vector<string> > > >a) PRINT_VECTOR
 
