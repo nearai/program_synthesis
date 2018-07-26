@@ -59,14 +59,25 @@ def compile_run_program_and_tests(code_tree, tests, debug_info=False, cleanup=Tr
         program_h_filepath = os.path.join(tmpdir, 'lib_program.h')
         with open(program_h_filepath, "w") as f:
             f.write(program_h)
-        program_comp_res = subprocess.run(args=["clang++",
-                                                "-v",  # Verbose compilation.
-                                                "-pipe",  # Speed-up.
-                                                "-std=c++14", "-stdlib=libc++",
-                                                '-I', BASE_PATH,  # For special_lib.h
-                                                '-shared', '-undefined', 'dynamic_lookup',  # It's a shared lib.
-                                                '-o', lib_file, program_cpp_filepath], cwd=tmpdir,
-                                          stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        if "linux" in sys.platform:
+            program_comp_res = subprocess.run(args=["clang++",
+                                                    "-v",  # Verbose compilation.
+                                                    "-pipe",  # Speed-up.
+                                                    "-fPIC",
+                                                    "-std=c++14", "-stdlib=libc++",
+                                                    '-I', BASE_PATH,  # For special_lib.h
+                                                    '-shared', '-undefined', 'dynamic_lookup',  # It's a shared lib.
+                                                    '-o', lib_file, program_cpp_filepath], cwd=tmpdir,
+                                              stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        else:  #  "darwin" == sys.platform:
+            program_comp_res = subprocess.run(args=["clang++",
+                                                    "-v",  # Verbose compilation.
+                                                    "-pipe",  # Speed-up.
+                                                    "-std=c++14", "-stdlib=libc++",
+                                                    '-I', BASE_PATH,  # For special_lib.h
+                                                    '-shared', '-undefined', 'dynamic_lookup',  # It's a shared lib.
+                                                    '-o', lib_file, program_cpp_filepath], cwd=tmpdir,
+                                              stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         if program_comp_res.returncode != 0:
             if debug_info:
                 print(program_comp_res.stderr.decode("utf-8"))
@@ -93,8 +104,14 @@ def compile_run_program_and_tests(code_tree, tests, debug_info=False, cleanup=Tr
                 raise TestCompilationError(test_comp_res.stderr.decode("utf-8"))
 
             subprocess.run(args=["chmod", "+x", test_file], cwd=tmpdir)
+            env = os.environ
+            if "linux" in sys.platform:
+                if 'LD_LIBRARY_PATH' in env:
+                    env['LD_LIBRARY_PATH'] = tmpdir + ':' + os.environ['LD_LIBRARY_PATH']
+                else:
+                    env['LD_LIBRARY_PATH'] = tmpdir
             test_run_res = subprocess.run(args=["./%s" % test_file], cwd=tmpdir,
-                                          stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+                                          stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=env)
             if test_run_res.returncode != 0:
                 if debug_info:
                     print("%s\n%s" % (test_run_res.returncode, test_run_res.stderr.decode("utf-8")))
