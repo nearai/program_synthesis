@@ -71,7 +71,10 @@ failing to pass some of the tests;
 * [pipelines/pring_naps.py](pipelines/print_naps.py) demonstrates how one might use [uast/uast_pprint.py](uast/uast_pprint.py) to print UAST in nice human-readable format.
 
 ## UAST specification
-See [uast/README.md](uast/README.md) for the formal specification of UAST.  
+See [uast/README.md](uast/README.md) for the formal specification of UAST.
+
+## UAST to C++
+See [uast/uast_to_cpp/README.md](uast/uast_to_cpp/README.md) on how to use UAST to C++ converter.  
 
 ## Baseline models
 [To be added later]
