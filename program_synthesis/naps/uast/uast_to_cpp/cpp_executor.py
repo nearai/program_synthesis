@@ -79,9 +79,17 @@ def compile_run_program_and_tests(code_tree, tests, debug_info=False, cleanup=Tr
         for test_idx, test in enumerate(tests):
             test_file = "test%s" % test_idx
             test_cpp_filepath = os.path.join(tmpdir, 'test%s.cpp' % test_idx)
-            with open(test_cpp_filepath, "w") as f:
-                f.write(test_to_cpp(code_tree, program_h, test))
-            test_comp_res = subprocess.run(args=timeout_cmd(test_timeout) + ["clang++",
+            try:
+                with open(test_cpp_filepath, "w") as f:
+                    f.write(test_to_cpp(code_tree, program_h, test))
+            except:
+                if debug_info:
+                    print(program_cpp_filepath + ":1")
+                    print(program_h_filepath + ":1")
+                    print(test_cpp_filepath + ":1")
+                test_compilation_errors += 1
+                continue
+            test_comp_res = subprocess.run(args=["clang++",
                                                  "-Wall",
                                                  "-v",  # Verbose compilation.
                                                  "-pipe",  # Speed-up.
