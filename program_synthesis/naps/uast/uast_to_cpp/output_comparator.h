@@ -4,6 +4,7 @@
 #include <string>
 #include <algorithm>
 #include <memory>
+#include <vector>
 
 #define DEBUG
 

@@ -28,11 +28,13 @@ def compile_program_worker(args):
     total_num_tests = len(tests)
     sucessful_tests = 0
     try:
-        sucessful_tests = cpp_executor.compile_run_program_and_tests(code_tree, tests)
+        sucessful_tests = cpp_executor.compile_run_program_and_tests(code_tree, tests,
+                                                                     #debug_info=True, cleanup=False
+                                                                     )
     except (cpp_executor.ProgramCompilationError, cpp_executor.ProgramSourceGenerationError, cpp_executor.TestCompilationError,
-            cpp_executor.TestRuntimeError):
-        pass
-    return program_idx, sucessful_tests == total_num_tests
+            cpp_executor.TestRuntimeError) as e:
+        return program_idx, 0, str(type(e))
+    return program_idx, sucessful_tests == total_num_tests, "no exception"
 
 
 if __name__ == "__main__":
@@ -44,19 +46,24 @@ if __name__ == "__main__":
     pool = mp.Pool()
     map_fn = pool.imap_unordered
     #map_fn = map  # For debugging.
-    failed = []  # Rate 99%.
+    # Compilation success rate 99%.
+    failed = dict()
+    failed_num = 0
     total_num = 0
 
     with trainA, trainB, test, tqdm.tqdm(smoothing=0.001) as pbar:
-        for program_idx, is_success in map_fn(
+        for program_idx, is_success, e in map_fn(
                 compile_program_worker,
                 ((program_idx, d['code_tree'], d['tests']) for program_idx, d in enumerate(chain(trainA, trainB, test))
+                    #if program_idx in [13, 14, 19, 20, 26, 30, 32, 34, 39, 40, 45, 50, 56]
                  )):
             total_num += 1
             if not is_success:
-                failed.append(program_idx)
+                failed.setdefault(e, [])
+                failed[e].append(program_idx)
+                failed_num += 1
             if total_num % 50 == 0:
-                pbar.write("Success rate %.6f%% (failed: %d/%d)" % (100.0*(total_num-len(failed))/total_num,
-                                                                    len(failed), total_num))
+                pbar.write("Success rate %.6f%% (failed: %d/%d)" % (100.0*(total_num-failed_num)/total_num,
+                                                                    failed_num, total_num))
+                pbar.write("Failed programs %s" % failed)
             pbar.update(1)
-    print("Failed programs %s" % failed)

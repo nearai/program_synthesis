@@ -20,7 +20,7 @@ def to_cpp_expr(expr, libs):
             return 'static_cast<double>(%s)' % expr[2]
         elif expr[1] == 'char*':
             libs.add(CPPLibs.string)
-            return 'static_cast<string>("%s")' % expr[2]
+            return 'static_cast<string>(R"(%s)")' % expr[2]
         elif expr[1] == 'int':
             return "%sL" % expr[2]
         elif expr[1] == 'bool':

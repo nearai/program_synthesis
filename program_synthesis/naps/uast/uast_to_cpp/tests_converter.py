@@ -11,7 +11,7 @@ from program_synthesis.naps.uast.uast_to_cpp.libs_to_include import convert_libs
 def _init_ndarray(arr, arg_type, libs):
     if not isinstance(arr, (list, tuple)):
         if arg_type == "char*":
-            yield ' = "%s";' % arr
+            yield ' = R"(%s)";' % arr
         else:
             yield " = %s;" % arr
         return
@@ -35,7 +35,7 @@ def test_to_cpp(code_tree, header, test):
         if type_ in ('real', 'char*', 'int'):
             # Scalar.
             if type_ == 'char*':
-                value = '"%s"' % value
+                value = 'R"(%s)"' % value
             body.append("%s %s = %s ;" % (to_cpp_type(type_, libs), name, value))
         else:
             # Multidimensional array.
