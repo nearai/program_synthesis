@@ -33,6 +33,7 @@ setup(
         'pytest-xdist',
         'python-Levenshtein',
         'prompt_toolkit',
+        'sortedcontainers',
         'tensorflow',
         'tqdm',
     ],
