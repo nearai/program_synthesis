@@ -12,21 +12,21 @@ Current implementation description of the karel environment.
 + [Deep RL in parametrized action space](https://arxiv.org/pdf/1511.04143.pdf)
 
 ## Karel Agent - Reinforcement Learning
-    
+
 Details of the Karel Agent intermediate structures.
 
 ### Task
 
 Task: (input_grids, output_grids)
     Represent pair of IO that the program should satisfy
-    
+
 ### State
     np.array(1, n)
     Padded sequence of tokens
-    
+
 ### Action
 
-Each action is of the form `ActionName, Parameters` where parameters is a tuple of value that fully characterize the action. 
+Each action is of the form `ActionName, Parameters` where parameters is a tuple of value that fully characterize the action.
 The parameters vary from action to action.
 
 + ADD_ACTION(new_location, karel_token)
@@ -39,7 +39,7 @@ The parameters vary from action to action.
 
 + WRAP_BLOCK(block_type, cond_id, start, end)
     block_type: {if, while, repeat}
-    
+
         if block_type is repeat:
             cond_id: Number of times to be repeated [2, 10]
         else:
@@ -62,7 +62,7 @@ The parameters vary from action to action.
     #           v    v    v
     # DEF run m( move move m)
     #            0    1    2
-    
+
 ##### Karel tokens
 + move
 + turnLeft
@@ -71,19 +71,19 @@ The parameters vary from action to action.
 + pickMarker
 
 ##### Karel conditions
-+ frontIsClear 
-+ leftIsClear 
++ frontIsClear
++ leftIsClear
 + rightIsClear
-+ markersPresent 
++ markersPresent
 + noMarkersPresent
 + !frontIsClear
-+ !leftIsClear 
++ !leftIsClear
 + !rightIsClear
 
 ### Reward
 
- +1: If the current state/code solve the specified task (I/O pairs) 
-  
+ +1: If the current state/code solve the specified task (I/O pairs)
+
   0: Otherwise
 
 ## TODO
