@@ -112,6 +112,7 @@ ENV/
 .mypy_cache/
 
 .idea/
+.vscode/
 
 # Data files
 *.pkl
