@@ -5,6 +5,7 @@ import torch
 import torch.nn as nn
 import torch.sparse
 from torch.autograd import Variable
+import torch.nn.functional as F
 
 from program_synthesis.common.models import beam_search
 from program_synthesis.common.modules.attention import SimpleSDPAttention
@@ -229,6 +230,36 @@ class CodeEncoderAlternative(nn.Module):
 
         output = seq[-1]
         return inp_embed, output
+
+
+class CodeEncoderRL(nn.Module):
+    """ Similar to CodeEncoderAlternative
+    """
+
+    def __init__(self, args):
+        super(CodeEncoderRL, self).__init__()
+        self._cuda = args.cuda
+        self.encoder = nn.LSTM(input_size=256, hidden_size=256, num_layers=2, bidirectional=True, batch_first=True)
+        self.token = nn.Linear(512, 512)
+
+    def forward(self, inp_embed: torch.Tensor):
+        """
+            Input:
+                `inp_embed` expected shape:
+                    (batch_size x seq_length x embed_size)
+
+            Output:
+                `seq` expected shape:
+                    (batch_size x seq_length x position_embed[256])
+
+                `output` expected shape:
+                    (batch_size x seq_length x position_embed[256])
+        """
+        seq, (output, _) = self.encoder(inp_embed,
+                                        utils.lstm_init(self._cuda, 4, 256, inp_embed.shape[0]))
+        seq = F.relu(self.token(seq))
+        output = output[-1]
+        return seq, output
 
 
 class CodeUpdater(nn.Module):
