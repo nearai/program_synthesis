@@ -1,79 +1,94 @@
-import torch
-import torch.nn.functional as F
-from torch import nn as nn
+"""
 
-from program_synthesis.karel.models.modules import karel_common, karel
-from program_synthesis.models.rl_agent.config import TOTAL_MUTATION_ACTIONS, LOCATION_EMBED_SIZE, \
-    STATE_EMBED_SIZE, KAREL_STATIC_TOKEN, TOKEN_EMBED_SIZE, BLOCK_TYPE_SIZE, CONDITION_SIZE, REPEAT_COUNT_SIZE
+Notes:
+    Position: 512
+    Task: 512
+    Code: 512
+    State embed size: 1024
+        (Concatenation of
+            task embed: 512
+            code embed: 512)
+
+    Total operations:
+        6 (Refer to program_synthesis.karel.dataset.mutation)
+"""
+
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
+
+from program_synthesis.tools import saver
+from program_synthesis.karel.dataset import mutation
+from program_synthesis.karel.models.modules import karel
+from program_synthesis.karel.models.modules import karel_common
 
 
 class KarelEditPolicy(nn.Module):
-    def __init__(self, vocab_size, args):
-        super(KarelEditPolicy, self).__init__()
-        self.args = args
+    def __init__(self, vocab_size: int, args):
+        super(KarelEditPolicy).__init__()
 
-        self.io_encoder = karel_common.make_task_encoder(args)
-        self.code_encoder = karel.CodeEncoderAlternative(vocab_size, args)
+        # Save partial computations of tensors
+        self.partial = saver.ArgsDict()
 
-        self.action_type = ActionTypeModel()
+        # Coding input
+        self.task_encoder = karel_common.make_task_encoder(args)
+        self.code_encoder = karel.CodeEncoderRL(args)
+        self.token_embed = nn.Embedding(vocab_size, 256)
 
-        # Model to determine parameters
-        self.location = LocationParameterModel()
-        self.karel_token = KarelTokenParameterModel()
-        self.single_location = SingleLocationModel()
-        self.double_location = DoubleLocationModel()
-        self.triple_location = TripleLocationModel()
-        self.block_type = BlockTypeModel()
-        self.condition_id = ConditionIdModel()
-        self.repeat_count = RepeatCountModel()
+        # Getting output
+        self.operation_type = OperationTypeModel()
 
-        self.code_token_embed = None
-        self.code_enc = None
-        self.state_enc = None
+        self.add_action = AddActionModel()
+        self.remove_action = RemoveActionModel()
+        self.replace_action = AddActionModel()  # Same parameters same model
+        self.unwrap_action = RemoveActionModel()  # Same parameters same model
+        self.wrap_block = WrapBlockModel()
+        self.wrap_ifelse = WrapIfElseModel()
 
-    def encode_task(self, tasks):
-        input_grids, output_grids = tasks
-        io_pair_enc = self.io_encoder(input_grids, output_grids)
-        max_value, _ = io_pair_enc.max(1)  # TODO: What about this final encoding
-        return max_value
+    def encode_task(self, input: torch.Tensor, output: torch.Tensor) -> torch.Tensor:
+        task_encoded = self.task_encoder(input, output)
+        self.partial.task_encoded = task_encoded.max(0)[0]
+        return self.partial.task_encoded
 
-    def encode_code(self, code):
+    def embed_code(self, code: torch.Tensor):
+        code = code.type(torch.LongTensor)
+        self.partial.code_embed = self.token_embed(code)
+        return self.partial.code_embed
+
+    def encode_code(self, code: torch.Tensor):
         """
-            :return: (code_embedded, code_latent_representation)
+            `code` expected shape:
+                (batch_size x seq_length)
         """
-        return self.code_encoder(code)
+        tokens_embed = self.embed_code(code)
 
-    def action_value(self, task_enc, code):
-        """ Compute expected reward of executing every action (without parameters)
+        # `seq` is a semantic embed of each token
+        self.partial.position_embed, self.partial.code_embed = self.code_encoder(tokens_embed)
+        return self.partial.position_embed, self.partial.code_embed
 
-            Note:
-                Store the embedded code in the policy for picking parameters
-        """
-        self.code_token_embed, self.code_enc = self.encode_code(code)
-        self.state_enc = torch.cat([task_enc, self.code_enc], dim=1)
+    def clear(self):
+        self.partial.clear()
 
-        act = self.action_type(self.state_enc)
-        return act
-
-    def forward(self):
-        raise ValueError("This module can't be evaluated")
+    def forward(self, *input):
+        raise ValueError("This module is not `evaluable`")
 
 
-class ActionTypeModel(nn.Module):
+class OperationTypeModel(nn.Module):
     """ Compute action value
 
         Input:
-            E:  Embed of the (task, code) [shape: (BATCH_SIZE, STATE_EMBED_SIZE)]
+            `code` expected shape:
+                (batch_size x state_embed_size)
 
         Output:
-            A:  Expected reward given an action [shape: (BATCH_SIZE, TOTAL_MUTATION_ACTIONS)]
+            `out` expected shape:
+                (batch_size x total_operations)
     """
-    HIDDEN_0 = 32
 
     def __init__(self):
-        super(ActionTypeModel, self).__init__()
-        self.dense0 = nn.Linear(STATE_EMBED_SIZE, self.HIDDEN_0)
-        self.dense1 = nn.Linear(self.HIDDEN_0, TOTAL_MUTATION_ACTIONS)
+        super(OperationTypeModel, self).__init__()
+        self.dense0 = nn.Linear(1024, 256)
+        self.dense1 = nn.Linear(256, mutation.Operation.total())
 
     def forward(self, embed):
         hidden = F.relu(self.dense0(embed))
@@ -81,241 +96,87 @@ class ActionTypeModel(nn.Module):
         return out
 
 
-class LocationParameterModel(nn.Module):
-    """ Compute location parameter/value of a given action.
-        It is a recurrent nn to support code sequence of different lengths
-
+class AddActionModel(nn.Module):
+    """
         Input:
-            A:  Action to be done [shape: (BATCH_SIZE, TOTAL_MUTATION_ACTION)]
-            E:  Embed of the state [shape: (BATCH_SIZE, STATE_EMBED_SIZE)]
-            C:  Code represented as token sequence [shape: (SEQ_LENGTH, BATCH_SIZE, TOKEN_EMBED)]
+            `position` expected shape:
+                (batch_size x position_embed)
+
+            `task` expected shape:
+                (batch_size x task_embed[512])
+
 
         Output:
-            L:  Embedding for each location [shape: (BATCH_SIZE, SEQ_LENGTH, LOCATION_EMBED_SIZE)]
+            `x` expected shape:
+                (batch_size x possible_actions)
     """
 
     def __init__(self):
-        super(LocationParameterModel, self).__init__()
-        self.lstm = nn.LSTM(TOKEN_EMBED_SIZE, LOCATION_EMBED_SIZE)
-        self.dense_cell = nn.Linear(TOTAL_MUTATION_ACTIONS + STATE_EMBED_SIZE, LOCATION_EMBED_SIZE)
+        super(AddActionModel, self).__init__()
+        self.linear0 = nn.Linear(512 + 512, 32)
+        self.linear1 = nn.Linear(32, len(mutation.ACTION_NAMES))
 
-    def forward(self, action, state_enc, code):
-        # Prepare code vector
-        # code = code.permute((1, 0, 2))  # Convert to: (Seq length, batch size, vector size)
-
-        seq_length, batch_size, _ = code.shape
-
-        cell = F.relu(self.dense_cell(torch.cat([action, state_enc], dim=1)))
-        hidden = torch.zeros(*cell.shape)
-
-        comp = (hidden.view(1, *hidden.shape), cell.view(1, *cell.shape))
-
-        loc_embed, _ = self.lstm(code, comp)
-
-        return loc_embed.permute((1, 0, 2))
+    def forward(self, position, task):
+        x = torch.cat([position, task], dim=1)
+        x = F.relu(self.linear0(x))
+        x = self.linear1(x)
+        return x
 
 
-class SingleLocationModel(nn.Module):
-    """ Predict parameter location of actions that require single location
-        such as `ADD`, `REMOVE`, `REPLACE`, `UNWRAP`
-
+class RemoveActionModel(nn.Module):
+    """
         Input:
-            L:  Embedding for each location [shape: (*DIMS, LOCATION_EMBED_SIZE)]
+            `position` expected shape:
+                (batch_size x position_embed)
+
+            `task` expected shape:
+                (batch_size x task_embed[512])
 
         Output:
-            O:  Action value expected reward [shape: (*DIMS, 1)]
+            `x` expected shape:
+                (batch_size x possible_actions)
     """
 
     def __init__(self):
-        super(SingleLocationModel, self).__init__()
-        self.dense_reward = nn.Linear(LOCATION_EMBED_SIZE, 1)
+        super(RemoveActionModel, self).__init__()
+        self.linear0 = nn.Linear(512 + 512, 32)
+        self.linear1 = nn.Linear(32, 1)
 
-    def forward(self, loc_embed):
-        shape = loc_embed.shape
-        loc_embed = loc_embed.contiguous().view(-1, LOCATION_EMBED_SIZE)
-        reward = self.dense_reward(loc_embed).view(*shape[:-1], -1)
+    def forward(self, position, task):
+        x = torch.cat([position, task], dim=1)
+        x = F.relu(self.linear0(x))
+        x = self.linear1(x)
+        return x
 
-        return reward
 
-
-class DoubleLocationModel(nn.Module):
-    """ Predict parameter location of actions that require two location
-        such as `WRAP`
-
-        Input:
-            L0:  Embedding for each first location [shape: (*DIM, LOCATION_EMBED_SIZE)]
-            L1:  Embedding for each first location [shape: (*DIM, LOCATION_EMBED_SIZE)]
-
-        Output:
-            O:  Action value expected reward [shape: (*DIM, 1)]
-    """
-
+class WrapBlockModel(nn.Module):
     def __init__(self):
-        super(DoubleLocationModel, self).__init__()
-        self.dense_reward = nn.Linear(2 * LOCATION_EMBED_SIZE, 1)
+        super(WrapBlockModel, self).__init__()
+        self.linear0 = nn.Linear(512 + 512 + 512, 256)
 
-    def forward(self, loc0_embed, loc1_embed):
-        shape = loc0_embed.shape
+        self.head_repeat = nn.Linear(256, len(mutation.REPEAT_COUNTS))
+        self.head_if = nn.Linear(256, len(mutation.CONDS))
+        self.head_while = nn.Linear(256, len(mutation.CONDS))
 
-        loc0_embed = loc0_embed.contiguous().view(-1, LOCATION_EMBED_SIZE)
-        loc1_embed = loc1_embed.contiguous().view(-1, LOCATION_EMBED_SIZE)
+    def forward(self, start_pos, end_pos, task):
+        x = torch.cat([start_pos, end_pos, task], dim=1)
+        x = F.relu(self.linear0(x))
 
-        L = torch.cat([loc0_embed, loc1_embed], dim=1)
+        x_repeat = self.head_repeat(x)
+        x_if = self.head_if(x)
+        x_while = self.head_while(x)
 
-        reward = self.dense_reward(L).view(*shape[:-1], -1)
-
-        return reward
+        return x_repeat, x_if, x_while
 
 
-class TripleLocationModel(nn.Module):
-    """ Predict parameter location of actions that require three location
-        such as `ADD_IF_ELSE`
-
-        Input:
-            L0:  Embedding for each first location [shape: (*DIM, LOCATION_EMBED_SIZE)]
-            L1:  Embedding for each first location [shape: (*DIM, LOCATION_EMBED_SIZE)]
-            L2:  Embedding for each first location [shape: (*DIM, LOCATION_EMBED_SIZE)]
-
-        Output:
-            O:  Action value expected reward [shape: (*DIM, 1)]
-    """
-
+class WrapIfElseModel(nn.Module):
     def __init__(self):
-        super(TripleLocationModel, self).__init__()
-        self.dense_reward = nn.Linear(3 * LOCATION_EMBED_SIZE, 1)
+        super(WrapIfElseModel, self).__init__()
+        self.linear0 = nn.Linear(512 + 512 + 512 + 512, 256)
+        self.head = nn.Linear(256, len(mutation.CONDS))
 
-    def forward(self, loc_embed0, loc_embed1, loc_embed2):
-        shape = loc_embed0.shape
-
-        loc_embed0 = loc_embed0.contiguous().view(-1, LOCATION_EMBED_SIZE)
-        loc_embed1 = loc_embed1.contiguous().view(-1, LOCATION_EMBED_SIZE)
-        loc_embed2 = loc_embed2.contiguous().view(-1, LOCATION_EMBED_SIZE)
-
-        L = torch.cat([loc_embed0, loc_embed1, loc_embed2], dim=1)
-
-        reward = self.dense_reward(L).view(*shape[:-1], -1)
-
-        return reward
-
-
-class KarelTokenParameterModel(nn.Module):
-    """ Compute Karel Token parameter/value of a given action + locations
-
-        Input:
-            A: Action (One hot encoding) [shape: (BATCH_SIZE, TOTAL_MUTATION_ACTIONS)]
-            E: Embed of the state [shape: (BATCH_SIZE, STATE_EMBED_SIZE)]
-            L: Location Embedding [shape: (BATCH_SIZE, LOCATION_EMBED_SIZE)]
-
-        Output:
-            T: Token one hot encoding [shape: (BATCH_SIZE, KAREL_STATIC_TOKEN)]
-                + move
-                + turnLeft
-                + turnRight
-                + putMarker
-                + pickMarker
-    """
-    HIDDEN_0 = 32
-    HIDDEN_1 = 32
-
-    def __init__(self):
-        super(KarelTokenParameterModel, self).__init__()
-        self.dense0 = nn.Linear(TOTAL_MUTATION_ACTIONS + STATE_EMBED_SIZE + LOCATION_EMBED_SIZE, self.HIDDEN_0)
-        self.dense1 = nn.Linear(self.HIDDEN_0, self.HIDDEN_1)
-        self.dense2 = nn.Linear(self.HIDDEN_1, KAREL_STATIC_TOKEN)
-
-    def forward(self, action, embed, loc_embed):
-        repr = torch.cat([action, embed, loc_embed], dim=1)
-        hidden = F.relu(self.dense0(repr))
-        hidden = F.relu(self.dense1(hidden))
-        output = self.dense2(hidden)
-        return output
-
-
-class BlockTypeModel(nn.Module):
-    """ Compute block type parameter/value
-
-        Input:
-            E: Embed of the state [shape: (BATCH_SIZE, STATE_EMBED_SIZE)]
-
-        Output:
-            T: Token one hot encoding [shape: (BATCH_SIZE, BLOCK_TYPE_SIZE)]
-                + if
-                + while
-                + repeat
-    """
-    HIDDEN_0 = 32
-    HIDDEN_1 = 32
-
-    def __init__(self):
-        super(BlockTypeModel, self).__init__()
-        self.dense0 = nn.Linear(STATE_EMBED_SIZE, self.HIDDEN_0)
-        self.dense1 = nn.Linear(self.HIDDEN_0, self.HIDDEN_1)
-        self.dense2 = nn.Linear(self.HIDDEN_1, BLOCK_TYPE_SIZE)
-
-    def forward(self, state_embed):
-        hidden = F.relu(self.dense0(state_embed))
-        hidden = F.relu(self.dense1(hidden))
-        out = self.dense2(hidden)
-        return out
-
-
-class ConditionIdModel(nn.Module):
-    """ Compute block type parameter/value
-
-        Input:
-            E: Embed of the state [shape: (BATCH_SIZE, STATE_EMBED_SIZE)]
-            B: Block type [shape: (BATCH_SIZE, BLOCK_TYPE_SIZE)]
-                [*] if
-                [*] while
-                [ ] repeat
-
-        Output:
-            T: Token one hot encoding [shape: (BATCH_SIZE, CONDITION_SIZE)]
-                + frontIsClear
-                + leftIsClear
-                + ...
-    """
-    HIDDEN_0 = 32
-    HIDDEN_1 = 32
-
-    def __init__(self):
-        super(ConditionIdModel, self).__init__()
-        self.dense0 = nn.Linear(STATE_EMBED_SIZE + BLOCK_TYPE_SIZE, self.HIDDEN_0)
-        self.dense1 = nn.Linear(self.HIDDEN_0, self.HIDDEN_1)
-        self.dense2 = nn.Linear(self.HIDDEN_1, CONDITION_SIZE)
-
-    def forward(self, state_embed, block_type):
-        inp = torch.cat([state_embed, block_type], dim=1)
-        hidden = F.relu(self.dense0(inp))
-        hidden = F.relu(self.dense1(hidden))
-        out = self.dense2(hidden)
-        return out
-
-
-class RepeatCountModel(nn.Module):
-    """ Compute block type parameter/value
-
-        Input:
-            E: Embed of the state [shape: (BATCH_SIZE, STATE_EMBED_SIZE)]
-
-        Output:
-            T: Token one hot encoding [shape: (BATCH_SIZE, REPEAT_COUNT_SIZE)]
-                + 2
-                + 3
-                + ...
-                + 10
-    """
-    HIDDEN_0 = 32
-    HIDDEN_1 = 32
-
-    def __init__(self):
-        super(RepeatCountModel, self).__init__()
-        self.dense0 = nn.Linear(STATE_EMBED_SIZE, self.HIDDEN_0)
-        self.dense1 = nn.Linear(self.HIDDEN_0, self.HIDDEN_1)
-        self.dense2 = nn.Linear(self.HIDDEN_1, REPEAT_COUNT_SIZE)
-
-    def forward(self, embed):
-        hidden = F.relu(self.dense0(embed))
-        hidden = F.relu(self.dense1(hidden))
-        out = self.dense2(hidden)
-        return out
+    def forward(self, if_pos, else_pos, end_pos, task):
+        x = torch.cat([if_pos, else_pos, end_pos, task], dim=1)
+        x = F.relu(self.linear0(x))
+        x = self.head(x)
+        return x
