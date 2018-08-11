@@ -5,19 +5,31 @@ import numpy as np
 
 
 class ReplayBuffer(object):
-    def __init__(self, max_size, erase_factor):
+    """ Cyclic buffer
+    """
+
+    def __init__(self, max_size):
         self.max_size = max_size
-        self.erase_factor = erase_factor
         self.buffer = []
+        self.pointer = 0
 
     @property
     def size(self):
         return len(self.buffer)
 
     def add(self, experience):
-        self.buffer.extend(experience)
-        if len(self.buffer) >= self.max_size:
-            self.buffer = self.buffer[int(self.erase_factor * self.size):]
+        if isinstance(experience, list):
+            raise ValueError("Experience must be added one by one")
+
+        if len(self.buffer) < self.max_size:
+            self.buffer.append(experience)
+            self.pointer += 1
+        else:
+            if self.pointer == self.max_size:
+                self.pointer = 0
+
+            self.buffer[self.pointer] = experience
+            self.pointer += 1
 
     def sample(self, size):
         replace_mode = size > len(self.buffer)
@@ -42,5 +54,3 @@ class StepExample(collections.namedtuple('StepExample', ['task', 'state', 'actio
         print("Action: {} Reward: {}".format(self.action, self.reward), file=buff)
 
         return buff.getvalue()
-
-

@@ -1,10 +1,10 @@
 import torch
 
-from program_synthesis.models.rl_agent.agent import KarelAgent
-from program_synthesis.models.rl_agent.config import EPSILON, ALPHA, DISCOUNT, MAX_TOKEN_PER_CODE
-from program_synthesis.models.rl_agent.environment import KarelEditEnv
-from program_synthesis.models.rl_agent.logger import logger_debug, logger_task
-from program_synthesis.models.rl_agent.utils import StepExample, ReplayBuffer
+from program_synthesis.karel.rl_agent.agent import KarelAgent
+from program_synthesis.karel.rl_agent.config import EPSILON, ALPHA, DISCOUNT, MAX_TOKEN_PER_CODE
+from program_synthesis.karel.rl_agent.environment import KarelEditEnv
+from program_synthesis.karel.rl_agent.logger import logger_debug, logger_task
+from program_synthesis.karel.rl_agent.utils import StepExample, ReplayBuffer
 from program_synthesis.tools import saver
 
 
@@ -58,12 +58,12 @@ class PolicyTrainer(object):
         self.critic.train(tasks, states, actions, targets)
 
     def train(self):
-        replay_buffer = ReplayBuffer(self.args.replay_buffer_size, self.args.erase_factor)
+        replay_buffer = ReplayBuffer(self.args.replay_buffer_size)
         for epoch in range(self.args.num_epochs):
 
             for _ in range(self.args.num_episodes):
                 _, experience = rollout(self.env, self.actor, True, self.args.max_rollout_length)
-                replay_buffer.add(experience)
+                [replay_buffer.add(e) for e in experience]
 
             for _ in range(self.args.num_training_steps):
                 batch = replay_buffer.sample(self.args.batch_size)
@@ -76,7 +76,7 @@ class PolicyTrainer(object):
 
 def main():
     args = saver.ArgsDict(
-        num_epochs=100, max_rollout_length=10, replay_buffer_size=16384, erase_factor=0.01,
+        num_epochs=100, max_rollout_length=10, replay_buffer_size=16384,
         num_episodes=10, num_training_steps=10, batch_size=32, update_actor_epoch=10,
         karel_io_enc='lgrl', lr=0.001, cuda=False)
 
