@@ -1,20 +1,16 @@
 import gym
-import numpy as np
 import six
 from cached_property import cached_property
 
 from program_synthesis.karel.dataset import executor as executor_mod
 from program_synthesis.karel.dataset import mutation
-from program_synthesis.karel.dataset import parser_for_synthesis
-from program_synthesis.karel.dataset.mutation import ActionAddParameters, ActionRemoveParameters, \
-    ActionReplaceParameters, ActionUnwrapBlockParameters, ActionWrapBlockParameters, ActionWrapIfElseParameters, \
-    REPEAT_COUNTS
+from program_synthesis.karel.dataset.mutation import *
+from program_synthesis.karel.dataset.utils import beautify
 
-try:
-    import copy
-except ModuleNotFoundError:
-    pass
 
+# TODO: Implement missing actions (REPLACE COND - SWITCH IF ELSE)
+# These actions can be omitted since the environment allows wraps + unwraps and all states are reachable
+# although its done through counter intuitive actions
 
 class AnnotatedTree(object):
     parser = parser_for_synthesis.KarelForSynthesisParser(build_tree=True)
@@ -158,51 +154,30 @@ class AnnotatedTree(object):
 
 class MutationActionSpace(gym.Space):
     def __init__(self, tree=None, code=None, atree=None):
+        super(MutationActionSpace).__init__()
+
         if atree is None:
             self.atree = AnnotatedTree(tree, code)
         else:
             self.atree = atree
 
-    def full_space(self):
-        space = []
-        # TODO: Add all actions
-
-        # Add actions
-        for loc in self.atree.add_action_locs:
-            for karel_action_name in mutation.ACTION_NAMES:
-                action = (mutation.ADD_ACTION, (loc, karel_action_name))
-                space.append(action)
-
-        # Remove actions
-        for loc in self.atree.remove_action_locs:
-            action = (mutation.REMOVE_ACTION, (loc,))
-            space.append(action)
-
-        # Replace actions
-        for loc in self.atree.replace_action_locs:
-            for karel_action_name in mutation.ACTION_NAMES:
-                action = (mutation.REPLACE_ACTION, (loc, karel_action_name))
-                space.append(action)
-
-        return space
-
-    def sample_parameters(self, action):
+    def sample_parameters(self, action_type):
         """ Sample random parameters
         """
-        if action == mutation.ADD_ACTION:
+        if action_type == mutation.ADD_ACTION:
             valid_loc = list(self.atree.add_action_locs)
             sel_loc = valid_loc[np.random.choice(len(valid_loc))]
             sel_tok = np.random.choice(mutation.ACTION_NAMES)
             return ActionAddParameters(sel_loc, sel_tok)
 
-        elif action == mutation.REMOVE_ACTION:
+        elif action_type == mutation.REMOVE_ACTION:
             valid_loc = list(self.atree.remove_action_locs)
             if len(valid_loc) == 0:
                 return None
             sel_loc = valid_loc[np.random.choice(len(valid_loc))]
             return ActionRemoveParameters(sel_loc)
 
-        elif action == mutation.REPLACE_ACTION:
+        elif action_type == mutation.REPLACE_ACTION:
             valid_loc = list(self.atree.replace_action_locs)
             if len(valid_loc) == 0:
                 return None
@@ -210,14 +185,14 @@ class MutationActionSpace(gym.Space):
             sel_tok = np.random.choice(mutation.ACTION_NAMES)
             return ActionReplaceParameters(sel_loc, sel_tok)
 
-        elif action == mutation.UNWRAP_BLOCK:
+        elif action_type == mutation.UNWRAP_BLOCK:
             valid_loc = list(self.atree.unwrap_block_locs)
             if len(valid_loc) == 0:
                 return None
             sel_loc = valid_loc[np.random.choice(len(valid_loc))]
             return ActionUnwrapBlockParameters(sel_loc)
 
-        elif action == mutation.WRAP_BLOCK:
+        elif action_type == mutation.WRAP_BLOCK:
             block_type = np.random.choice(['if', 'while', 'repeat'])
 
             if block_type == 'repeat':
@@ -230,26 +205,36 @@ class MutationActionSpace(gym.Space):
 
             return ActionWrapBlockParameters(block_type, cond_id, start_loc, end_loc)
 
-        elif action == mutation.WRAP_IFELSE:
+        elif action_type == mutation.WRAP_IFELSE:
             cond_id = np.random.choice(len(mutation.CONDS))
             valid_locs = list(self.enumerate_composite_wrap_spans())
             start_if_loc, start_else_loc, end_else_loc = valid_locs[np.random.choice(len(valid_locs))]
             return ActionWrapIfElseParameters(cond_id, start_if_loc, start_else_loc, end_else_loc)
 
-        elif action == mutation.REPLACE_COND:
-            # TODO: Implement missing actions
+        elif action_type == mutation.REPLACE_COND:
             raise NotImplementedError()
 
-        elif action == mutation.SWITCH_IF_WHILE:
+        elif action_type == mutation.SWITCH_IF_WHILE:
             raise NotImplementedError()
 
         else:
-            raise ValueError(f"Invalid action id {action}. \
+            raise ValueError(f"Invalid action id {action_type}. \
             Action id must be in the range [0, 8)")
 
     def sample(self):
-        space = self.full_space()
-        return space[np.random.choice(len(space))]
+        while True:
+            action = np.random.choice(8, p=mutation.DEFAULT_PROBS / mutation.DEFAULT_PROBS.sum())
+
+            if action in (mutation.REPLACE_COND, mutation.SWITCH_IF_WHILE):  # Not implemented
+                continue
+            else:
+                parameters = self.sample_parameters(action)
+                if parameters is None:  # Not valid parameters for this action
+                    continue
+                else:
+                    break
+
+        return Action(action, parameters)
 
     def contains(self, action):
         action_type, args = action
@@ -311,11 +296,9 @@ class MutationActionSpace(gym.Space):
                     if_start_i <= else_start_i <= end_i)
 
         elif action_type == mutation.REPLACE_COND:
-            # Not yet implemented
-            return False
+            raise NotImplementedError()
         elif action_type == mutation.SWITCH_IF_WHILE:
-            # Not yet implemented
-            return False
+            raise NotImplementedError()
         else:
             return False
 
@@ -384,12 +367,10 @@ class MutationActionSpace(gym.Space):
             }
             body_elems.insert(if_start_i, new_block)
 
-        # elif action_type == mutation.REPLACE_COND:
-        #   # Not yet implemented
-        #    return False 
-        # elif action_type == mutation.SWITCH_IF_WHILE:
-        #    # Not yet implemented
-        #    return False
+        elif action_type == mutation.REPLACE_COND:
+            raise NotImplementedError()
+        elif action_type == mutation.SWITCH_IF_WHILE:
+            raise NotImplementedError()
         else:
             raise ValueError(action_type)
 
@@ -435,11 +416,11 @@ class MutationActionSpace(gym.Space):
 
 
 class KarelRefineEnv(gym.Env):
+    metadata = {'render.modes': ['human', 'ansi']}
     executor = executor_mod.KarelExecutor()
 
     def __init__(self, input_tests, max_token=None):
         self.input_tests = input_tests
-        self.atree = None
         self._max_token_allowed = max_token
         self.reset()
 
@@ -448,12 +429,15 @@ class KarelRefineEnv(gym.Env):
         if self._max_token_allowed is not None:
             atree_copy = copy.deepcopy(self.action_space.atree)
 
+        # This line might reduce performance (it is useful while developing)
+        assert self.action_space.contains(action)
+
         self.action_space.apply(action)
 
-        if self._max_token_allowed is not None and len(self.atree.code) + 2 > self._max_token_allowed:
+        if self._max_token_allowed is not None and len(
+                self.atree.code) + 2 > self._max_token_allowed:  # Undo last action (max token exceeded)
             # noinspection PyUnboundLocalVariable
             self.action_space.atree = atree_copy
-            self.atree = atree_copy
 
         # Run new program on I/O grids to get observation
         observation, done = self.compute_obs()
@@ -469,7 +453,10 @@ class KarelRefineEnv(gym.Env):
 
     def reset_with(self, code):
         self.action_space = MutationActionSpace(code=code)
-        self.atree = self.action_space.atree
+
+    @property
+    def atree(self):
+        return self.action_space.atree
 
     def compute_obs(self):
         outputs, traces = [], []
@@ -489,6 +476,13 @@ class KarelRefineEnv(gym.Env):
                    'desired_outputs': [test['output'] for test in self.input_tests],
                }, all_correct
 
+    def render(self, mode='human'):
+        b_code = beautify(' '.join(self.atree.code))
+        if mode == 'human':
+            print(b_code)
+        elif mode == 'ansi':
+            return b_code
+
 
 def linearize_cond(node):
     if node['type'] == 'not':
@@ -503,14 +497,12 @@ class ComputeAddOps(object):
         'noMarkersPresent'
     ]
     conds.extend(('not', v) for v in conds[:3])
+    # noinspection PyTypeChecker
     tokens = (mutation.ACTION_NAMES + tuple(
         item
         for sublist in ([(('if', cond), ('end-if', cond), ('ifElse', cond), (
-            'else', cond), ('end-ifElse', cond), ('while', cond
-                                                  ), ('end-while', cond))
-                         for cond in conds] + [(('repeat', i), ('end-repeat', i
-                                                                ))
-                                               for i in range(2, 11)])
+            'else', cond), ('end-ifElse', cond), ('while', cond), ('end-while', cond)) for cond in conds] +
+                        [(('repeat', i), ('end-repeat', i)) for i in range(2, 11)])
         for item in sublist))
 
     token_to_idx = {token: i for i, token in enumerate(tokens)}
