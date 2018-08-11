@@ -435,7 +435,7 @@ class KarelRefineEnv(gym.Env):
         self.action_space.apply(action)
 
         if self._max_token_allowed is not None and len(
-                self.atree.code) + 2 > self._max_token_allowed:  # Undo last action (max token exceeded)
+                self.atree.code) > self._max_token_allowed:  # Undo last action (max token exceeded)
             # noinspection PyUnboundLocalVariable
             self.action_space.atree = atree_copy
 
