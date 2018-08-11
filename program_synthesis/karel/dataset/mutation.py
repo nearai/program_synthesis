@@ -1,7 +1,6 @@
 import collections
 import copy
 import itertools
-import struct
 
 import numpy as np
 
@@ -93,9 +92,19 @@ WRAP_BLOCK = 4
 # - Wrap with ifElse
 WRAP_IFELSE = 5
 # - Change condition in if/ifElse/while
-REPLACE_COND = 6
+REPLACE_COND = 6  # Not implemented
 # - Switch between if/while
-SWITCH_IF_WHILE = 7
+SWITCH_IF_WHILE = 7  # Not implemented
+
+
+class Operation:
+    # TODO: Move operations into this class
+
+    @staticmethod
+    def total():  # Implemented operations
+        return 6
+
+
 DEFAULT_PROBS = np.array([1, 1, 1, 1, .25, .75, 1, 1], dtype=float)
 
 BodyInfo = collections.namedtuple('BodyInfo', ['node', 'type', 'elems'])
@@ -142,12 +151,12 @@ class TreeIndex(object):
         # wrap_block_choices: (n + 1) choose 2 for each len(body)
         # wrap_ifelse_choices: (n + 1) choose 3 for each len(body)
         wrap_block_choices = np.array(
-            [len(body.elems) for body in tree_index.all_bodies], dtype=float)
+            [len(body.elems) for body in self.all_bodies], dtype=float)
         wrap_ifelse_choices = wrap_block_choices.copy()
         wrap_block_choices *= (wrap_block_choices + 1)
         wrap_block_choices /= 2
         wrap_ifelse_choices *= (wrap_ifelse_choices + 1) * (
-            wrap_ifelse_choices - 1)
+                wrap_ifelse_choices - 1)
         wrap_ifelse_choices /= 6
 
 
@@ -170,7 +179,7 @@ def mutate(tree, probs=None, rng=None):
     wrap_block_choices *= (wrap_block_choices + 1)
     wrap_block_choices /= 2
     wrap_ifelse_choices *= (wrap_ifelse_choices + 1) * (
-        wrap_ifelse_choices - 1)
+            wrap_ifelse_choices - 1)
     wrap_ifelse_choices /= 6
 
     probs[ADD_ACTION] *= len(tree_index.add_locs)
@@ -284,7 +293,7 @@ class KarelExampleMutator(object):
         self.executor = executor.KarelExecutor(action_limit=250)
 
     def __call__(self, karel_example):
-        from ..dataset import KarelExample
+        from .dataset import KarelExample
         assert karel_example.ref_example is None
         tree = self.parser.parse(karel_example.code_sequence)
         if self.rng_fixed:
