@@ -3,7 +3,7 @@
 Notes:
     Position: 512
     Task: 512
-    Code: 512
+    Code: 256
     State embed size: 1024
         (Concatenation of
             task embed: 512
@@ -17,18 +17,15 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from program_synthesis.tools import saver
 from program_synthesis.karel.dataset import mutation
 from program_synthesis.karel.models.modules import karel
 from program_synthesis.karel.models.modules import karel_common
 
 
 class KarelEditPolicy(nn.Module):
-    def __init__(self, vocab_size: int, args):
-        super(KarelEditPolicy).__init__()
 
-        # Save partial computations of tensors
-        self.partial = saver.ArgsDict()
+    def __init__(self, vocab_size: int, args):
+        super(KarelEditPolicy, self).__init__()
 
         # Coding input
         self.task_encoder = karel_common.make_task_encoder(args)
@@ -41,19 +38,42 @@ class KarelEditPolicy(nn.Module):
         self.add_action = AddActionModel()
         self.remove_action = RemoveActionModel()
         self.replace_action = AddActionModel()  # Same parameters same model
-        self.unwrap_action = RemoveActionModel()  # Same parameters same model
+        self.unwrap_block = RemoveActionModel()  # Same parameters same model
         self.wrap_block = WrapBlockModel()
         self.wrap_ifelse = WrapIfElseModel()
 
+        self._action2model = {
+            mutation.ADD_ACTION: self.add_action,
+            mutation.REMOVE_ACTION: self.remove_action,
+            mutation.REPLACE_ACTION: self.replace_action,
+            mutation.UNWRAP_BLOCK: self.unwrap_block,
+            mutation.WRAP_BLOCK: self.wrap_block,
+            mutation.WRAP_IFELSE: self.wrap_ifelse
+        }
+
+    def get_model_from_action(self, action_type):
+        return self._action2model.get(action_type)
+
     def encode_task(self, input: torch.Tensor, output: torch.Tensor) -> torch.Tensor:
+        """
+            `input` & `output` expected shape:
+                (batch_size x num_examples x 15 x 18 x 18)
+        """
+        batch_size, num_examples, _, _, _ = input.size()
+
+        input = input.view(-1, 15, 18, 18)
+        output = output.view(-1, 15, 18, 18)
+
         task_encoded = self.task_encoder(input, output)
-        self.partial.task_encoded = task_encoded.max(0)[0]
-        return self.partial.task_encoded
+        task_encoded = task_encoded.view(batch_size, num_examples, -1)
+        task_encoded = task_encoded.max(1)[0]
+
+        return task_encoded
 
     def embed_code(self, code: torch.Tensor):
         code = code.type(torch.LongTensor)
-        self.partial.code_embed = self.token_embed(code)
-        return self.partial.code_embed
+        code_embed = self.token_embed(code)
+        return code_embed
 
     def encode_code(self, code: torch.Tensor):
         """
@@ -62,12 +82,9 @@ class KarelEditPolicy(nn.Module):
         """
         tokens_embed = self.embed_code(code)
 
-        # `seq` is a semantic embed of each token
-        self.partial.position_embed, self.partial.code_embed = self.code_encoder(tokens_embed)
-        return self.partial.position_embed, self.partial.code_embed
-
-    def clear(self):
-        self.partial.clear()
+        # `position_embed` is a "logic" embed of each token
+        position_embed, code_embed = self.code_encoder(tokens_embed)
+        return position_embed, code_embed
 
     def forward(self, *input):
         raise ValueError("This module is not `evaluable`")
@@ -77,8 +94,11 @@ class OperationTypeModel(nn.Module):
     """ Compute action value
 
         Input:
+            `task` expected shape:
+                (batch_size x task_embed_size)
+
             `code` expected shape:
-                (batch_size x state_embed_size)
+                (batch_size x code_embed_size)
 
         Output:
             `out` expected shape:
@@ -87,11 +107,12 @@ class OperationTypeModel(nn.Module):
 
     def __init__(self):
         super(OperationTypeModel, self).__init__()
-        self.dense0 = nn.Linear(1024, 256)
-        self.dense1 = nn.Linear(256, mutation.Operation.total())
+        self.dense0 = nn.Linear(512 + 256, 256)
+        self.dense1 = nn.Linear(256, 6)
 
-    def forward(self, embed):
-        hidden = F.relu(self.dense0(embed))
+    def forward(self, task, code):
+        state = torch.cat([task, code], dim=1)
+        hidden = F.relu(self.dense0(state))
         out = self.dense1(hidden)
         return out
 
