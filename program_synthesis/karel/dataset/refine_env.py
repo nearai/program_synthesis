@@ -161,6 +161,34 @@ class MutationActionSpace(gym.Space):
         else:
             self.atree = atree
 
+    def valid_parameters_locations(self, action_type):
+        if action_type == mutation.ADD_ACTION:
+            return self.atree.add_action_locs
+
+        elif action_type == mutation.REMOVE_ACTION:
+            return self.atree.remove_action_locs
+
+        elif action_type == mutation.REPLACE_ACTION:
+            return self.atree.replace_action_locs
+
+        elif action_type == mutation.UNWRAP_BLOCK:
+            return self.atree.unwrap_block_locs
+
+        elif action_type == mutation.WRAP_BLOCK:
+            return self.enumerate_simple_wrap_spans()
+
+        elif action_type == mutation.WRAP_IFELSE:
+            return self.enumerate_composite_wrap_spans()
+
+        elif action_type == mutation.REPLACE_COND:
+            raise NotImplementedError()
+
+        elif action_type == mutation.SWITCH_IF_WHILE:
+            raise NotImplementedError()
+
+        else:
+            raise ValueError()
+
     def sample_parameters(self, action_type):
         """ Sample random parameters
         """
@@ -393,7 +421,7 @@ class MutationActionSpace(gym.Space):
                         continue
                     yield (loc1, loc2, loc3)
 
-    def enumerate_additive_actions(self):
+    def _enumerate_additive_actions(self):
         for location in self.atree.add_action_locs:
             for karel_action in mutation.ACTION_NAMES:
                 yield mutation.ADD_ACTION, (location, karel_action)
@@ -453,6 +481,10 @@ class KarelRefineEnv(gym.Env):
 
     def reset_with(self, code):
         self.action_space = MutationActionSpace(code=code)
+
+    @property
+    def code(self):
+        return self.atree.code
 
     @property
     def atree(self):
