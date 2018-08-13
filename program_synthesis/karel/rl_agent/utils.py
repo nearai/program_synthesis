@@ -2,6 +2,11 @@ import collections
 import io
 
 import numpy as np
+import torch
+
+Task = collections.namedtuple('Task', ('inputs', 'outputs'))
+
+State = collections.namedtuple('State', ('task', 'code'))
 
 
 class ReplayBuffer(object):
@@ -37,7 +42,7 @@ class ReplayBuffer(object):
         return [self.buffer[idx] for idx in index]
 
 
-class StepExample(collections.namedtuple('StepExample', ['task', 'state', 'action', 'reward', 'new_state'])):
+class StepExample(collections.namedtuple('StepExample', ['state', 'action', 'reward', 'next_state'])):
     """
         task: I/O examples
         state: Code (AST)
@@ -50,7 +55,34 @@ class StepExample(collections.namedtuple('StepExample', ['task', 'state', 'actio
         buff = io.StringIO()
 
         print("State:", self.state, file=buff)
-        print(self.state.shape, file=buff)
         print("Action: {} Reward: {}".format(self.action, self.reward), file=buff)
 
         return buff.getvalue()
+
+
+def prepare_code(code, vocab, tensor=False):
+    code_seq = [vocab.stoi(token) for token in code]
+
+    if tensor:
+        return torch.LongTensor(code_seq).unsqueeze(0)
+    else:
+        return code_seq
+
+
+def prepare_task(tests) -> Task:
+    input_grids = []
+    output_grids = []
+
+    def to_grid(ix):
+        grid = np.zeros((1, 15, 18, 18))
+        grid.ravel()[ix] = 1
+        return torch.from_numpy(grid).to(torch.float32)
+
+    for test in tests:
+        I, O = map(to_grid, [test['input'], test['output']])
+        input_grids.append(I)
+        output_grids.append(O)
+
+    input_grids = torch.cat(input_grids, dim=0).unsqueeze(0)
+    output_grids = torch.cat(output_grids, dim=0).unsqueeze(0)
+    return Task(input_grids, output_grids)

@@ -1,80 +1,45 @@
-import itertools
-
 import torch
 
 from program_synthesis.karel import dataset
 from program_synthesis.karel.dataset import data
 from program_synthesis.karel.dataset import refine_env
-from program_synthesis.karel.models import karel_model
-from program_synthesis.karel.models import prepare_spec
-from .config import MAX_TOKEN_PER_CODE
+from program_synthesis.karel.rl_agent import utils
+from program_synthesis.karel.rl_agent.utils import State
 
 
 class KarelEditEnv(object):
-    def __init__(self, max_token_per_code=None):
-        self.dataset = dataset.dataset.KarelTorchDataset(
-            dataset.dataset.relpath('../../data/karel/{}{}.pkl'.format('train', '')), lambda x: x)
-        self.vocab = data.PlaceholderVocab(
-            data.load_vocab(dataset.dataset.relpath('../../data/karel/word.vocab')), 0)
-        self.dataset_loader = torch.utils.data.DataLoader(
-            self.dataset,
-            1, collate_fn=lambda x: x, num_workers=0, pin_memory=False, shuffle=True
-        )
+    def __init__(self, max_token_per_code=None, mode='train'):
+        self.dataset = dataset.dataset.KarelTorchDataset(dataset.dataset.relpath(f"../../data/karel/{mode}.pkl"),
+                                                         lambda x: x)
+
+        self.dataset_loader = torch.utils.data.DataLoader(self.dataset,
+                                                          1, collate_fn=lambda x: x, num_workers=0, pin_memory=False,
+                                                          shuffle=True)
+
+        self.vocab = data.PlaceholderVocab(data.load_vocab(dataset.dataset.relpath('../../data/karel/word.vocab')), 0)
+
         self.data_iter = self.dataset_loader.__iter__()
-        self._cur_env = None
+
+        self.task = None
+        self._env = None
         self._max_token_per_code = max_token_per_code
 
-    def reset(self):
-        """
-        :return: (Task, Observation/State)
-        """
-        sample = self.data_iter.next()  # returns list of 1 element.
-        self._cur_env = refine_env.KarelRefineEnv(sample[0].input_tests, self._max_token_per_code)
-        obs = self._cur_env.reset()
-        input_grids, output_grids = karel_model.encode_io_grids(sample)
-        return (input_grids, output_grids), self.prepare_obs(obs)
+    def reset(self) -> (utils.Task, torch.Tensor):
+        (sample,) = self.data_iter.next()  # returns list of 1 element.
+        self._env = refine_env.KarelRefineEnv(sample.input_tests, self._max_token_per_code)
+        _ = self._env.reset()
+
+        self.task = utils.prepare_task(sample.input_tests)
+
+        return State(self.task, self._env.code)
 
     @property
     def atree(self):
-        return self._cur_env.atree
+        return self._env.atree
 
     @property
     def action_space(self):
-        return self._cur_env.action_space
-
-    @staticmethod
-    def prepare_tasks(tasks):
-        input_grids = torch.cat([t[0] for t in tasks], dim=0)
-        output_grids = torch.cat([t[1] for t in tasks], dim=0)
-        return input_grids, output_grids
-
-    @staticmethod
-    def prepare_states(states):
-        padded_states = torch.zeros(len(states), MAX_TOKEN_PER_CODE)
-        for idx, state in enumerate(states):
-            padded_states[idx][:state.shape[1]] = state[0]
-        return padded_states
-
-    def prepare_obs(self, obs):
-        current_code = prepare_spec.lists_padding_to_tensor(
-            [obs['code']], self.vocab.stoi, cuda=False, volatile=True
-        )
-        # current_code = prepare_spec.lists_to_packed_sequence(
-        #     [obs['code']], self.vocab.stoi, cuda=False, volatile=True)
-        return current_code
-
-    def recover_code(self, state):
-        state = state.reshape(-1)  # Remove first dimension
-        return ' '.join(
-            itertools.takewhile(
-                lambda token: token != '</S>',
-                map(self.vocab.itos, state[1:].numpy())
-            )
-        )
-
-    @staticmethod
-    def prepare_actions(actions):
-        return actions
+        return self._env.action_space
 
     def step(self, action):
         """ Execute one action on the environment
@@ -82,5 +47,6 @@ class KarelEditEnv(object):
         :param action:
         :return: Observation/State, Reward/int, Done/bool, info/dic
         """
-        obs, reward, done, info = self._cur_env.step(action)
-        return self.prepare_obs(obs), reward, done, info
+        obs, reward, done, info = self._env.step(action)
+        code = obs['code']
+        return State(self.task, code), reward, done, info
