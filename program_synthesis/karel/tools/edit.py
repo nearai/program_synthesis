@@ -1,8 +1,10 @@
 import Levenshtein
+import six
+
 
 def compute_edit_ops(source_seq, target_seq, stoi):
-    source_str = u''.join(unichr(stoi(t)) for t in source_seq)
-    target_str = u''.join(unichr(stoi(t)) for t in target_seq)
+    source_str = u''.join(six.unichr(stoi(t)) for t in source_seq)
+    target_str = u''.join(six.unichr(stoi(t)) for t in target_seq)
 
     ops = Levenshtein.editops(source_str, target_str)
     i, op_idx = 0, 0
@@ -42,4 +44,4 @@ def apply_edit_ops(source_seq, ops):
             counter += 1
         elif op == 'insert':
             yield value
-    assert counter == len(source_seq) 
+    assert counter == len(source_seq)
