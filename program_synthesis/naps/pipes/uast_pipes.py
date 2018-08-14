@@ -4,6 +4,28 @@ from program_synthesis.naps.uast.lisp_to_uast import lisp_to_uast, uast_to_lisp
 from .pipe import Pipe
 
 
+class SplitTests(Pipe):
+    def __init__(self, tests_key, input_tests_key, eval_tests_key):
+        self.tests_key = tests_key
+        self.input_tests_key = input_tests_key
+        self.eval_tests_key = eval_tests_key
+
+    def __iter__(self):
+        for d in self.input:
+            tests = d.get(self.tests_key, [])
+            num_tests = len(tests)
+            if num_tests == 1:
+                split_idx = 0
+            elif num_tests < 4:
+                split_idx = 1
+            elif num_tests < 5:
+                split_idx = 2
+            else:
+                split_idx = 3
+            yield {**d, **{self.input_tests_key: tests[:split_idx],
+                           self.eval_tests_key: tests[split_idx:]}}
+        return
+
 class SelectPseudocode(Pipe):
     def __init__(self, texts_key, text_key):
         self.texts_key = texts_key
