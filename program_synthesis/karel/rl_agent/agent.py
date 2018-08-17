@@ -4,7 +4,6 @@
 """
 
 import numpy as np
-import torch.nn.functional as F
 import torch.optim
 
 from program_synthesis.karel.dataset import mutation
@@ -21,10 +20,10 @@ class KarelAgent:
         self.train_mode = False
         self.model = KarelEditPolicy(len(self.vocab), args)
 
-        self._criterion = F.mse_loss
-        self._optimizer = torch.optim.Adam(self.model.parameters(), lr=args.lr)
-
         self._current_task_enc = None
+        self._last_tasks_enc = None
+        self._last_codes_enc = None
+        self._last_codes_loc_enc = None
 
     def set_task(self, task: utils.Task):
         assert self.train_mode is False, "You can't provide task beforehand while training"
@@ -41,20 +40,33 @@ class KarelAgent:
 
             `codes` expected shape:
                 (batch_size x seq_length)
+
+            `tasks` None or expected shape:
+                (batch_size x num_examples(5) x 15 x 18 x 18)
         """
-        assert len(codes.size()) == 0, f"`codes` expected 2 dimensions, found {len(codes.size())}"
+        assert len(codes.size()) == 2, f"`codes` expected 2 dimensions, found {len(codes.size())}"
 
         if tasks is None:
             assert not self.train_mode
             batch_size = codes.size()[0]
-            tasks_enc = self._current_task_enc.repeat(batch_size, 1)
+            self._last_tasks_enc = self._current_task_enc.repeat(batch_size, 1)
         else:
-            tasks_enc = self.model.encode_task(*tasks)
+            self._last_tasks_enc = self.model.encode_task(*tasks)
 
-        _, codes_enc = self.model.encode_code(codes)
+        self._last_codes_loc_enc, self._last_codes_enc = self.model.encode_code(codes)
 
-        assert tasks.size()[0] == codes_enc.size()[0], "Batch size dimension must coincide"
-        return self.model.operation_type(tasks_enc, codes_enc)
+        assert self._last_tasks_enc.size()[0] == self._last_codes_enc.size()[0], "Batch size dimension must coincide"
+        return self.model.operation_type(self._last_tasks_enc, self._last_codes_enc)
+
+    def action_value_from_action(self, codes: torch.LongTensor, tasks: utils.Task, actions):
+        size = codes.size()[0]
+
+        actions_value = self.action_value(codes, tasks)
+        action_value = torch.Tensor([actions_value[i][actions[i].id] for i in range(size)])
+
+        parameter_value = self.model.get_parameters_tensors(self._last_codes_loc_enc, self._last_tasks_enc, actions)
+
+        return action_value, parameter_value
 
     def best_action_value(self, codes: torch.LongTensor, tasks: utils.Task = None) -> (torch.Tensor, torch.Tensor):
         action_values = self.action_value(codes, tasks)
@@ -69,18 +81,20 @@ class KarelAgent:
         position_enc, code_enc = self.model.encode_code(code)
         task_enc = self._current_task_enc
 
+        rl_eps_action = self.args.rl_eps_action if self.train_mode else 0.
+        rl_eps_parameter = self.args.rl_eps_parameter if self.train_mode else 0.
+
         with torch.no_grad():
+            fail_deterministic = 0
             while True:
-                if np.random.random() < self.args.rl_eps_action:
+                if np.random.random() < rl_eps_action or fail_deterministic >= 2:
                     action = action_space.sample()
                     break
                 else:
                     action_type = int(self.model.operation_type(task_enc, code_enc).argmax())
 
-                    if np.random.random() < self.args.rl_eps_parameter:
+                    if np.random.random() < rl_eps_parameter:
                         action_params = action_space.sample_parameters(action_type)
-                        if action_params is None:
-                            continue
                     else:
                         parameters = list(action_space.valid_parameters_locations(action_type))
 
@@ -94,6 +108,7 @@ class KarelAgent:
                             action_params = valid_params[ix]
 
                     if action_params is None:
+                        fail_deterministic += 1
                         continue
 
                     action = Action(action_type, action_params)

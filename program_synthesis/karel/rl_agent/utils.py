@@ -43,14 +43,6 @@ class ReplayBuffer(object):
 
 
 class StepExample(collections.namedtuple('StepExample', ['state', 'action', 'reward', 'next_state'])):
-    """
-        task: I/O examples
-        state: Code (AST)
-        action: `Action`
-        reward: float
-        new_state: Code(AST)
-    """
-
     def __str__(self):
         buff = io.StringIO()
 

@@ -22,10 +22,13 @@ class KarelEditEnv(object):
 
         self.task = None
         self._env = None
+        self._sample = None
         self._max_token_per_code = max_token_per_code
 
     def reset(self) -> (utils.Task, torch.Tensor):
         (sample,) = self.data_iter.next()  # returns list of 1 element.
+        self._sample = sample  # Allow access to current sample
+
         self._env = refine_env.KarelRefineEnv(sample.input_tests, self._max_token_per_code)
         _ = self._env.reset()
 
@@ -40,6 +43,10 @@ class KarelEditEnv(object):
     @property
     def action_space(self):
         return self._env.action_space
+
+    @property
+    def sample(self):
+        return self._sample
 
     def step(self, action):
         """ Execute one action on the environment

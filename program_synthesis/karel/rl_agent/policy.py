@@ -4,10 +4,10 @@ Notes:
     Position: 512
     Task: 512
     Code: 256
-    State embed size: 1024
+    State embed size: 768
         (Concatenation of
             task embed: 512
-            code embed: 512)
+            code embed: 256)
 
     Total operations:
         6 (Refer to program_synthesis.karel.dataset.mutation)
@@ -51,6 +51,50 @@ class KarelEditPolicy(nn.Module):
             mutation.WRAP_IFELSE: self.wrap_ifelse
         }
 
+    def get_parameters_tensors(self, codes_enc, tasks_enc, actions):
+        param_value = []
+
+        for idx, action in enumerate(actions):
+            model = self.get_model_from_action(action.id)
+
+            if action.id == mutation.ADD_ACTION:
+                values = model(codes_enc[None, idx, action.parameters.location], tasks_enc[None, idx])
+                value = values[:, mutation.get_action_name_id(action.parameters.token)]
+
+            elif action.id == mutation.REMOVE_ACTION:
+                values = model(codes_enc[None, idx, action.parameters.location], tasks_enc[None, idx])
+                value = values[:, 0]
+
+            elif action.id == mutation.REPLACE_ACTION:
+                values = model(codes_enc[None, idx, action.parameters.location], tasks_enc[None, idx])
+                value = values[:, mutation.get_action_name_id(action.parameters.token)]
+
+            elif action.id == mutation.UNWRAP_BLOCK:
+                values = model(codes_enc[None, idx, action.parameters.location], tasks_enc[None, idx])
+                value = values[:, 0]
+
+            elif action.id == mutation.WRAP_BLOCK:
+                values = model(codes_enc[None, idx, action.parameters.start],
+                               codes_enc[None, idx, action.parameters.end],
+                               tasks_enc[None, idx])
+                value = values[mutation.get_block_type_id(action.parameters.block_type)][:, action.parameters.cond_id]
+
+            elif action.id == mutation.WRAP_IFELSE:
+                values = model(codes_enc[None, idx, action.parameters.if_start],
+                               codes_enc[None, idx, action.parameters.else_start],
+                               codes_enc[None, idx, action.parameters.end],
+                               tasks_enc[None, idx])
+
+                value = values[:, action.parameters.cond_id]
+            else:
+                raise ValueError(f"action.id must lie in the range [0, 8) found {action.id}")
+
+            param_value.append(value)
+
+        assert len(param_value) == len(actions)
+
+        return torch.cat(param_value)
+
     def get_model_from_action(self, action_type):
         return self._action2model.get(action_type)
 
@@ -90,7 +134,35 @@ class KarelEditPolicy(nn.Module):
         raise ValueError("This module is not `evaluable`")
 
 
-class OperationTypeModel(nn.Module):
+class BaseModel(nn.Module):
+    @staticmethod
+    def _assert_size(param, size):
+        if isinstance(size, tuple):
+            assert len(param.size()) == len(size), \
+                f"Expected tensor of dimension {size} found {param.size()}"
+
+            for ps, rs in zip(param.size(), size):
+                assert rs is None or ps == rs, \
+                    f"Expected tensor of dimension {size} found {param.size()}"
+
+        else:
+            assert len(param.size()) == size, \
+                f"Expected tensor of dimension {size} found {len(param.size())} ({param.size()})"
+
+    @staticmethod
+    def _assert_batch_size(*params):
+        batch_size = params[0].size()[0]
+        ok = True
+
+        for p in params:
+            if p.size()[0] != batch_size:
+                ok = False
+                break
+
+        assert ok, f"Expected first dimension to coincide but found {[p.size() for p in params]}"
+
+
+class OperationTypeModel(BaseModel):
     """ Compute action value
 
         Input:
@@ -111,13 +183,20 @@ class OperationTypeModel(nn.Module):
         self.dense1 = nn.Linear(256, 6)
 
     def forward(self, task, code):
+        self.check_input(task, code)
+
         state = torch.cat([task, code], dim=1)
         hidden = F.relu(self.dense0(state))
         out = self.dense1(hidden)
         return out
 
+    def check_input(self, task, code):
+        self._assert_size(task, (None, 512))
+        self._assert_size(code, (None, 256))
+        self._assert_batch_size(task, code)
 
-class AddActionModel(nn.Module):
+
+class AddActionModel(BaseModel):
     """
         Input:
             `position` expected shape:
@@ -138,13 +217,20 @@ class AddActionModel(nn.Module):
         self.linear1 = nn.Linear(32, len(mutation.ACTION_NAMES))
 
     def forward(self, position, task):
+        self.check_input(position, task)
+
         x = torch.cat([position, task], dim=1)
         x = F.relu(self.linear0(x))
         x = self.linear1(x)
         return x
 
+    def check_input(self, position, task):
+        self._assert_size(position, (None, 512))
+        self._assert_size(task, (None, 512))
+        self._assert_batch_size(position, task)
 
-class RemoveActionModel(nn.Module):
+
+class RemoveActionModel(BaseModel):
     """
         Input:
             `position` expected shape:
@@ -155,7 +241,7 @@ class RemoveActionModel(nn.Module):
 
         Output:
             `x` expected shape:
-                (batch_size x possible_actions)
+                (batch_size,)
     """
 
     def __init__(self):
@@ -164,13 +250,42 @@ class RemoveActionModel(nn.Module):
         self.linear1 = nn.Linear(32, 1)
 
     def forward(self, position, task):
+        self.check_input(position, task)
+
         x = torch.cat([position, task], dim=1)
         x = F.relu(self.linear0(x))
         x = self.linear1(x)
         return x
 
+    def check_input(self, position, task):
+        self._assert_size(position, (None, 512))
+        self._assert_size(task, (None, 512))
+        self._assert_batch_size(position, task)
 
-class WrapBlockModel(nn.Module):
+
+class WrapBlockModel(BaseModel):
+    """
+        Input:
+            `start_pos` expected shape:
+                (batch_size x position_embed)
+
+            `end_pos` expected shape:
+                (batch_size x position_embed)
+
+            `task` expected shape:
+                (batch_size x task_embed[512])
+
+        Output:
+            `x_repeat` expected shape:
+                (batch_size x |mutation.REPEAT_COUNTS|)
+
+            `x_if` expected shape:
+                (batch_size x |mutation.CONDS|)
+
+            `x_while` expected shape:
+                (batch_size x |mutation.CONDS|)
+    """
+
     def __init__(self):
         super(WrapBlockModel, self).__init__()
         self.linear0 = nn.Linear(512 + 512 + 512, 256)
@@ -180,6 +295,8 @@ class WrapBlockModel(nn.Module):
         self.head_while = nn.Linear(256, len(mutation.CONDS))
 
     def forward(self, start_pos, end_pos, task):
+        self.check_input(start_pos, end_pos, task)
+
         x = torch.cat([start_pos, end_pos, task], dim=1)
         x = F.relu(self.linear0(x))
 
@@ -189,15 +306,46 @@ class WrapBlockModel(nn.Module):
 
         return x_repeat, x_if, x_while
 
+    def check_input(self, start_pos, end_pos, task):
+        self._assert_size(start_pos, (None, 512))
+        self._assert_size(end_pos, (None, 512))
+        self._assert_batch_size(start_pos, end_pos, task)
 
-class WrapIfElseModel(nn.Module):
+
+class WrapIfElseModel(BaseModel):
+    """
+        Input:
+            `if_pos` expected shape:
+                (batch_size x position_embed)
+
+            `else_pos` expected shape:
+                (batch_size x position_embed)
+
+            `end_pos` expected shape:
+                (batch_size x position_embed)
+
+            `task` expected shape:
+                (batch_size x task_embed[512])
+
+        Output:
+            `x` expected shape:
+                (batch_size x |mutation.CONDS|)
+    """
+
     def __init__(self):
         super(WrapIfElseModel, self).__init__()
         self.linear0 = nn.Linear(512 + 512 + 512 + 512, 256)
         self.head = nn.Linear(256, len(mutation.CONDS))
 
     def forward(self, if_pos, else_pos, end_pos, task):
+        self.check_input(if_pos, else_pos, end_pos, task)
         x = torch.cat([if_pos, else_pos, end_pos, task], dim=1)
         x = F.relu(self.linear0(x))
         x = self.head(x)
         return x
+
+    def check_input(self, if_pos, else_pos, end_pos, task):
+        self._assert_size(if_pos, (None, 512))
+        self._assert_size(else_pos, (None, 512))
+        self._assert_size(end_pos, (None, 512))
+        self._assert_batch_size(if_pos, else_pos, end_pos, task)

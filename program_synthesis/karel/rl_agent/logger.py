@@ -3,7 +3,7 @@ from os.path import join, exists
 from os import mkdir
 from sys import stdout
 
-LOGS_PATH = join('logdirs', 'rl')
+LOGS_PATH = 'logdirs'
 
 
 def setup_logger(name, log_file, level=logging.INFO):
