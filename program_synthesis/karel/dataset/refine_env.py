@@ -470,7 +470,7 @@ class KarelRefineEnv(gym.Env):
         # Run new program on I/O grids to get observation
         observation, done = self.compute_obs()
 
-        reward = 0. if done else -1.
+        reward = -1.
         info = {}
         return observation, reward, done, info
 

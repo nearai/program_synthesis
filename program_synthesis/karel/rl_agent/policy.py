@@ -51,6 +51,15 @@ class KarelEditPolicy(nn.Module):
             mutation.WRAP_IFELSE: self.wrap_ifelse
         }
 
+        if not args.train_task_encoder:
+            for params in self.task_encoder.parameters():
+                params.requires_grad_(False)
+
+    def grad_parameters(self):
+        for param in self.parameters():
+            if param.requires_grad:
+                yield param
+
     def get_parameters_tensors(self, codes_enc, tasks_enc, actions):
         param_value = []
 
@@ -276,23 +285,23 @@ class WrapBlockModel(BaseModel):
                 (batch_size x task_embed[512])
 
         Output:
-            `x_repeat` expected shape:
-                (batch_size x |mutation.REPEAT_COUNTS|)
-
             `x_if` expected shape:
                 (batch_size x |mutation.CONDS|)
 
             `x_while` expected shape:
                 (batch_size x |mutation.CONDS|)
+
+            `x_repeat` expected shape:
+                (batch_size x |mutation.REPEAT_COUNTS|)
     """
 
     def __init__(self):
         super(WrapBlockModel, self).__init__()
         self.linear0 = nn.Linear(512 + 512 + 512, 256)
 
-        self.head_repeat = nn.Linear(256, len(mutation.REPEAT_COUNTS))
         self.head_if = nn.Linear(256, len(mutation.CONDS))
         self.head_while = nn.Linear(256, len(mutation.CONDS))
+        self.head_repeat = nn.Linear(256, len(mutation.REPEAT_COUNTS))
 
     def forward(self, start_pos, end_pos, task):
         self.check_input(start_pos, end_pos, task)
@@ -300,11 +309,11 @@ class WrapBlockModel(BaseModel):
         x = torch.cat([start_pos, end_pos, task], dim=1)
         x = F.relu(self.linear0(x))
 
-        x_repeat = self.head_repeat(x)
         x_if = self.head_if(x)
         x_while = self.head_while(x)
+        x_repeat = self.head_repeat(x)
 
-        return x_repeat, x_if, x_while
+        return x_if, x_while, x_repeat
 
     def check_input(self, start_pos, end_pos, task):
         self._assert_size(start_pos, (None, 512))

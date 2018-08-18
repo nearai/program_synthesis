@@ -116,7 +116,7 @@ class KarelAgent:
 
         return action
 
-    def update(self, other):
+    def update_with(self, other):
         self.model.load_state_dict(other.model.state_dict())
 
     def set_train(self, mode):
@@ -224,7 +224,7 @@ class ParameterSelector:
         batch_size = len(parameters)
         task_enc = task_enc.repeat(batch_size, 1)
 
-        value_repeat, value_if, value_while = model.wrap_block(start_pos, end_pos, task_enc)
+        value_if, value_while, value_repeat = model.wrap_block(start_pos, end_pos, task_enc)
 
         params_l = []
         value_l = []

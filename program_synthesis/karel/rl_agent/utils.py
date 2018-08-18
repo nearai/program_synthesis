@@ -1,5 +1,4 @@
 import collections
-import io
 
 import numpy as np
 import torch
@@ -7,6 +6,10 @@ import torch
 Task = collections.namedtuple('Task', ('inputs', 'outputs'))
 
 State = collections.namedtuple('State', ('task', 'code'))
+
+
+class StepExample(collections.namedtuple('StepExample', ['state', 'action', 'reward', 'done', 'next_state'])):
+    pass
 
 
 class ReplayBuffer(object):
@@ -40,16 +43,6 @@ class ReplayBuffer(object):
         replace_mode = size > len(self.buffer)
         index = np.random.choice(self.size, size=size, replace=replace_mode)
         return [self.buffer[idx] for idx in index]
-
-
-class StepExample(collections.namedtuple('StepExample', ['state', 'action', 'reward', 'next_state'])):
-    def __str__(self):
-        buff = io.StringIO()
-
-        print("State:", self.state, file=buff)
-        print("Action: {} Reward: {}".format(self.action, self.reward), file=buff)
-
-        return buff.getvalue()
 
 
 def prepare_code(code, vocab, tensor=False):

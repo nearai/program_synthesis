@@ -1,15 +1,22 @@
 import copy
 
+import numpy as np
 import torch
 import torch.nn.functional as F
-import numpy as np
 
+from program_synthesis.common.tools import saver
+from program_synthesis.karel import models
+from program_synthesis.karel.dataset.executor import KarelExecutor
 from program_synthesis.karel.rl_agent import utils
-from program_synthesis.karel.rl_agent.agent import KarelAgent
-from program_synthesis.karel.rl_agent.environment import KarelEditEnv
 from program_synthesis.karel.rl_agent.logger import logger_task
-from program_synthesis.karel.rl_agent.utils import StepExample, ReplayBuffer
-from program_synthesis.tools import saver
+from program_synthesis.karel.rl_agent.utils import StepExample, ReplayBuffer, State, Task
+
+
+def choice(total, sample):
+    if total == 0:
+        return []
+    else:
+        return np.random.choice(total, sample, replace=False)
 
 
 def rollout(env, agent, args):
@@ -26,7 +33,7 @@ def rollout(env, agent, args):
 
             assert len(new_state.code) <= args.max_token_per_code
 
-            experience.append(StepExample(copy.deepcopy(state), action, reward, copy.deepcopy(new_state)))
+            experience.append(StepExample(copy.deepcopy(state), action, reward, done, copy.deepcopy(new_state)))
 
             if done:
                 success = True
@@ -37,6 +44,44 @@ def rollout(env, agent, args):
     return success, experience
 
 
+def update_step_example(trans: StepExample, new_goal, executor: KarelExecutor) -> StepExample:
+    goal_code = new_goal
+    new_code = trans.next_state.code
+
+    inputs = trans.state.task.inputs.squeeze(0).data.numpy()
+
+    outputs = np.zeros_like(inputs)
+
+    assert inputs.shape[0] == 5
+
+    done = True
+
+    for ix in range(inputs.shape[0]):
+        grid_inp, = np.where(inputs[ix].ravel())
+
+        grid_out, trace = executor.execute(goal_code, None, grid_inp, record_trace=True)
+        outputs[ix].ravel()[grid_out] = 1
+
+        if done:
+            _grid_out, trace = executor.execute(new_code, None, grid_inp, record_trace=True)
+
+            if grid_out == _grid_out:
+                done = False
+
+    new_outputs = torch.from_numpy(outputs).unsqueeze(0)
+    task = trans.state.task
+
+    assert np.allclose(trans.reward, -1.)
+
+    return StepExample(
+        State(Task(task.inputs.clone(), new_outputs.clone()), trans.state.code),
+        trans.action,
+        trans.reward,
+        done,
+        State(Task(task.inputs.clone(), new_outputs.clone()), trans.next_state.code),
+    )
+
+
 class PolicyTrainer(object):
     def __init__(self, agent, env, args):
         self.args = args
@@ -45,10 +90,16 @@ class PolicyTrainer(object):
 
         self.actor = agent(self.vocab, args)
         self.critic = agent(self.vocab, args)
-        self.critic.update(self.actor)
+
+        if not args.train_from_scratch:
+            self.actor.model = models.get_model(args)
+
+        self.critic.update_with(self.actor)
 
         self.criterion = F.mse_loss
-        self.optimizer = torch.optim.Adam(self.actor.model.parameters(), lr=args.lr)
+        self.optimizer = torch.optim.Adam(self.actor.model.grad_parameters(), lr=args.lr)
+
+        self.karel_executor = KarelExecutor()
 
     def train_actor_critic(self, batch: "list[StepExample]"):
         size = self.args.batch_size
@@ -70,7 +121,7 @@ class PolicyTrainer(object):
         task_next_state_I = torch.cat([ex.next_state.task.inputs for ex in batch])
         task_next_state_O = torch.cat([ex.next_state.task.outputs for ex in batch])
 
-        for ix, (s, a, r, ns) in enumerate(batch):
+        for ix, (s, a, r, d, ns) in enumerate(batch):
             t_code = utils.prepare_code(s.code, self.env.vocab, tensor=True)
             code_state[ix, :len(s.code)] = t_code[0]
 
@@ -83,8 +134,8 @@ class PolicyTrainer(object):
 
         # Fix this: Compute `next_state_value` only for actions that are non terminal states
         for i in range(size):
-            if np.isclose(batch[i].reward, 0):
-                next_state_value = 0.
+            if np.isclose(batch[i].done, 0):
+                next_state_value[i] = 0.
 
         state_value, parameter_value = self.actor.action_value_from_action(code_state,
                                                                            utils.Task(task_state_I, task_state_O),
@@ -110,14 +161,23 @@ class PolicyTrainer(object):
     def train(self):
         replay_buffer = ReplayBuffer(self.args.replay_buffer_size)
 
-        for it in range(1, self.args.num_iterations + 1):
-            logger_task.info(f"Iteration: {it}")
+        for step in range(1, self.args.num_iterations + 1):
+            logger_task.info(f"Step: {step}")
 
             for ix in range(self.args.num_rollouts):
                 logger_task.info(f"Start rollout: {ix}")
                 success, experience = rollout(self.env, self.actor, self.args)
-                logger_task.info(f"Success: {success} Experience length: {len(experience)}")
+                logger_task.info(f"Success: {int(success)} Experience length: {len(experience)}")
                 [replay_buffer.add(e) for e in experience]
+
+                if self.args.her:
+                    for e_ix, e in enumerate(experience):
+                        future = len(experience) - e_ix - 1
+                        samp = min(future, self.args.her_new_goals)
+
+                        for c_ix in choice(future, samp):
+                            new_exp = update_step_example(e, experience[-c_ix - 1].state.code, self.karel_executor)
+                            replay_buffer.add(new_exp)
 
             self.actor.set_train(True)
 
@@ -129,35 +189,10 @@ class PolicyTrainer(object):
 
             self.actor.set_train(False)
 
-            if (it + 1) % self.args.update_actor_it == 0:
+            if (step + 1) % self.args.update_actor_it == 0:
                 logger_task.info(f"Update critic with actor")
-                self.critic.update(self.actor)
+                self.critic.update_with(self.actor)
 
-
-def explore_model(agent):
-    from functools import reduce
-    t_params = 0
-
-    for name, param in agent.model.named_parameters():
-        num_params = reduce(lambda x, y: x * y, param.size(), 1)
-        print(name, num_params, param.size())
-        t_params += num_params
-
-    print("Total parameters:", t_params)
-
-
-def main():
-    args = saver.ArgsDict(
-        num_iterations=100, max_rollout_length=30, replay_buffer_size=16384, max_token_per_code=75,
-        num_rollouts=16, num_training_steps=16, batch_size=32, update_actor_it=10,
-        rl_discount=.9, rl_eps_action=.1, rl_eps_parameter=.5, rl_alpha=.7,
-        karel_io_enc='lgrl', lr=0.01, cuda=False)
-
-    env = KarelEditEnv(args.max_token_per_code)
-
-    trainer = PolicyTrainer(KarelAgent, env, args)
-    trainer.train()
-
-
-if __name__ == "__main__":
-    main()
+            if (step + 1) % self.args.save_actor_it == 0:
+                saver.save_checkpoint(self.actor.model, self.optimizer, step, self.args.model_dir)
+                saver.save_args(self.args)
