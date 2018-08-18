@@ -1,0 +1,5 @@
+data/
+logdirs/
+
+*.csv
+*.json

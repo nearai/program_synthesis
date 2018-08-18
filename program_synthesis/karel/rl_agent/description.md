@@ -80,12 +80,3 @@ The parameters vary from action to action.
 + !leftIsClear
 + !rightIsClear
 
-### Reward
-
- +1: If the current state/code solve the specified task (I/O pairs)
-
-  0: Otherwise
-
-## TODO
-
-+ Implement all valid action in the code_state space

@@ -118,8 +118,5 @@ ENV/
 *.pkl
 *.pkl.index
 
-# logs
-program_synthesis/logdirs
-
 # karel_data
 data/karel
