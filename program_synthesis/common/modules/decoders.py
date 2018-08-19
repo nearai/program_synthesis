@@ -86,11 +86,12 @@ class BeamSearchState(beam_search.BeamSearchState):
         batch size: int
         indices: 2 x batch size * beam size LongTensor
         '''
+        indices = indices if not isinstance(indices, torch.Tensor) else indices.data.numpy()
         return BeamSearchState([
-            v.view(batch_size, -1, v.size(1))[
-                indices.data.numpy()] for v in self.value],
-                prev_output=self.prev_output.view(batch_size, -1,
-                self.prev_output.size(1))[indices.data.numpy()])
+            v.view(batch_size, v.size(1))[
+                indices] for v in self.value],
+                prev_output=self.prev_output.view(batch_size,
+                self.prev_output.size(1))[indices])
 
 
 class StackedGRU(nn.Module):
@@ -106,6 +107,7 @@ class StackedGRU(nn.Module):
             input_size = num_units
 
     def forward(self, inp, hidden):
+        assert (isinstance(hidden, list) or len(hidden.size()) == 3) and hidden[0].size(0) == inp.size(0)
         hiddens = []
         current = inp
         for i, layer in enumerate(self.layers):
@@ -162,7 +164,7 @@ class BaseSeqDecoderAttn(nn.Module):
             prev_output = output
         preds = torch.stack(preds, dim=1)
         preds = F.dropout(preds, self.args.decoder_dropout)
-        return self.out(preds), embed
+        return self.out(preds)
 
     def decode_token(self, token, hidden, memory, attentions=None):
         enc = self.embed(token)
@@ -222,7 +224,7 @@ class SeqDecoderAttnLuong(BaseSeqDecoderAttn):
         super(SeqDecoderAttnLuong, self).__init__(
             vocab_size, args, embed=embed, input_size=args.num_units * 2)
         self.attention = attention.DotProductAttention(
-            args.num_units, mem_dim)
+            args.num_units, mem_dim, args.num_heads)
 
     def step(self, enc, hidden, memory, prev_output):
         memory, attn_mask = memory
@@ -270,3 +272,20 @@ class SeqDecoderPastAttn(SeqDecoderMultiAttn):
             attn_mask = torch.cat([attn_mask, torch.zeros(
                 attn_mask.size(0), 1).type(torch.ByteTensor)], dim=1)
         return memory, attn_mask 
+
+
+_DECODERS = {
+    'decoder': SeqDecoder,
+    'attn_decoder': SeqDecoderAttn,
+    'multi_attn_decoder': SeqDecoderMultiAttn,
+    'past_attn_decoder': SeqDecoderPastAttn,
+    'luong_attn_decoder': SeqDecoderAttnLuong,
+}
+
+
+def get_decoder_cls(type_):
+    if type_ not in _DECODERS:
+        raise ValueError(
+            "Unknown decoder type: %s, available decoders: %s" % (
+                type_, ','.join(_DECODERS.keys())))
+    return _DECODERS[type_]

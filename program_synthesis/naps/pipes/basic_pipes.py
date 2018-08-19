@@ -1,6 +1,6 @@
 import json
-import numpy as np
 import random
+import numpy as np
 
 
 from .pipe import Pipe
@@ -90,31 +90,6 @@ class DropKeys(Pipe):
         return len(self.input)
 
 
-class Cycle(Pipe):
-    def __init__(self, shuffle=True, times=None):
-        """
-        Endlessly cycles the input pipe. Expects the pipeline to provide random access.
-        :param shuffle: If True will access input in random order;
-        :param times: (int): if not None, will cycle over the input collection given number of times.
-        """
-        self.shuffle = shuffle
-        self.times = times
-
-    def __iter__(self):
-        iteration = 0
-        while self.times is None or iteration < self.times:
-            iteration += 1
-            indices = list(range(len(self.input)))
-            if self.shuffle:
-                random.shuffle(indices)
-            for idx in indices:
-                yield self.input[idx]
-        return
-
-    def __len__(self):
-        return len(self.input)*self.times
-
-
 class RandomAccessFile(Pipe):
     """
     Provides random access to a file.
@@ -152,51 +127,6 @@ class RandomAccessFile(Pipe):
         return iter(self.f)
 
 
-class Merge(Pipe):
-    def __init__(self, input_pipes, mode='random'):
-        """
-        Merges the input form several pipes.
-        :param input_pipes: (list of Pipe objects): pipes to merge;
-        :param mode: if `random` will randomly read from pipes that were not yet exhausted. If `rotate` will rotate
-        through the given pipes.
-        """
-        self.input_pipes = input_pipes
-        self.mode = mode
-
-    def __enter__(self):
-        for pipe in self.input_pipes:
-            pipe.__enter__()
-
-    def __exit__(self, exc_type, exc_val, exc_tb):
-        for pipe in reversed(self.input_pipes):
-            pipe.__exit__(exc_type, exc_val, exc_tb)
-
-    def __iter__(self):
-        input_pipes = [iter(p) for p in self.input_pipes]
-        pipeline_indices = list(range(len(input_pipes)))
-        idx = -1
-        while True:
-            if self.mode == 'random':
-                idx = random.choice(pipeline_indices)
-            elif self.mode == 'rotate':
-                while True:
-                    idx += 1
-                    idx %= len(pipeline_indices)
-                    if idx in pipeline_indices:
-                        break
-            pipe = input_pipes[idx]
-            try:
-                yield next(pipe)
-            except StopIteration:
-                pipeline_indices.pop(idx)
-                if not self.input_pipes:
-                    # All input pipes have been exhausted.
-                    return
-
-    def __len__(self):
-        return sum(len(p) for p in self.input_pipes)
-
-
 class Batch(Pipe):
     def __init__(self, batch_size, drop_last=False):
         """
@@ -224,3 +154,83 @@ class Batch(Pipe):
         if last_batch and not self.drop_last:
             num_batches += 1
         return num_batches
+
+
+class SortBatchByLen(Pipe):
+    def __init__(self, key):
+        self.key = key
+
+    def __iter__(self):
+        for b in self.input:
+            yield sorted(b, key=lambda x: len(x[self.key]), reverse=True)
+        return
+
+
+class EndlessShuffleCycle(Pipe):
+    def __iter__(self):
+        while True:
+            indices = list(range(len(self.input)))
+            random.shuffle(indices)
+            for idx in indices:
+                yield self.input[idx]
+
+
+class WeightedMerge(Pipe):
+    def __init__(self, input_pipes, p=None):
+        """
+        Merges the input form several pipes. Iterates between them until one exits.
+        :param input_pipes: (list of Pipe objects): pipes to merge;
+        :param p: list of floats, weights of the pipes, can be not normalized.
+        """
+        self.input_pipes = input_pipes
+        self.p = [float(el)/sum(p) for el in p]
+
+    def __enter__(self):
+        for pipe in self.input_pipes:
+            pipe.__enter__()
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        for pipe in reversed(self.input_pipes):
+            pipe.__exit__(exc_type, exc_val, exc_tb)
+
+    def __iter__(self):
+        input_pipes = [iter(pipe) for pipe in self.input_pipes]
+        pipeline_indices = list(range(len(input_pipes)))
+        while True:
+            idx = np.random.choice(pipeline_indices, p=self.p)
+            pipe = input_pipes[idx]
+            try:
+                yield next(pipe)
+            except StopIteration:
+                return
+
+    def __len__(self):
+        return sum(len(p) for p in self.input_pipes)
+
+
+class LimitOutput(Pipe):
+    def __init__(self, max_output_num):
+        """
+        Limits the output of the pipeline.
+        :param max_output_num: int, maximum number of elements to output.
+        """
+        self.max_output_num = max_output_num
+
+    def enter(self):
+        self.counter = 0
+
+    def __iter__(self):
+        for d in self.input:
+            if self.counter < self.max_output_num:
+                self.counter += 1
+                yield d
+            else:
+                break
+        return
+
+
+class Identity(Pipe):
+    def __iter__(self):
+        for d in self.input:
+            yield d
+        return

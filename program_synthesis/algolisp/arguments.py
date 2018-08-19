@@ -38,6 +38,7 @@ def get_arg_parser(title, mode):
         train_group.add_argument('--n_warmup_steps', type=int, default=4000)
         train_group.add_argument('--num_epochs', type=int, default=10)
         train_group.add_argument('--num_units', type=int, default=500)
+        train_group.add_argument('--share_embeddings', action='store_true', default=False)
         train_group.add_argument('--num_encoder_layers', type=int, default=1)
         train_group.add_argument('--num_decoder_layers', type=int, default=1)
         train_group.add_argument('--encoder_dropout', type=float, default=0.2)
@@ -48,7 +49,7 @@ def get_arg_parser(title, mode):
             '--seq2seq_decoder', type=str, default='attn_decoder'
         )
         train_group.add_argument(
-            '--bidirectional', action='store_true', default=False)
+            '--encoder_bidirectional', action='store_true', default=False)
         # Either --read-text or --skip-text
         train_group.add_argument('--read-text', dest='read_text',
                             action='store_true', default=True)
@@ -98,6 +99,7 @@ def backport_default_args(args):
         "num_decoder_layers": 1,
         "decoder_dropout": 0.2,
         "encoder_dropout": 0.0,
+        "encoder_bidirectional": getattr(args, "bidirectional", False)
     }
     for key, value in backport.items():
         if not hasattr(args, key):

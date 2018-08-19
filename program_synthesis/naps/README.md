@@ -1,5 +1,7 @@
 # NAPS -- Natural Program Synthesis Dataset
-The structure of the NAPS dataset is thoroughly described in the paper: [To be added later]
+The structure of the NAPS dataset is thoroughly described in the paper: [NAPS: Natural Program Synthesis Dataset](https://arxiv.org/abs/1807.03168)
+
+Checkout [current leaderboard](http://near.ai/research/naps) to see the most recent results.
 
 ## Download the dataset
 Use the link to download the dataset: https://goo.gl/WaBdbb
@@ -69,7 +71,10 @@ failing to pass some of the tests;
 * [pipelines/pring_naps.py](pipelines/print_naps.py) demonstrates how one might use [uast/uast_pprint.py](uast/uast_pprint.py) to print UAST in nice human-readable format.
 
 ## UAST specification
-See [uast/README.md](uast/README.md) for the formal specification of UAST.  
+See [uast/README.md](uast/README.md) for the formal specification of UAST.
+
+## UAST to C++
+See [uast/uast_to_cpp/README.md](uast/uast_to_cpp/README.md) on how to use UAST to C++ converter.  
 
 ## Baseline models
 [To be added later]
