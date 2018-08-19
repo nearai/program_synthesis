@@ -21,8 +21,20 @@ class ArgsDict(dict):
 
 def load_checkpoint(model, optimizer, model_dir, map_to_cpu=False, step=None):
     path = os.path.join(model_dir, 'checkpoint')
+
+    if step == -1:  # last checkpoint
+        if os.path.exists(model_dir):
+            for fl in os.scandir(model_dir):
+                if fl.is_file():
+                    m = CHECKPOINT_PATTERN.match(fl.name)
+                    if m is not None:
+                        step = max(step, int(m.group(1)))
+
+        step = None if step == -1 else step
+
     if step is not None:
         path += '-{:08d}'.format(step)
+
     if os.path.exists(path):
         print("Loading model from %s" % path)
         if map_to_cpu:
@@ -71,7 +83,7 @@ def save_checkpoint(model, optimizer, step, model_dir, ignore=[],
     if os.path.exists(path):
         os.unlink(path)
     source = 'checkpoint-' + step_padded
-    os.symlink(source,  path)
+    os.symlink(source, path)
 
     # Cull old checkpoints.
     if keep_every_n is not None:
@@ -169,4 +181,3 @@ if __name__ == "__main__":
     print("Loading model from %s" % path)
     checkpoint = torch.load(path)
     print_params(checkpoint)
-

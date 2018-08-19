@@ -21,13 +21,18 @@ class ReplayBuffer(object):
         self.buffer = []
         self.pointer = 0
 
+        self.done_examples = 0
+
     @property
     def size(self):
         return len(self.buffer)
 
-    def add(self, experience):
+    def add(self, experience: StepExample):
         if isinstance(experience, list):
             raise ValueError("Experience must be added one by one")
+
+        if experience.done:
+            self.done_examples += 1
 
         if len(self.buffer) < self.max_size:
             self.buffer.append(experience)
@@ -36,6 +41,7 @@ class ReplayBuffer(object):
             if self.pointer == self.max_size:
                 self.pointer = 0
 
+            self.done_examples -= int(self.buffer[self.pointer].done)
             self.buffer[self.pointer] = experience
             self.pointer += 1
 

@@ -5,7 +5,6 @@ import torch
 import torch.nn.functional as F
 
 from program_synthesis.common.tools import saver
-from program_synthesis.karel import models
 from program_synthesis.karel.dataset.executor import KarelExecutor
 from program_synthesis.karel.rl_agent import utils
 from program_synthesis.karel.rl_agent.logger import logger_task
@@ -91,14 +90,15 @@ class PolicyTrainer(object):
         self.actor = agent(self.vocab, args)
         self.critic = agent(self.vocab, args)
 
-        if not args.train_from_scratch:
-            self.actor.model = models.get_model(args)
-
-        self.critic.update_with(self.actor)
-
         self.criterion = F.mse_loss
         self.optimizer = torch.optim.Adam(self.actor.model.grad_parameters(), lr=args.lr)
 
+        if not self.args.train_from_scratch:
+            self.step = saver.load_checkpoint(self.actor.model, self.optimizer, self.args.model_dir, step=-1)
+        else:
+            self.step = 0
+
+        self.critic.update_with(self.actor)
         self.karel_executor = KarelExecutor()
 
     def train_actor_critic(self, batch: "list[StepExample]"):
@@ -161,7 +161,9 @@ class PolicyTrainer(object):
     def train(self):
         replay_buffer = ReplayBuffer(self.args.replay_buffer_size)
 
-        for step in range(1, self.args.num_iterations + 1):
+        smooth_loss = 0.
+
+        for step in range(self.step + 1, self.args.num_iterations + 1):
             logger_task.info(f"Step: {step}")
 
             for ix in range(self.args.num_rollouts):
@@ -179,20 +181,25 @@ class PolicyTrainer(object):
                             new_exp = update_step_example(e, experience[-c_ix - 1].state.code, self.karel_executor)
                             replay_buffer.add(new_exp)
 
+                logger_task.info(
+                    ' '.join([f"Replay buffer {replay_buffer.done_examples}/{replay_buffer.size}",
+                              f"({replay_buffer.done_examples/replay_buffer.size * 100:.4}%)"]))
+
             self.actor.set_train(True)
 
             for ix in range(self.args.num_training_steps):
                 logger_task.info(f"Training step: {ix}")
                 batch = replay_buffer.sample(self.args.batch_size)
                 loss = self.train_actor_critic(batch)
-                logger_task.info(f"Loss: {loss}")
+                smooth_loss = .99 * smooth_loss + .01 * loss
+                logger_task.info(f"Loss: {smooth_loss}")
 
             self.actor.set_train(False)
 
-            if (step + 1) % self.args.update_actor_it == 0:
+            if step % self.args.update_actor_it == 0:
                 logger_task.info(f"Update critic with actor")
                 self.critic.update_with(self.actor)
 
-            if (step + 1) % self.args.save_actor_it == 0:
+            if step % self.args.save_actor_it == 0:
                 saver.save_checkpoint(self.actor.model, self.optimizer, step, self.args.model_dir)
                 saver.save_args(self.args)
