@@ -20,11 +20,6 @@ source .env/bin/activate
 The code also assumes that [PyTorch](https://pytorch.org/) is already installed.
 
 ## Installation
-```
-pip install program-synthesis
-```
-
-## Development installation
 
 For development installation you need to clone the repository:
 ```
